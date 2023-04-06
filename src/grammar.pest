@@ -1,5 +1,8 @@
-script     =  { number* }
+script     =  { expr* }
 alpha      =  { 'a'..'z' | 'A'..'Z' }
 digit      =  { '0'..'9' }
 underscore =  { "_" }
+
+expr       =  { atom | number }
+atom       = @{ (alpha | underscore)+ ~ (alpha | digit | underscore)* }
 number     = @{ digit+ ~ ("." ~ digit+ | digit+) | digit+ }

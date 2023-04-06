@@ -6,5 +6,7 @@ use pest_derive::Parser;
 pub struct OwlParser;
 
 fn main() {
-    println!("Hello, world!");
+    let script = "hello";
+    let parse = OwlParser::parse(Rule::script, script);
+    println!("{:?}", parse);
 }

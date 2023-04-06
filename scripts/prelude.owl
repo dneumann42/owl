@@ -1,34 +1,38 @@
-struct shape 
-  ( x
-    y
-    z
-    width : int       ;; locks this variable to this type
-    height : int )
+struct shape (
+  x
+  y
+  z
+  width : int       ;; locks this variable to this type
+  height : int
+)
 
-variant tok 
-  ( eof none
-    num float
-    bool bool
-    str string
-    atom atom
-    object none )
+variant tok ( 
+  eof none
+  num float
+  bool bool
+  str string
+  atom atom
+  object none 
+)
 
-fun read-script (path) 
-  { def file (open-file path "r")
+fun read-script (path) { 
+  def file (open-file path "r")
     if file 
       { (read-file file) (close-file file) }
-      none }
+      none 
+}
 
-fun parse (path)
-  { def contents (read-script path)
-    (owl:parse contents) }
+fun parse (path) { 
+  def contents (read-script path)
+    (owl:parse contents) 
+}
 
-fun exec (ast env)
-  { match ast
-      tok:eof none
-      tok:num | tok:bool(_) | tok:str ast
-      tok:atom(v)
-        { def fn (env:find v)
-           } }
-
-
+fun exec (ast env) { 
+  match ast (
+    tok:eof none
+    tok:num | tok:bool(_) | tok:str ast
+    tok:atom(v) { 
+      def fn (env:find v) 
+    } 
+  )
+}
