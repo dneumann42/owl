@@ -25,17 +25,12 @@ fn handle_rule(r: Pair<Rule>) -> Val {
             for sub_rule in r.into_inner() {
                 rs.push(handle_rule(sub_rule))
             }
-            Val::List(
-                rs.into_iter()
-                    .filter(|x| *x != Val::None)
-                    .map(Box::new)
-                    .collect(),
-            )
+            Val::List(rs.into_iter().filter(|x| *x != Val::None).collect())
         }
         Rule::list => {
-            let mut rs: Vec<Box<Val>> = vec![];
+            let mut rs: Vec<Val> = vec![];
             for sub_rule in r.into_inner() {
-                rs.push(Box::new(handle_rule(sub_rule)))
+                rs.push(handle_rule(sub_rule))
             }
             Val::List(rs)
         }
@@ -63,23 +58,30 @@ fn handle_rule(r: Pair<Rule>) -> Val {
     }
 }
 
-fn handle_rule_pair(r: Pair<Rule>) -> Box<Val> {
-    Box::new(handle_rule(r))
+fn handle_rule_pair(r: Pair<Rule>) -> Val {
+    handle_rule(r)
 }
 
 fn handle_rules(xs: Pairs<Rule>) -> Val {
-    let mut a: Vec<Box<_>> = xs.map(handle_rule_pair).collect();
-    a.insert(0, Box::new(Val::Atom(String::from("do"))));
+    let mut a: Vec<_> = xs.map(handle_rule_pair).collect();
+    a.insert(0, Val::Atom(String::from("do")));
     Val::List(a)
 }
 
-pub fn parse_raw(code: &'static str) -> Result<Pairs<Rule>, Error<Rule>> {
+pub fn parse_raw(code: &str) -> Result<Pairs<Rule>, Error<Rule>> {
     OwlParser::parse(Rule::script, code)
 }
 
-pub fn parse(code: &'static str) -> Result<Val, ParseError> {
+pub fn parse(code: &str) -> Result<Val, ParseError> {
     match parse_raw(code) {
         Ok(r) => Ok(handle_rules(r)),
-        Err(_) => Err(ParseError::Generic(String::from("Hello"))),
+        Err(e) => Err(ParseError::Generic(format!("{:?}", e))),
+    }
+}
+
+pub fn parse_string(code: String) -> Result<Val, ParseError> {
+    match parse_raw(code.as_str()) {
+        Ok(r) => Ok(handle_rules(r)),
+        Err(e) => Err(ParseError::Generic(format!("{:?}", e))),
     }
 }

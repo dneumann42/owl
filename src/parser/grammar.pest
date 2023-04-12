@@ -6,5 +6,6 @@ underscore =  { "_" }
 list       =  { "(" ~ expr* ~ ")" }
 expr       =  { atom | number | boolean | list }
 boolean    = @{ "#" ~ ("t" | "f" | "T" | "F") }
-atom       = @{ (alpha | underscore | SYMBOL)+ ~ (alpha | digit | underscore | SYMBOL)* }
+char       = @{ alpha | underscore | SYMBOL | "*" | "-" }
+atom       = @{ char+ ~ (char | digit)* | char }
 number     = @{ digit+ ~ ("." ~ digit+ | digit+) | digit+ }

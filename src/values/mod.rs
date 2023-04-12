@@ -4,5 +4,27 @@ pub enum Val {
     Number(f64),
     Atom(String),
     Bool(bool),
-    List(Vec<Box<Val>>),
+    List(Vec<Val>),
+    Fun(fn(Val) -> Val),
+}
+
+impl Val {
+    pub fn atom<T>(s: T) -> Val
+    where
+        String: From<T>,
+    {
+        Val::Atom(String::from(s))
+    }
+
+    pub fn num(s: f64) -> Val {
+        Val::Number(s)
+    }
+
+    pub fn t() -> Val {
+        Val::Bool(true)
+    }
+
+    pub fn f() -> Val {
+        Val::Bool(false)
+    }
 }
