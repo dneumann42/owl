@@ -1,12 +1,12 @@
-use pest::Parser;
-use pest_derive::Parser;
+pub mod parser;
+pub mod values;
 
-#[derive(Parser)]
-#[grammar = "grammar.pest"]
-pub struct OwlParser;
+use crate::parser::{parse, parse_raw};
 
 fn main() {
-    let script = "hello";
-    let parse = OwlParser::parse(Rule::script, script);
+    let script = "
+        (+ 1 2 3)
+    ";
+    let parse = parse(script);
     println!("{:?}", parse);
 }

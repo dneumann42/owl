@@ -1,0 +1,10 @@
+script     =  { SOI ~ expr* ~ EOI }
+WHITESPACE = _{ " " | NEWLINE | "\t" }
+alpha      =  { 'a'..'z' | 'A'..'Z' }
+digit      =  { '0'..'9' }
+underscore =  { "_" }
+list       =  { "(" ~ expr* ~ ")" }
+expr       =  { atom | number | boolean | list }
+boolean    = @{ "#" ~ ("t" | "f" | "T" | "F") }
+atom       = @{ (alpha | underscore | SYMBOL)+ ~ (alpha | digit | underscore | SYMBOL)* }
+number     = @{ digit+ ~ ("." ~ digit+ | digit+) | digit+ }
