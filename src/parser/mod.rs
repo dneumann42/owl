@@ -53,6 +53,10 @@ fn handle_rule(r: Pair<Rule>) -> Val {
                 Val::None
             }
         },
+        Rule::string => {
+            let xs = r.as_str();
+            Val::Str(String::from(&xs[1..xs.len() - 1]))
+        }
         Rule::EOI => Val::None,
         e => panic!("Invalid rule: {:?}", e),
     }
