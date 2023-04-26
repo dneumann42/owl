@@ -1,6 +1,8 @@
-(echo "Owl v0.0.0#dev")
+(echo "Owl v0.0.0~dev")
 
 (fun loop ()
-  (read "> "))
+  (def inp (read "> "))
+  (echo (eval inp))
+  (loop))
 
 (loop)

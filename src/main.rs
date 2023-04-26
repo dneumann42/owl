@@ -9,14 +9,9 @@ use std::fs;
 
 use crate::{
     env::Env,
-    evaluator::{eval},
+    evaluator::eval,
     parser::{parse, parse_raw},
 };
-
-// struct Owl {
-//     env: Env,
-
-// }
 
 fn main() {
     match fs::read_to_string("scripts/repl.owl") {
@@ -26,7 +21,7 @@ fn main() {
 
             match parse {
                 Ok(x) => {
-                    println!("{}", eval(x, &mut env).to_string());
+                    println!("{}", eval::eval(x, &mut env).to_string());
                 }
                 Err(_) => {
                     println!("{:?}", parse);
