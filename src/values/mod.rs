@@ -1,4 +1,7 @@
-use std::{default, ops::Index};
+use std::{
+    default,
+    ops::{Add, Index},
+};
 
 type FnArgs = Val; // List
 type FnBody = Val; // Do block
@@ -12,6 +15,30 @@ pub enum Val {
     Bool(bool),
     List(Vec<Val>),
     Fun(Box<Val>, Box<FnArgs>, Box<FnBody>),
+}
+
+impl ToString for Val {
+    fn to_string(&self) -> String {
+        match self {
+            Val::None => "none".to_string(),
+            Val::Number(n) => n.to_string(),
+            Val::Atom(a) => a.to_string(),
+            Val::Str(s) => s.clone(),
+            Val::Bool(true) => "#t".to_string(),
+            Val::Bool(false) => "#f".to_string(),
+            Val::List(ls) => {
+                let mut s = "(".to_string();
+                for (i, x) in ls.iter().enumerate() {
+                    s.push_str(&format!("{:?}", x.to_string()));
+                }
+                s.push_str(")");
+                s
+            }
+            Val::Fun(ident, args, _) => {
+                format!("fun {}{}", ident.to_string(), args.to_string())
+            }
+        }
+    }
 }
 
 impl Val {

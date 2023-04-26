@@ -1,4 +1,6 @@
-(fun add (a b)
-  (+ a b))
+(echo "Owl v0.0.0#dev")
 
-(add 123 321)
+(fun loop ()
+  (read "> "))
+
+(loop)

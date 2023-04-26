@@ -9,7 +9,7 @@ use std::fs;
 
 use crate::{
     env::Env,
-    evaluator::{eval, prelude},
+    evaluator::{eval},
     parser::{parse, parse_raw},
 };
 
@@ -23,11 +23,10 @@ fn main() {
         Ok(s) => {
             let parse = parse(s.as_str());
             let mut env = Env::make();
-            prelude::init(&mut env);
 
             match parse {
                 Ok(x) => {
-                    println!("{:?}", eval(x, &mut env));
+                    println!("{}", eval(x, &mut env).to_string());
                 }
                 Err(_) => {
                     println!("{:?}", parse);
