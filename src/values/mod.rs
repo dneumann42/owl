@@ -1,3 +1,8 @@
+use std::{default, ops::Index};
+
+type FnArgs = Val; // List
+type FnBody = Val; // Do block
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     None,
@@ -6,7 +11,7 @@ pub enum Val {
     Str(String),
     Bool(bool),
     List(Vec<Val>),
-    Fun(fn(Val) -> Val),
+    Fun(Box<Val>, Box<FnArgs>, Box<FnBody>),
 }
 
 impl Val {
@@ -24,8 +29,48 @@ impl Val {
         }
     }
 
-    pub fn num(s: f64) -> Val {
-        Val::Number(s)
+    pub fn get_str(v: Val) -> String {
+        match v {
+            Val::Str(s) => s,
+            Val::Atom(a) => a,
+            _ => "".to_string(),
+        }
+    }
+
+    pub fn len(v: Val) -> usize {
+        match v {
+            Val::List(xs) => xs.len(),
+            Val::Str(s) => s.len(),
+            Val::Atom(a) => a.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn index(v: Val, idx: usize) -> Val {
+        match v {
+            Val::Atom(a) => a
+                .chars()
+                .nth(idx.into())
+                .map_or(Val::None, |v| Val::Str(v.to_string())),
+            Val::Str(s) => s
+                .chars()
+                .nth(idx.into())
+                .map_or(Val::None, |v| Val::Str(v.to_string())),
+            Val::List(l) => l.get(idx).map_or(Val::None, Val::clone),
+            _ => Val::None,
+        }
+    }
+
+    pub fn num<T: Into<f64>>(s: T) -> Val {
+        Val::Number(s.into())
+    }
+
+    pub fn str<T: ToString>(s: T) -> Val {
+        Val::Str(s.to_string())
+    }
+
+    pub fn list(s: Vec<Val>) -> Val {
+        Val::List(s)
     }
 
     pub fn t() -> Val {

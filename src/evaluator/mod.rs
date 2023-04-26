@@ -1,8 +1,52 @@
 pub mod prelude;
 
-use std::env::args;
+use std::{env::args, fmt::format};
 
 use crate::{env::Env, values::Val};
+
+pub fn eval_function(ident: &str, args: Vec<Val>, env: &mut Env) -> Val {
+    match env.find(ident.to_string()) {
+        Some(Val::Fun(_, params, body)) => match params.as_ref() {
+            Val::List(ps) => {
+                let mut res: Val = Val::None;
+                env.push();
+                for (idx, x) in ps.iter().enumerate() {
+                    let _ = env.set(
+                        Val::get_str(x.clone()),
+                        args.get(idx).map_or(Val::None, Val::clone),
+                    );
+                }
+                res = eval(body.as_ref().clone(), env);
+                env.pop();
+                res
+            }
+            _ => panic!("Never"),
+        },
+        _ => {
+            println!("Undefined identifier: {:?}", ident);
+            Val::None
+        }
+    }
+}
+
+pub fn eval_function_definition(args: Vec<Val>, env: &mut Env) -> Val {
+    let ident = args[0].clone();
+    let params = &args[1];
+
+    let mut body: Vec<Val> = vec![Val::atom("do")];
+    for p in &args[2..] {
+        body.push(p.clone())
+    }
+
+    env.set(
+        Val::get_str(ident.clone()),
+        Val::Fun(
+            Box::new(ident),
+            Box::new(params.clone()),
+            Box::new(Val::list(body.clone())),
+        ),
+    )
+}
 
 pub fn eval_intrinsic(intr: String, args: Vec<Val>, env: &mut Env) -> Val {
     match intr.as_str() {
@@ -53,13 +97,14 @@ pub fn eval_intrinsic(intr: String, args: Vec<Val>, env: &mut Env) -> Val {
             }
             Val::num(x)
         }
-        _ => Val::None,
+        "fun" => eval_function_definition(args, env),
+        ident => eval_function(ident, args, env),
     }
 }
 
 pub fn eval(val: Val, env: &mut Env) -> Val {
     match val {
-        Val::Number(_) | Val::Bool(_) | Val::Str(_) | Val::Fun(_) | Val::None => val,
+        Val::Number(_) | Val::Bool(_) | Val::Str(_) | Val::Fun(_, _, _) | Val::None => val,
         Val::Atom(v) => match env.find(v) {
             Some(v) => v,
             None => Val::None,

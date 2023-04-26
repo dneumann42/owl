@@ -2,6 +2,7 @@ use std::collections::{HashMap, LinkedList};
 
 use crate::values::Val;
 
+#[derive(Debug)]
 pub struct Env {
     stack: LinkedList<HashMap<String, Val>>,
 }
@@ -11,6 +12,10 @@ impl Env {
         Env {
             stack: LinkedList::from([HashMap::new()]),
         }
+    }
+
+    pub fn test(&mut self) -> i32 {
+        32
     }
 
     pub fn find(&self, key: String) -> Option<Val> {
@@ -31,5 +36,13 @@ impl Env {
             None => {}
         }
         val
+    }
+
+    pub fn push(&mut self) {
+        self.stack.push_front(HashMap::new())
+    }
+
+    pub fn pop(&mut self) -> Option<HashMap<String, Val>> {
+        self.stack.pop_front()
     }
 }
