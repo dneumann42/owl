@@ -14,6 +14,7 @@ pub enum Val {
     Str(String),
     Bool(bool),
     List(Vec<Val>),
+    Array(Vec<Val>),
     Fun(Box<Val>, Box<FnArgs>, Box<FnBody>),
 }
 
@@ -28,10 +29,19 @@ impl ToString for Val {
             Val::Bool(false) => "#f".to_string(),
             Val::List(ls) => {
                 let mut s = "(".to_string();
-                for (i, x) in ls.iter().enumerate() {
-                    s.push_str(&format!("{:?}", x.to_string()));
-                }
+                ls.iter().enumerate().for_each(|(i, x)| {
+                    s.push_str(&x.to_string());
+                    if i < ls.len() - 1 {
+                        s.push_str(" ")
+                    }
+                });
                 s.push_str(")");
+                s
+            }
+            Val::Array(ls) => {
+                let mut s = "[".to_string();
+                ls.iter().for_each(|x| s.push_str(&x.to_string()));
+                s.push_str("]");
                 s
             }
             Val::Fun(ident, args, _) => {

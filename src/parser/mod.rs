@@ -27,13 +27,8 @@ fn handle_rule(r: Pair<Rule>) -> Val {
             }
             Val::List(rs.into_iter().filter(|x| *x != Val::None).collect())
         }
-        Rule::list => {
-            let mut rs: Vec<Val> = vec![];
-            for sub_rule in r.into_inner() {
-                rs.push(handle_rule(sub_rule))
-            }
-            Val::List(rs)
-        }
+        Rule::list => Val::List(r.into_inner().map(handle_rule).collect()),
+        Rule::array => Val::Array(r.into_inner().map(handle_rule).collect()),
         Rule::expr => {
             for x in r.into_inner() {
                 return handle_rule(x);

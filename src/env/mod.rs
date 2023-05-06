@@ -4,13 +4,13 @@ use crate::values::Val;
 
 #[derive(Debug)]
 pub struct Env {
-    stack: LinkedList<HashMap<String, Val>>,
+    stack: Vec<HashMap<String, Val>>,
 }
 
 impl Env {
     pub fn make() -> Self {
         Env {
-            stack: LinkedList::from([HashMap::new()]),
+            stack: vec![HashMap::new()],
         }
     }
 
@@ -29,7 +29,7 @@ impl Env {
     }
 
     pub fn set(&mut self, key: String, val: Val) -> Val {
-        match self.stack.front_mut() {
+        match self.stack.last_mut() {
             Some(v) => {
                 v.insert(key, val.clone());
             }
@@ -39,10 +39,10 @@ impl Env {
     }
 
     pub fn push(&mut self) {
-        self.stack.push_front(HashMap::new())
+        self.stack.push(HashMap::new())
     }
 
     pub fn pop(&mut self) -> Option<HashMap<String, Val>> {
-        self.stack.pop_front()
+        self.stack.pop()
     }
 }

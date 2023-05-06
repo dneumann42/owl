@@ -5,7 +5,7 @@ use crate::{env::Env, parser::parse, values::Val};
 use super::{eval::eval, intrinsic::Intrinsic};
 
 pub struct IDo;
-pub struct IAdd;
+pub struct IPlus;
 pub struct ISub;
 pub struct IMul;
 pub struct IDiv;
@@ -14,6 +14,9 @@ pub struct IRead;
 pub struct IDef;
 pub struct IFun;
 pub struct IEval;
+pub struct IAdd;
+pub struct ISet;
+pub struct IList;
 
 pub enum Intr {
     Ok(Val),
@@ -53,7 +56,7 @@ impl Intrinsic for IDo {
     }
 }
 
-impl Intrinsic for IAdd {
+impl Intrinsic for IPlus {
     fn name() -> String {
         "+".to_string()
     }
@@ -217,5 +220,53 @@ impl Intrinsic for IEval {
                 panic!("Expected string");
             }
         }
+    }
+}
+
+impl Intrinsic for IAdd {
+    fn name() -> String {
+        "add".to_string()
+    }
+
+    fn eval(args: &Vec<Val>, env: &mut Env) -> Val {
+        match env.find(args[0].to_string()) {
+            Some(Val::Array(xs)) => {
+                let mut rs = xs;
+                let mut ars = args[1..].to_vec().clone();
+
+                for i in 0..ars.len() {
+                    ars[i] = eval(ars[i].clone(), env)
+                }
+
+                rs.append(&mut ars);
+                env.set(args[0].to_string(), Val::Array(rs.clone()))
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+}
+
+impl Intrinsic for ISet {
+    fn name() -> String {
+        "set".to_string()
+    }
+
+    fn eval(args: &Vec<Val>, env: &mut Env) -> Val {
+        let ident = args[0].clone();
+        let value = &args[1];
+        let v = eval(value.clone(), env);
+        env.set(Val::get_str(ident.clone()), v)
+    }
+}
+
+impl Intrinsic for IList {
+    fn name() -> String {
+        "list".to_string()
+    }
+
+    fn eval(args: &Vec<Val>, env: &mut Env) -> Val {
+        Val::list(args.clone())
     }
 }

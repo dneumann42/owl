@@ -1,11 +1,13 @@
 use crate::{env::Env, values::Val};
 
-use super::prelude::{IAdd, IDef, IDiv, IDo, IEcho, IEval, IFun, IMul, IRead, ISub, Intr};
+use super::prelude::{
+    IAdd, IDef, IDiv, IDo, IEcho, IEval, IFun, IList, IMul, IPlus, IRead, ISet, ISub, Intr,
+};
 
 fn handle_intrinsic(intr: &String, args: &Vec<Val>, env: &mut Env) -> Intr {
     Intr::start()
         .intr::<IDo>(intr, args, env)
-        .intr::<IAdd>(intr, args, env)
+        .intr::<IPlus>(intr, args, env)
         .intr::<ISub>(intr, args, env)
         .intr::<IMul>(intr, args, env)
         .intr::<IDiv>(intr, args, env)
@@ -15,12 +17,20 @@ fn handle_intrinsic(intr: &String, args: &Vec<Val>, env: &mut Env) -> Intr {
         .intr::<IRead>(intr, args, env)
         .intr::<IEcho>(intr, args, env)
         .intr::<IEval>(intr, args, env)
+        .intr::<IAdd>(intr, args, env)
+        .intr::<ISet>(intr, args, env)
+        .intr::<IList>(intr, args, env)
 }
 
 pub fn eval(val: Val, env: &mut Env) -> Val {
     match val {
-        Val::Number(_) | Val::Bool(_) | Val::Str(_) | Val::Fun(_, _, _) | Val::None => val,
-        Val::Atom(v) => env.find(v).map_or(Val::None, |v| v),
+        Val::Number(_)
+        | Val::Bool(_)
+        | Val::Str(_)
+        | Val::Fun(_, _, _)
+        | Val::Array(_)
+        | Val::None => val,
+        Val::Atom(v) => env.find(v.clone()).map_or(Val::None, |v| v),
         Val::List(xs) => eval_list(xs, env),
     }
 }
