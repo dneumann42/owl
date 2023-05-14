@@ -1,6 +1,0 @@
-(echo "Owl v0.0.0#dev")
-
-(fun loop ()
-  (read "> "))
-
-(loop)

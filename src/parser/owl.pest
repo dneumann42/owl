@@ -1,0 +1,34 @@
+script = { SOI ~ block ~ EOI }
+
+WHITESPACE = _{ " " | NEWLINE | "\t" }
+// COMMENT    = _{ "--" ~ (!newline ~ ANY)* }
+// newline    = _{ "\n" | "\r\n" }
+
+block   = { stmt* }
+doblock = { "do" ~ block ~ "end" }
+
+// Values
+ident    = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number   = @{ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? ~ exponent?) }
+exponent = @{ ("e" | "E") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+boolean  = @{ "true" | "false" }
+
+assignment = { ident ~ "=" ~ exp }
+
+exp = {
+    prefix_exp
+  | boolean
+  | number
+  | ident
+}
+
+prefix_exp = { "(" ~ exp ~ ")" }
+
+// As I develop the syntax I will
+// be moving statements to the exp
+
+stmt = {
+    doblock
+  | assignment
+  | exp
+}
