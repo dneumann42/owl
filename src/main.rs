@@ -12,9 +12,7 @@ fn main() -> Result<(), Error> {
     let mut output = File::create("demo.lua")?;
 
     let owl = "
-    a = 123
-    b = 6.4
-    false
+    -1
     ";
 
     write!(output, "{}", owl.to_lua().unwrap())?;

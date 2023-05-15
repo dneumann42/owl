@@ -4,6 +4,8 @@ pub type List = Vec<Box<Val>>;
 pub type Do = Vec<Box<Val>>;
 pub type Block = Vec<Box<Val>>;
 pub type Assignment = (Box<Val>, Box<Val>);
+pub type UnOp = (String, Box<Val>);
+pub type BinOp = (String, Box<Val>, Box<Val>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
@@ -16,6 +18,8 @@ pub enum Val {
     Do(Do),
     Block(Block),
     Assignment(Assignment),
+    BinOp(BinOp),
+    UnOp(UnOp),
 }
 
 impl Val {
@@ -23,7 +27,7 @@ impl Val {
         match self {
             Val::Assignment(_) => true,
             Val::Block(_) => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -33,6 +37,9 @@ impl ToString for Val {
         match self {
             Val::Num(n) => n.to_string(),
             Val::Bool(b) => b.to_string(),
+            Val::UnOp((a, b)) => {
+                format!("{}{}", a.to_string(), b.to_string())
+            }
             v => format!("{:?}", v),
         }
     }

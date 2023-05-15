@@ -56,4 +56,37 @@ mod parser_tests {
             ])
         );
     }
+
+    #[test]
+    fn it_can_handle_unary_ops() {
+        assert_eq!(
+            parsed("-123"),
+            res(Val::UnOp(("-".to_string(), Box::new(Val::Num(123.0)))))
+        );
+
+        assert_eq!(
+            parsed("#s"),
+            res(Val::UnOp((
+                "#".to_string(),
+                Box::new(Val::Ident("s".to_owned()))
+            )))
+        );
+
+        assert_eq!(
+            parsed("not 0"),
+            res(Val::UnOp(("not".to_string(), Box::new(Val::Num(0.0)))))
+        )
+    }
+
+    #[test]
+    fn it_can_handle_binary_ops() {
+        assert_eq!(
+            parsed("1 + 2"),
+            res(Val::BinOp((
+                "+".to_string(),
+                Box::new(Val::Num(1.0)),
+                Box::new(Val::Num(2.0))
+            )))
+        )
+    }
 }

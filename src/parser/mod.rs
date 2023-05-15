@@ -5,7 +5,7 @@ use pest::{
 };
 use pest_derive::Parser;
 
-use crate::values::{is_none, not_none, Val};
+use crate::values::{is_none, not_none, Assignment, Val};
 
 #[derive(Parser)]
 #[grammar = "parser/owl.pest"]
@@ -38,7 +38,32 @@ fn handle_script(r: Pair<Rule>) -> Val {
 }
 
 fn handle_expr(r: Pair<Rule>) -> Val {
-    r.into_inner().next().map(handle_rule).unwrap_or(Val::None)
+    let mut itr = r.into_inner().peekable();
+    let mut val = Val::None;
+    while let Some(x) = itr.next() {
+        val = match handle_rule(x) {
+            Val::UnOp((op, _)) => {
+                let nex = itr.next().unwrap();
+                Val::UnOp((op, Box::new(handle_rule(nex))))
+            }
+            v => {
+                // Handle binary ops
+                if let Some(nex) = itr.clone().peek() {
+                    match nex.as_rule() {
+                        Rule::binop => {
+                            itr.next();
+                            let o = handle_expr(itr.next().unwrap());
+                            Val::BinOp((nex.as_str().to_owned(), Box::new(v), Box::new(o)))
+                        }
+                        _ => v,
+                    }
+                } else {
+                    v
+                }
+            }
+        }
+    }
+    val
 }
 
 fn handle_number(r: Pair<Rule>) -> Val {
@@ -78,11 +103,17 @@ fn handle_rule(r: Pair<Rule>) -> Val {
         Rule::number => handle_number(r),
         Rule::exponent => handle_number(r),
         Rule::boolean => handle_boolean(r),
-        Rule::prefix_exp => handle_expr(r),
         Rule::ident => handle_ident(r),
         Rule::block => handle_block(r),
         Rule::doblock => handle_do(r),
         Rule::stmt => r.into_inner().next().map(handle_rule).unwrap_or(Val::None),
+        Rule::value => handle_rule(r.into_inner().next().unwrap()),
+        Rule::binop => Val::BinOp((
+            r.as_str().to_owned(),
+            Box::new(Val::None),
+            Box::new(Val::None),
+        )),
+        Rule::unop => Val::UnOp((r.as_str().to_owned(), Box::new(Val::None))),
         Rule::assignment => {
             let vs: Vec<Pair<Rule>> = r.into_inner().into_iter().collect();
             let ident = handle_ident(vs[0].clone());

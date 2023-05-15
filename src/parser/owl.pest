@@ -15,14 +15,42 @@ boolean  = @{ "true" | "false" }
 
 assignment = { ident ~ "=" ~ exp }
 
-exp = {
-    prefix_exp
-  | boolean
+value = {
+    boolean
   | number
-  | ident
+  | !"not" ~ ident
 }
 
-prefix_exp = { "(" ~ exp ~ ")" }
+exp = {
+  | value ~ binop ~ value
+  | unop ~ exp
+  | value
+  | "(" ~ exp ~ ")"
+}
+
+binop = {
+    "+"
+  | "-"
+  | "*"
+  | "/"
+  | "%"
+  | "^"
+  | "=="
+  | "~="
+  | "<"
+  | ">"
+  | "<="
+  | ">="
+  | "and"
+  | "or"
+  | ".."
+}
+
+unop = {
+    "-"
+  | "not"
+  | "#"
+}
 
 // As I develop the syntax I will
 // be moving statements to the exp
