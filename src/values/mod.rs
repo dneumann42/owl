@@ -30,6 +30,62 @@ impl Val {
             _ => false,
         }
     }
+
+    pub fn num<N: Into<f64>>(n: N) -> Val {
+        Val::Num(n.into())
+    }
+
+    pub fn t() -> Val {
+        Val::Bool(true)
+    }
+
+    pub fn f() -> Val {
+        Val::Bool(false)
+    }
+
+    pub fn binop<S: Into<String>>(s: S, ls: Val, rs: Val) -> Val {
+        Val::BinOp((s.into(), Box::new(ls), Box::new(rs)))
+    }
+
+    pub fn unop<S: Into<String>>(s: S, v: Val) -> Val {
+        Val::UnOp((s.into(), Box::from(v)))
+    }
+
+    pub fn id<S: Into<String>>(s: S) -> Val {
+        Val::Ident(s.into())
+    }
+
+    pub fn assn(id: Val, val: Val) -> Val {
+        Val::Assignment((Box::from(id), Box::new(val)))
+    }
+}
+
+pub fn num<N: Into<f64>>(n: N) -> Val {
+    Val::num(n)
+}
+
+pub fn t() -> Val {
+    Val::t()
+}
+
+pub fn f() -> Val {
+    Val::f()
+}
+
+pub fn binop<S: Into<String>>(s: S, ls: Val, rs: Val) -> Val {
+    Val::binop(s, ls, rs)
+}
+
+pub fn unop<S: Into<String>>(s: S, v: Val) -> Val {
+    Val::unop(s, v)
+}
+
+pub fn id<S: Into<String>>(s: S) -> Val {
+    Val::id(s)
+}
+
+pub fn assn(id: Val, val: Val) -> Val {
+    Val::assn(id, val)
 }
 
 impl ToString for Val {

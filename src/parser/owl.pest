@@ -19,10 +19,11 @@ value = {
     boolean
   | number
   | !"not" ~ ident
+  | "(" ~ exp ~ ")"
 }
 
 exp = {
-  | value ~ binop ~ value
+    value ~ binop ~ exp
   | unop ~ exp
   | value
   | "(" ~ exp ~ ")"

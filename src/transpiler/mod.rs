@@ -39,6 +39,13 @@ impl ToLua for Val {
             Val::None => Ok("nil".to_string()),
             Val::Ident(a) => Ok(a.to_string()),
             Val::List(_) => todo!(),
+            Val::UnOp((op, v)) => Ok(format!("{}{}", op, v.as_ref().to_lua()?)),
+            Val::BinOp((op, lh, rh)) => Ok(format!(
+                "({}{}{})",
+                lh.as_ref().to_lua()?,
+                op,
+                rh.as_ref().to_lua()?
+            )),
             Val::Do(xs) => {
                 let mut ls: String = "".to_owned();
 
