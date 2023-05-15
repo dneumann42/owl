@@ -16,12 +16,6 @@ pub trait ToLua {
     fn to_lua(&self) -> Result<LuaSource>;
 }
 
-// impl ToLua for Val {
-//     fn to_lua(&self) -> Result<LuaString> {
-//         todo!()
-//     }
-// }
-
 fn fnwrap<T: ToString>(s: T) -> String {
     format!("(function()\n{} end)()", s.to_string())
 }
@@ -41,11 +35,41 @@ impl ToLua for Val {
             Val::List(_) => todo!(),
             Val::UnOp((op, v)) => Ok(format!("{}{}", op, v.as_ref().to_lua()?)),
             Val::BinOp((op, lh, rh)) => Ok(format!(
-                "({}{}{})",
+                "({} {} {})",
                 lh.as_ref().to_lua()?,
                 op,
                 rh.as_ref().to_lua()?
             )),
+            Val::Table(tbl) => {
+                let mut ls: String = "".to_owned();
+
+                ls.push_str("{");
+
+                let mut it = tbl.arr.iter().peekable();
+
+                while let Some(v) = it.next() {
+                    if v.is_stmt() {
+                        ls.push_str(&fnwrap(v.to_lua()?))
+                    } else {
+                        ls.push_str(&v.to_lua()?)
+                    }
+
+                    ls.push_str(",")
+                }
+
+                let mut kv_it_vec: Vec<_> = tbl.kv.iter().collect();
+                kv_it_vec.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+
+                let mut kv_it = kv_it_vec.iter().peekable();
+
+                while let Some((k, v)) = kv_it.next() {
+                    ls.push_str(&format!("{} = {},", k, v.to_lua()?))
+                }
+
+                ls.push_str("}");
+
+                Ok(ls)
+            }
             Val::Do(xs) => {
                 let mut ls: String = "".to_owned();
 

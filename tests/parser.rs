@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod parser_tests {
+    use std::collections::HashMap;
+
     use owl::{
         parser::parse,
-        values::{assn, binop, f, id, num, t, unop, Val},
+        values::{assn, binop, f, id, num, t, unop, Table, Val},
     };
 
     fn res(v: Val) -> Val {
@@ -72,5 +74,16 @@ mod parser_tests {
                 binop("/", num(2), num(2))
             ))
         );
+    }
+
+    #[test]
+    fn it_can_handle_tables() {
+        assert_eq!(
+            parsed("{ 1 2 3 }"),
+            res(Val::Table(Table {
+                kv: HashMap::from([]),
+                arr: vec![num(1), num(2), num(3)]
+            }))
+        )
     }
 }

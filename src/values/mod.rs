@@ -1,4 +1,4 @@
-use std::fmt::format;
+use std::{collections::HashMap, fmt::format};
 
 pub type List = Vec<Box<Val>>;
 pub type Do = Vec<Box<Val>>;
@@ -6,6 +6,21 @@ pub type Block = Vec<Box<Val>>;
 pub type Assignment = (Box<Val>, Box<Val>);
 pub type UnOp = (String, Box<Val>);
 pub type BinOp = (String, Box<Val>, Box<Val>);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Table {
+    pub kv: HashMap<String, Val>,
+    pub arr: Vec<Val>,
+}
+
+impl Table {
+    pub fn new() -> Table {
+        Table {
+            kv: HashMap::new(),
+            arr: Vec::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
@@ -20,6 +35,8 @@ pub enum Val {
     Assignment(Assignment),
     BinOp(BinOp),
     UnOp(UnOp),
+    Table(Table),
+    Field(String, Box<Val>),
 }
 
 impl Val {

@@ -38,4 +38,56 @@ mod transpiler_tests {
                 .xx()
         )
     }
+
+    #[test]
+    fn it_can_transpile_nested_expressions() {
+        assert_eq!(
+            "(3 * (2 - a)) + (2 / 2)".to_lua().unwrap(),
+            "
+            |(function()
+            |return ((3 * (2 - a)) + (2 / 2))
+            | end)()"
+                .xx()
+        );
+        assert_eq!(
+            "(3 * (2 - a)) + 2 / 3.124".to_lua().unwrap(),
+            "
+            |(function()
+            |return ((3 * (2 - a)) + (2 / 3.124))
+            | end)()"
+                .xx()
+        )
+    }
+
+    #[test]
+    fn it_can_transpile_tables() {
+        assert_eq!(
+            "{1 2 3}".to_lua().unwrap(),
+            "
+            |(function()
+            |return {1,2,3,}
+            | end)()"
+                .xx()
+        );
+
+        assert_eq!(
+            "{ a = 123 }".to_lua().unwrap(),
+            "
+            |(function()
+            |return {a = 123,}
+            | end)()"
+                .xx()
+        );
+
+        assert_eq!(
+            "{ a = 123
+               b = test
+               1 2 3 }".to_lua().unwrap(),
+            "
+            |(function()
+            |return {1,2,3,a = 123,b = test,}
+            | end)()"
+                .xx()
+        );
+    }
 }

@@ -1,8 +1,8 @@
 script = { SOI ~ block ~ EOI }
 
 WHITESPACE = _{ " " | NEWLINE | "\t" }
-// COMMENT    = _{ "--" ~ (!newline ~ ANY)* }
-// newline    = _{ "\n" | "\r\n" }
+COMMENT    = _{ "--" ~ (!newline ~ ANY)* }
+newline    = _{ "\n" | "\r\n" }
 
 block   = { stmt* }
 doblock = { "do" ~ block ~ "end" }
@@ -15,9 +15,20 @@ boolean  = @{ "true" | "false" }
 
 assignment = { ident ~ "=" ~ exp }
 
+table = {
+    "{" ~ field* ~ "}"
+}
+
+field = {
+  //   "[" ~ exp ~ "]" ~ "=" ~ exp
+  | ident ~ "=" ~ exp
+  | exp
+}
+
 value = {
     boolean
   | number
+  | table
   | !"not" ~ ident
   | "(" ~ exp ~ ")"
 }

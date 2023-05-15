@@ -1,3 +1,3 @@
 (function()
-return ((3*(2-a))+(2/2))
+return {a = 123,b = test,}
  end)()

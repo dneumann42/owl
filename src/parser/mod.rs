@@ -5,7 +5,7 @@ use pest::{
 };
 use pest_derive::Parser;
 
-use crate::values::{is_none, not_none, Assignment, Val};
+use crate::values::{is_none, not_none, Assignment, Table, Val};
 
 #[derive(Parser)]
 #[grammar = "parser/owl.pest"]
@@ -97,7 +97,7 @@ fn handle_ident(r: Pair<Rule>) -> Val {
 
 fn handle_rule(r: Pair<Rule>) -> Val {
     match r.as_rule() {
-        Rule::EOI | Rule::WHITESPACE => Val::None,
+        Rule::EOI | Rule::WHITESPACE | Rule::COMMENT | Rule::newline => Val::None,
         Rule::script => handle_script(r),
         Rule::exp => handle_expr(r),
         Rule::number => handle_number(r),
@@ -119,6 +119,33 @@ fn handle_rule(r: Pair<Rule>) -> Val {
             let ident = handle_ident(vs[0].clone());
             let exp = handle_expr(vs[1].clone());
             Val::Assignment((ident.into(), exp.into()))
+        }
+        Rule::table => {
+            let mut itr = r.into_inner().into_iter();
+            let mut tbl = Table::new();
+            while let Some(itr) = itr.next() {
+                match itr.as_rule() {
+                    Rule::field => {
+                        let mut itr2 = itr.into_inner();
+                        let n = itr2.next().unwrap();
+                        match n.as_rule() {
+                            Rule::exp => tbl.arr.push(handle_expr(n)),
+                            Rule::ident => {
+                                tbl.kv.insert(
+                                    n.as_str().to_owned(),
+                                    handle_expr(itr2.next().unwrap()),
+                                );
+                            }
+                            v => panic!("{:?}", v),
+                        }
+                    }
+                    _ => todo!(),
+                }
+            }
+            Val::Table(tbl)
+        }
+        Rule::field => {
+            todo!()
         }
     }
 }
