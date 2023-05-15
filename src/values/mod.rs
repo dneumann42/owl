@@ -1,3 +1,10 @@
+use std::fmt::format;
+
+pub type List = Vec<Box<Val>>;
+pub type Do = Vec<Box<Val>>;
+pub type Block = Vec<Box<Val>>;
+pub type Assignment = (Box<Val>, Box<Val>);
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Val {
     None,
@@ -5,10 +12,54 @@ pub enum Val {
     Bool(bool),
     Str(String),
     Ident(String),
-    List(Vec<Box<Val>>),
-    Do(Vec<Box<Val>>),
-    Block(Vec<Box<Val>>),
-    Assignment(Box<Val>, Box<Val>),
+    List(List),
+    Do(Do),
+    Block(Block),
+    Assignment(Assignment),
+}
+
+impl Val {
+    pub fn is_stmt(&self) -> bool {
+        match self {
+            Val::Assignment(_) => true,
+            Val::Block(_) => true,
+            _ => false
+        }
+    }
+}
+
+impl ToString for Val {
+    fn to_string(&self) -> String {
+        match self {
+            Val::Num(n) => n.to_string(),
+            Val::Bool(b) => b.to_string(),
+            v => format!("{:?}", v),
+        }
+    }
+}
+
+impl From<f64> for Val {
+    fn from(value: f64) -> Self {
+        Val::Num(value)
+    }
+}
+
+impl From<bool> for Val {
+    fn from(bool: bool) -> Self {
+        Val::Bool(bool)
+    }
+}
+
+impl From<List> for Val {
+    fn from(value: List) -> Self {
+        Val::List(value)
+    }
+}
+
+impl From<Assignment> for Val {
+    fn from(value: Assignment) -> Self {
+        Val::Assignment(value)
+    }
 }
 
 pub fn is_none(v: &Val) -> bool {

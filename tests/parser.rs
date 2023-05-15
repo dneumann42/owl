@@ -3,15 +3,15 @@ mod parser_tests {
     use owl::{parser::parse, values::Val};
 
     fn res(v: Val) -> Val {
-        Val::Do(vec![Box::from(Val::Block(vec![Box::from(v)]))])
+        Val::Do(vec![Box::from(v)])
     }
 
     fn ress(v: Vec<Box<Val>>) -> Val {
-        Val::Do(vec![Box::from(Val::Block(v))])
+        Val::Do(v)
     }
 
     fn parsed(code: &str) -> Val {
-        parse(code.to_string()).unwrap()
+        parse(&code.to_string()).unwrap()
     }
 
     #[test]
@@ -30,10 +30,10 @@ mod parser_tests {
     fn it_can_parse_assignments() {
         assert_eq!(
             parsed("a = 1"),
-            res(Val::Assignment(
+            res(Val::Assignment((
                 Box::from(Val::Ident("a".to_string())),
                 Box::from(Val::Num(1.0))
-            ))
+            )))
         );
     }
 
@@ -45,14 +45,14 @@ mod parser_tests {
                  b = 2"
             ),
             ress(vec![
-                Box::from(Val::Assignment(
+                Box::from(Val::Assignment((
                     Box::from(Val::Ident("a".to_string())),
                     Box::from(Val::Num(1.0))
-                )),
-                Box::from(Val::Assignment(
+                ))),
+                Box::from(Val::Assignment((
                     Box::from(Val::Ident("b".to_string())),
                     Box::from(Val::Num(2.0))
-                ))
+                )))
             ])
         );
     }

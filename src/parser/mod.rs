@@ -19,14 +19,22 @@ pub enum ParseError {
 // TODO: make these rule handlers return a Result
 
 fn handle_script(r: Pair<Rule>) -> Val {
-    Val::Do(
-        r.into_inner()
-            .into_iter()
-            .map(handle_rule)
-            .filter(not_none)
-            .map(Box::from)
-            .collect(),
-    )
+    let xs: Vec<Box<Val>> = r
+        .into_inner()
+        .into_iter()
+        .map(handle_rule)
+        .filter(not_none)
+        .map(Box::from)
+        .collect();
+
+    if xs.len() == 1 {
+        match &xs[0].as_ref() {
+            &Val::Block(bs) => Val::Do(bs.clone()),
+            _ => Val::Do(xs),
+        }
+    } else {
+        Val::Do(xs)
+    }
 }
 
 fn handle_expr(r: Pair<Rule>) -> Val {
@@ -54,7 +62,8 @@ fn handle_block(r: Pair<Rule>) -> Val {
 }
 
 fn handle_do(r: Pair<Rule>) -> Val {
-    Val::Do(r.into_inner().map(handle_rule).map(Box::from).collect())
+    let xs: Vec<Box<Val>> = r.into_inner().map(handle_rule).map(Box::from).collect();
+    Val::Do(xs)
 }
 
 fn handle_ident(r: Pair<Rule>) -> Val {
@@ -78,7 +87,7 @@ fn handle_rule(r: Pair<Rule>) -> Val {
             let vs: Vec<Pair<Rule>> = r.into_inner().into_iter().collect();
             let ident = handle_ident(vs[0].clone());
             let exp = handle_expr(vs[1].clone());
-            Val::Assignment(ident.into(), exp.into())
+            Val::Assignment((ident.into(), exp.into()))
         }
     }
 }
@@ -99,7 +108,7 @@ pub fn parse_raw(code: &str) -> Result<Pairs<Rule>, Error<Rule>> {
     OwlParser::parse(Rule::script, code)
 }
 
-pub fn parse(code: String) -> Result<Val, ParseError> {
+pub fn parse(code: &String) -> Result<Val, ParseError> {
     parse_raw(code.as_str())
         .map_err(|e| ParseError::Generic(e.to_string()))
         .map(handle_rules)
