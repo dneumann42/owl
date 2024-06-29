@@ -1,11 +1,50 @@
 // Version 1 of the reader
 
 const v = @import("values.zig");
+const std = @import("std");
+const ascii = std.ascii;
 
 pub const Reader = struct {
-    code: *const []u8,
+    allocator: std.mem.Allocator,
+    code: []const u8,
     it: usize,
     end: usize,
+
+    pub fn init(allocator: std.mem.Allocator) Reader {
+        return Reader{ .allocator = allocator, .code = "", .it = 0, .end = 0 };
+    }
+
+    pub fn load(self: *Reader, code: []const u8) void {
+        self.code = code;
+        self.it = 0;
+        self.end = code.len;
+    }
+
+    pub fn init_load(allocator: std.mem.Allocator, code: []const u8) Reader {
+        var reader = Reader.init(allocator);
+        reader.load(code);
+        return reader;
+    }
+
+    pub fn skip_whitespace(self: *Reader) void {
+        while (!self.at_eof() and ascii.isWhitespace(self.chr())) {
+            self.next();
+        }
+    }
+
+    pub fn next(self: *Reader) void {
+        self.it += 1;
+    }
+
+    pub fn chr(self: *Reader) u8 {
+        if (self.at_eof())
+            return 0;
+        return self.code[self.it];
+    }
+
+    pub fn at_eof(self: *Reader) bool {
+        return self.it >= self.end;
+    }
 
     // program = {expression};
     pub fn read_program() v.Value {}
@@ -116,7 +155,6 @@ pub const Reader = struct {
     pub fn read_symbol() v.Value {}
 };
 
-pub fn read(code: *const []u8) v.Value {
-    const reader = Reader{ .code = code, .it = 0, .end = code.len };
-    return reader.read_program();
+pub fn read(allocator: std.mem.Allocator, code: []const u8) v.Value {
+    return Reader.init_load(allocator, code).read_program();
 }
