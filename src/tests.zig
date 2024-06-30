@@ -62,3 +62,11 @@ test "reading string literals" {
     const s = res.value_or_nothing();
     try expect(std.mem.eql(u8, s.string, "Hello, World!"));
 }
+
+test "reading numbers" {
+    var reader = r.Reader.init_load(std.testing.allocator, "123");
+    const res = reader.read_number();
+    defer reader.deinit_result(res);
+    const n = res.value_or_nothing();
+    try expect(n.number == 123.0);
+}

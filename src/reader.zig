@@ -156,10 +156,32 @@ pub const Reader = struct {
     pub fn read_function_call() v.Value {}
 
     // literal = number | string | boolean | list | dictionary;
-    pub fn read_literal() v.Value {}
+    pub fn read_literal(self: *Reader) v.Value {
+        self.skip_whitespace();
+    }
 
     // number = float = digit, {digit}, ".", digit, {digit};
-    pub fn read_number() v.Value {}
+    pub fn read_number(self: *Reader) ParseResult {
+        // for now I just read integers
+        if (!ascii.isDigit(self.chr()))
+            return .no_match;
+        const start = self.it;
+        while (!self.at_eof() and ascii.isDigit(self.chr())) {
+            self.next();
+        }
+        self.next();
+        if (start == self.it)
+            return .no_match;
+        const slice = self.code[start .. self.it - 1];
+        const number: f64 = std.fmt.parseFloat(f64, slice) catch |err| {
+            std.debug.panic("Panicked at Error: {any}", .{err});
+        };
+        const val = self.allocator.create(v.Value) catch |err| {
+            std.debug.panic("Panicked at Error: {any}", .{err});
+        };
+        val.* = .{ .number = number };
+        return .{ .ok = val };
+    }
 
     // string = '"', {any_character}, '"';
     pub fn read_string(self: *Reader) ParseResult {
