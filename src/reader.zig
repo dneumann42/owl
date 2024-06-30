@@ -4,6 +4,20 @@ const v = @import("values.zig");
 const std = @import("std");
 const ascii = std.ascii;
 
+pub const ParseResultType = enum { ok, no_match, invalid };
+pub const ParseResult = union(ParseResultType) {
+    ok: *v.Value,
+    no_match: void,
+    invalid: []const u8,
+
+    pub fn value_or_nothing(self: ParseResult) v.Value {
+        return switch (self) {
+            .ok => |s| s.*,
+            else => .nothing,
+        };
+    }
+};
+
 pub const Reader = struct {
     allocator: std.mem.Allocator,
     code: []const u8,
@@ -12,6 +26,17 @@ pub const Reader = struct {
 
     pub fn init(allocator: std.mem.Allocator) Reader {
         return Reader{ .allocator = allocator, .code = "", .it = 0, .end = 0 };
+    }
+
+    pub fn deinit(self: *Reader, val: *v.Value) void {
+        self.allocator.destroy(val);
+    }
+
+    pub fn deinit_result(self: *Reader, result: ParseResult) void {
+        switch (result) {
+            .ok => |val| self.allocator.destroy(val),
+            else => {},
+        }
     }
 
     pub fn load(self: *Reader, code: []const u8) void {
@@ -140,7 +165,36 @@ pub const Reader = struct {
     pub fn read_string() v.Value {}
 
     // boolean = "true" | "false";
-    pub fn read_boolean() v.Value {}
+    pub fn make_boolean(self: *Reader, b: bool) *v.Value {
+        const val = self.allocator.create(v.Value) catch |err| {
+            std.debug.panic("Panicked at Error: {any}", .{err});
+        };
+        val.* = .{ .boolean = b };
+        return val;
+    }
+    pub fn read_boolean(self: *Reader) ParseResult {
+        const sym = self.read_symbol();
+        defer {
+            switch (sym) {
+                .ok => |vsym| self.allocator.destroy(vsym),
+                else => {
+                    std.debug.panic("Panicked", .{});
+                },
+            }
+        }
+        return switch (sym) {
+            .ok => |b| switch (b.*) {
+                .symbol => |s| if (std.mem.eql(u8, s, "true"))
+                    .{ .ok = self.make_boolean(true) }
+                else if (std.mem.eql(u8, s, "false"))
+                    .{ .ok = self.make_boolean(false) }
+                else
+                    .no_match,
+                else => .no_match,
+            },
+            else => .no_match,
+        };
+    }
 
     // list = "[", [expression, {",", expression}], "]";
     pub fn read_list() v.Value {}
@@ -152,7 +206,20 @@ pub const Reader = struct {
     pub fn read_key_value_pair() v.Value {}
 
     // symbol
-    pub fn read_symbol() v.Value {}
+    pub fn read_symbol(reader: *Reader) ParseResult {
+        const start = reader.it;
+        while (!reader.at_eof() and !ascii.isWhitespace(reader.chr())) {
+            reader.next();
+        }
+        if (reader.it == start) {
+            return .no_match;
+        }
+        const val = reader.allocator.create(v.Value) catch |err| {
+            std.debug.panic("Panicked at Error: {any}", .{err});
+        };
+        val.* = .{ .symbol = reader.code[start..reader.it] };
+        return .{ .ok = val };
+    }
 };
 
 pub fn read(allocator: std.mem.Allocator, code: []const u8) v.Value {
