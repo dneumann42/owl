@@ -75,13 +75,50 @@ pub const Reader = struct {
     pub fn read_program() v.Value {}
 
     // expression = logical_or
-    pub fn read_expression() v.Value {}
+    pub fn read_expression(self: *Reader) ParseResult {
+        return self.read_binary_logical_or();
+    }
 
     // logical_or = logical_and, {"or", logical_and};
-    pub fn read_binary_logical_or() v.Value {}
+    pub fn read_binary_logical_or(self: *Reader) ParseResult {
+        const pin = self.it;
+        const left_value = switch (self.read_binary_logical_and()) {
+            .ok => |val| val,
+            else => {
+                self.it = pin;
+                return .no_match;
+            },
+        };
+
+        const symbol = switch (self.read_symbol()) {
+            .ok => |s| s,
+            else => {
+                self.it = pin;
+                return .no_match;
+            },
+        };
+
+        if (!std.mem.eql(u8, symbol.symbol, "or")) {
+            self.it = pin;
+            return .no_match;
+        }
+
+        switch (self.read_binary_logical_and()) {
+            .ok => |right_value| {
+                return v.cons(symbol, v.cons(left_value, v.cons(right_value, null)));
+            },
+            else => {
+                self.it = pin;
+                return .no_match;
+            },
+        }
+    }
 
     // logical_and = equality, {"or", logical_equality};
-    pub fn read_binary_logical_end() v.Value {}
+    pub fn read_binary_logical_and(self: *Reader) ParseResult {
+        _ = self;
+        return .no_match;
+    }
 
     // equality = comparison, {("==" | "!="), comparison};
     pub fn read_equality() v.Value {}
@@ -156,8 +193,25 @@ pub const Reader = struct {
     pub fn read_function_call() v.Value {}
 
     // literal = number | string | boolean | list | dictionary;
-    pub fn read_literal(self: *Reader) v.Value {
+    pub fn read_literal(self: *Reader) ParseResult {
         self.skip_whitespace();
+
+        switch (self.read_number()) {
+            .ok => |n| return .{ .ok = n },
+            else => {},
+        }
+
+        switch (self.read_string()) {
+            .ok => |s| return .{ .ok = s },
+            else => {},
+        }
+
+        switch (self.read_boolean()) {
+            .ok => |b| return .{ .ok = b },
+            else => {},
+        }
+
+        return .no_match;
     }
 
     // number = float = digit, {digit}, ".", digit, {digit};
@@ -212,6 +266,7 @@ pub const Reader = struct {
         return val;
     }
     pub fn read_boolean(self: *Reader) ParseResult {
+        const start = self.it;
         const sym = self.read_symbol();
         defer self.deinit_result(sym);
         return switch (sym) {
@@ -220,16 +275,27 @@ pub const Reader = struct {
                     .{ .ok = self.make_boolean(true) }
                 else if (std.mem.eql(u8, s, "false"))
                     .{ .ok = self.make_boolean(false) }
-                else
-                    .no_match,
-                else => .no_match,
+                else {
+                    self.it = start;
+                    return .no_match;
+                },
+                else => {
+                    self.it = start;
+                    return .no_match;
+                },
             },
             else => .no_match,
         };
     }
 
     // list = "[", [expression, {",", expression}], "]";
-    pub fn read_list() v.Value {}
+    pub fn read_list(reader: *Reader) ParseResult {
+        if (reader.chr() != '[') {
+            return .no_match;
+        }
+        //
+        return .no_match;
+    }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
     pub fn read_dictionary() v.Value {}
