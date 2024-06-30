@@ -4,19 +4,7 @@ const v = @import("values.zig");
 const std = @import("std");
 const ascii = std.ascii;
 
-pub const ParseResultType = enum { ok, no_match, invalid };
-pub const ParseResult = union(ParseResultType) {
-    ok: *v.Value,
-    no_match: void,
-    invalid: []const u8,
-
-    pub fn value_or_nothing(self: ParseResult) v.Value {
-        return switch (self) {
-            .ok => |s| s.*,
-            else => .nothing,
-        };
-    }
-};
+const ParseError = error{ NoMatch, Invalid };
 
 pub const Reader = struct {
     allocator: std.mem.Allocator,
@@ -30,13 +18,6 @@ pub const Reader = struct {
 
     pub fn deinit(self: *Reader, val: *v.Value) void {
         self.allocator.destroy(val);
-    }
-
-    pub fn deinit_result(self: *Reader, result: ParseResult) void {
-        switch (result) {
-            .ok => |val| self.allocator.destroy(val),
-            else => {},
-        }
     }
 
     pub fn load(self: *Reader, code: []const u8) void {
@@ -75,49 +56,47 @@ pub const Reader = struct {
     pub fn read_program() v.Value {}
 
     // expression = logical_or
-    pub fn read_expression(self: *Reader) ParseResult {
+    pub fn read_expression(self: *Reader) ParseError!*v.Value {
         return self.read_binary_logical_or();
     }
 
     // logical_or = logical_and, {"or", logical_and};
-    pub fn read_binary_logical_or(self: *Reader) ParseResult {
+    pub fn read_binary_logical_or(self: *Reader) ParseError!*v.Value {
         const pin = self.it;
-        const left_value = switch (self.read_binary_logical_and()) {
-            .ok => |val| val,
+
+        const left_value = self.read_binary_logical_and() catch |err| switch (err) {
             else => {
                 self.it = pin;
-                return .no_match;
+                return error.NoMatch;
             },
         };
 
-        const symbol = switch (self.read_symbol()) {
-            .ok => |s| s,
+        const symbol = self.read_symbol() catch |err| switch (err) {
             else => {
                 self.it = pin;
-                return .no_match;
+                return error.NoMatch;
             },
         };
 
         if (!std.mem.eql(u8, symbol.symbol, "or")) {
             self.it = pin;
-            return .no_match;
+            return error.NoMatch;
         }
 
-        switch (self.read_binary_logical_and()) {
-            .ok => |right_value| {
-                return v.cons(symbol, v.cons(left_value, v.cons(right_value, null)));
-            },
+        const right_value = self.read_binary_logical_and() catch |err| switch (err) {
             else => {
                 self.it = pin;
-                return .no_match;
+                return error.NoMatch;
             },
-        }
+        };
+
+        return v.cons(symbol, v.cons(left_value, v.cons(right_value, null)));
     }
 
     // logical_and = equality, {"or", logical_equality};
-    pub fn read_binary_logical_and(self: *Reader) ParseResult {
+    pub fn read_binary_logical_and(self: *Reader) ParseError!*v.Value {
         _ = self;
-        return .no_match;
+        return error.NoMatch;
     }
 
     // equality = comparison, {("==" | "!="), comparison};
@@ -193,39 +172,31 @@ pub const Reader = struct {
     pub fn read_function_call() v.Value {}
 
     // literal = number | string | boolean | list | dictionary;
-    pub fn read_literal(self: *Reader) ParseResult {
+    pub fn read_literal(self: *Reader) ParseError!*v.Value {
         self.skip_whitespace();
 
         switch (self.read_number()) {
-            .ok => |n| return .{ .ok = n },
+            *v.Value => |n| return n.*,
             else => {},
         }
 
-        switch (self.read_string()) {
-            .ok => |s| return .{ .ok = s },
-            else => {},
-        }
-
-        switch (self.read_boolean()) {
-            .ok => |b| return .{ .ok = b },
-            else => {},
-        }
+        // TODO
 
         return .no_match;
     }
 
     // number = float = digit, {digit}, ".", digit, {digit};
-    pub fn read_number(self: *Reader) ParseResult {
+    pub fn read_number(self: *Reader) ParseError!*v.Value {
         // for now I just read integers
         if (!ascii.isDigit(self.chr()))
-            return .no_match;
+            return error.NoMatch;
         const start = self.it;
         while (!self.at_eof() and ascii.isDigit(self.chr())) {
             self.next();
         }
         self.next();
         if (start == self.it)
-            return .no_match;
+            return error.NoMatch;
         const slice = self.code[start .. self.it - 1];
         const number: f64 = std.fmt.parseFloat(f64, slice) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
@@ -234,13 +205,13 @@ pub const Reader = struct {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
         val.* = .{ .number = number };
-        return .{ .ok = val };
+        return val;
     }
 
     // string = '"', {any_character}, '"';
-    pub fn read_string(self: *Reader) ParseResult {
+    pub fn read_string(self: *Reader) ParseError!*v.Value {
         if (self.chr() != '"') {
-            return .no_match;
+            return error.NoMatch;
         }
         const start = self.it + 1;
         while (!self.at_eof()) {
@@ -254,7 +225,7 @@ pub const Reader = struct {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
         val.* = .{ .string = self.code[start .. self.it - 1] };
-        return .{ .ok = val };
+        return val;
     }
 
     // boolean = "true" | "false";
@@ -265,36 +236,38 @@ pub const Reader = struct {
         val.* = .{ .boolean = b };
         return val;
     }
-    pub fn read_boolean(self: *Reader) ParseResult {
+    pub fn read_boolean(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const sym = self.read_symbol();
-        defer self.deinit_result(sym);
-        return switch (sym) {
-            .ok => |b| switch (b.*) {
-                .symbol => |s| if (std.mem.eql(u8, s, "true"))
-                    .{ .ok = self.make_boolean(true) }
-                else if (std.mem.eql(u8, s, "false"))
-                    .{ .ok = self.make_boolean(false) }
-                else {
-                    self.it = start;
-                    return .no_match;
-                },
-                else => {
-                    self.it = start;
-                    return .no_match;
-                },
+        const sym = self.read_symbol() catch |err| switch (err) {
+            else => {
+                self.it = start;
+                return error.NoMatch;
             },
-            else => .no_match,
+        };
+        defer self.deinit(sym);
+        return switch (sym.*) {
+            .symbol => |s| if (std.mem.eql(u8, s, "true"))
+                self.make_boolean(true)
+            else if (std.mem.eql(u8, s, "false"))
+                self.make_boolean(false)
+            else {
+                self.it = start;
+                return error.NoMatch;
+            },
+            else => {
+                self.it = start;
+                return error.NoMatch;
+            },
         };
     }
 
     // list = "[", [expression, {",", expression}], "]";
-    pub fn read_list(reader: *Reader) ParseResult {
+    pub fn read_list(reader: *Reader) ParseError!*v.Value {
         if (reader.chr() != '[') {
-            return .no_match;
+            return error.NoMatch;
         }
         //
-        return .no_match;
+        return error.NoMatch;
     }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
@@ -304,19 +277,19 @@ pub const Reader = struct {
     pub fn read_key_value_pair() v.Value {}
 
     // symbol
-    pub fn read_symbol(reader: *Reader) ParseResult {
+    pub fn read_symbol(reader: *Reader) ParseError!*v.Value {
         const start = reader.it;
         while (!reader.at_eof() and !ascii.isWhitespace(reader.chr())) {
             reader.next();
         }
         if (reader.it == start) {
-            return .no_match;
+            return error.NoMatch;
         }
         const val = reader.allocator.create(v.Value) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
         val.* = .{ .symbol = reader.code[start..reader.it] };
-        return .{ .ok = val };
+        return val;
     }
 };
 
