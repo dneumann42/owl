@@ -64,3 +64,18 @@ test "reading numbers" {
     defer reader.deinit(val);
     try expect(val.number == 123.0);
 }
+
+test "reading unary operators" {
+    {
+        var reader = r.Reader.init_load(std.testing.allocator, "-");
+        const val = try reader.read_unary_operator();
+        defer reader.deinit(val);
+        try expect(std.mem.eql(u8, val.symbol, "-"));
+    }
+    {
+        var reader = r.Reader.init_load(std.testing.allocator, "not");
+        const val = try reader.read_unary_operator();
+        defer reader.deinit(val);
+        try expect(std.mem.eql(u8, val.symbol, "not"));
+    }
+}

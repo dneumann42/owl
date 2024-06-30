@@ -60,11 +60,14 @@ pub const Reader = struct {
         return self.read_binary_logical_or();
     }
 
-    // logical_or = logical_and, {"or", logical_and};
-    pub fn read_binary_logical_or(self: *Reader) ParseError!*v.Value {
+    pub fn read_binary_expression(
+        self: *Reader,
+        operator: []const u8,
+        next_parse: fn (self: *Reader) ParseError!*v.Value,
+    ) ParseError!*v.Value {
         const pin = self.it;
 
-        const left_value = self.read_binary_logical_and() catch |err| switch (err) {
+        const left_value = next_parse(self) catch |err| switch (err) {
             else => {
                 self.it = pin;
                 return error.NoMatch;
@@ -78,12 +81,12 @@ pub const Reader = struct {
             },
         };
 
-        if (!std.mem.eql(u8, symbol.symbol, "or")) {
+        if (!std.mem.eql(u8, symbol.symbol, operator)) {
             self.it = pin;
             return error.NoMatch;
         }
 
-        const right_value = self.read_binary_logical_and() catch |err| switch (err) {
+        const right_value = next_parse(self) catch |err| switch (err) {
             else => {
                 self.it = pin;
                 return error.NoMatch;
@@ -93,30 +96,115 @@ pub const Reader = struct {
         return v.cons(symbol, v.cons(left_value, v.cons(right_value, null)));
     }
 
-    // logical_and = equality, {"or", logical_equality};
+    // logical_or = logical_and, {"or", logical_and};
+    pub fn read_binary_logical_or(self: *Reader) ParseError!*v.Value {
+        return self.read_binary_expression("or", self.read_binary_logical_and);
+    }
+
+    // logical_and = equality, {"and", logical_equality};
     pub fn read_binary_logical_and(self: *Reader) ParseError!*v.Value {
-        _ = self;
-        return error.NoMatch;
+        return self.read_binary_expression("and", self.read_equality);
     }
 
     // equality = comparison, {("==" | "!="), comparison};
-    pub fn read_equality() v.Value {}
+    pub fn read_equality(self: *Reader) ParseError!*v.Value {
+        switch (self.read_binary_expression("==", self.read_comparison)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression("!=", self.read_comparison)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        return error.NoMatch;
+    }
 
     // comparison = additive, {("<" | ">" | "<=" | ">="), additive};
-    pub fn read_comparison() v.Value {}
+    pub fn read_comparison(self: *Reader) ParseError!*v.Value {
+        switch (self.read_binary_expression("<", self.read_additive)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression(">", self.read_additive)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression("<=", self.read_additive)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression(">=", self.read_additive)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        return error.NoMatch;
+    }
 
     // additive = multiplicative, {("+" | "-"), multiplicative}
-    pub fn read_additive() v.Value {}
+    pub fn read_additive(self: *Reader) ParseError!v.Value {
+        switch (self.read_binary_expression("+", self.read_multiplicative)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression("-", self.read_multiplicative)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        return error.NoMatch;
+    }
 
     // multiplicative = unary, {("*" | "/"), unary};
-    pub fn read_multiplicative() v.Value {}
+    pub fn read_multiplicative(self: *Reader) ParseError!v.Value {
+        switch (self.read_binary_expression("*", self.read_unary)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        switch (self.read_binary_expression("/", self.read_unary)) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+        return error.NoMatch;
+    }
 
-    // unary = unary_operator, unary
+    // unary = unary_operator, primary
     //       | primary;
-    pub fn read_unary() v.Value {}
+    pub fn read_unary(self: *Reader) ParseError!v.Value {
+        // WIP
+        const op = switch (self.read_unary_operator()) {
+            *v.Value => |n| n.*,
+            else => {},
+        };
+
+        _ = op;
+        return self.read_literal();
+    }
 
     // unary_operator = "-" | "not" | "~" | "'";
-    pub fn read_unary_operator() v.Value {}
+    pub fn read_unary_operator(self: *Reader) ParseError!*v.Value {
+        if (self.chr() == '-' or self.chr() == '~' or self.chr() == '\'') {
+            self.next();
+            const val = self.allocator.create(v.Value) catch |err| {
+                std.debug.panic("Panicked at Error: {any}", .{err});
+            };
+            val.* = .{ .symbol = self.code[self.it - 1 .. self.it] };
+            return val;
+        }
+
+        const pin = self.it;
+        const symbol = self.read_symbol() catch |err| switch (err) {
+            else => {
+                self.it = pin;
+                return error.NoMatch;
+            },
+        };
+
+        if (!std.mem.eql(u8, symbol.symbol, "not")) {
+            self.it = pin;
+            return error.NoMatch;
+        }
+
+        return symbol;
+    }
 
     // primary = literal
     //         | identifier
@@ -130,7 +218,12 @@ pub const Reader = struct {
     //         | return_expression
     //         | assignment
     //         | function_definition;
-    pub fn read_primary() v.Value {}
+    pub fn read_primary(self: *Reader) v.Value {
+        switch (self.read_literal()) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+    }
 
     // function_definition = identifier, parameter_list, ["->" type], block;
     pub fn read_function_definition() v.Value {}
@@ -180,9 +273,17 @@ pub const Reader = struct {
             else => {},
         }
 
-        // TODO
+        switch (self.read_string()) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
 
-        return .no_match;
+        switch (self.read_boolean()) {
+            *v.Value => |n| return n.*,
+            else => {},
+        }
+
+        return error.NoMatch;
     }
 
     // number = float = digit, {digit}, ".", digit, {digit};
