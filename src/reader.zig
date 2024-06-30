@@ -162,7 +162,24 @@ pub const Reader = struct {
     pub fn read_number() v.Value {}
 
     // string = '"', {any_character}, '"';
-    pub fn read_string() v.Value {}
+    pub fn read_string(self: *Reader) ParseResult {
+        if (self.chr() != '"') {
+            return .no_match;
+        }
+        const start = self.it + 1;
+        while (!self.at_eof()) {
+            self.next();
+            if (self.chr() == '"') {
+                self.next();
+                break;
+            }
+        }
+        const val = self.allocator.create(v.Value) catch |err| {
+            std.debug.panic("Panicked at Error: {any}", .{err});
+        };
+        val.* = .{ .string = self.code[start .. self.it - 1] };
+        return .{ .ok = val };
+    }
 
     // boolean = "true" | "false";
     pub fn make_boolean(self: *Reader, b: bool) *v.Value {
@@ -174,14 +191,7 @@ pub const Reader = struct {
     }
     pub fn read_boolean(self: *Reader) ParseResult {
         const sym = self.read_symbol();
-        defer {
-            switch (sym) {
-                .ok => |vsym| self.allocator.destroy(vsym),
-                else => {
-                    std.debug.panic("Panicked", .{});
-                },
-            }
-        }
+        defer self.deinit_result(sym);
         return switch (sym) {
             .ok => |b| switch (b.*) {
                 .symbol => |s| if (std.mem.eql(u8, s, "true"))
