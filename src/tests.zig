@@ -90,3 +90,10 @@ test "reading unary expressions" {
     const n = v.car(v.cdr(val)) orelse unreachable;
     try expect(n.number == 1.0);
 }
+
+test "reading binary expressions" {
+    var reader = r.Reader.init_load(std.testing.allocator, "1 or 1");
+    const val = try reader.read_expression();
+    defer reader.deinit(val);
+    std.debug.print("{}", .{val});
+}
