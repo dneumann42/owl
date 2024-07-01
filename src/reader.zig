@@ -25,7 +25,7 @@ pub const Reader = struct {
                     if (it) |value| {
                         it = value.cons.cdr;
                         if (value.cons.car) |idx_value| {
-                            self.allocator.destroy(idx_value);
+                            self.deinit(idx_value);
                         }
                         self.allocator.destroy(value);
                     }
@@ -80,11 +80,12 @@ pub const Reader = struct {
     pub fn read_binary_expression(
         self: *Reader,
         operator: []const u8,
-        next_parse: fn (self: *Reader) ParseError!*v.Value,
+        left_parse: fn (self: *Reader) ParseError!*v.Value,
+        right_parse: fn (self: *Reader) ParseError!*v.Value,
     ) ParseError!*v.Value {
         var pin = self.it;
 
-        const left_value = next_parse(self) catch {
+        const left_value = left_parse(self) catch {
             self.it = pin;
             return error.NoMatch;
         };
@@ -101,7 +102,7 @@ pub const Reader = struct {
             return left_value;
         }
 
-        const right_value = next_parse(self) catch {
+        const right_value = right_parse(self) catch {
             self.allocator.destroy(symbol);
             self.it = pin;
             return left_value;
@@ -110,61 +111,61 @@ pub const Reader = struct {
         return v.cons(self.allocator, symbol, v.cons(self.allocator, left_value, v.cons(self.allocator, right_value, null)));
     }
 
-    // logical_or = logical_and, {"or", logical_and};
+    // logical_or = logical_and, {"or", logical_or};
     pub fn read_binary_logical_or(self: *Reader) ParseError!*v.Value {
-        return self.read_binary_expression("or", Reader.read_binary_logical_and);
+        return self.read_binary_expression("or", Reader.read_binary_logical_and, Reader.read_binary_logical_or);
     }
 
-    // logical_and = equality, {"and", logical_equality};
+    // logical_and = equality, {"and", logical_and};
     pub fn read_binary_logical_and(self: *Reader) ParseError!*v.Value {
-        return self.read_binary_expression("and", Reader.read_equality);
+        return self.read_binary_expression("and", Reader.read_equality, Reader.read_binary_logical_and);
     }
 
-    // equality = comparison, {("==" | "!="), comparison};
+    // equality = comparison, {("==" | "!="), equality};
     pub fn read_equality(self: *Reader) ParseError!*v.Value {
-        if (self.read_binary_expression("==", Reader.read_comparison)) |n| {
+        if (self.read_binary_expression("==", Reader.read_comparison, Reader.read_equality)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression("!=", Reader.read_comparison)) |n| {
+        if (self.read_binary_expression("!=", Reader.read_comparison, Reader.read_equality)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
     }
 
-    // comparison = additive, {("<" | ">" | "<=" | ">="), additive};
+    // comparison = additive, {("<" | ">" | "<=" | ">="), comparison};
     pub fn read_comparison(self: *Reader) ParseError!*v.Value {
-        if (self.read_binary_expression("<", Reader.read_additive)) |n| {
+        if (self.read_binary_expression("<", Reader.read_additive, Reader.read_comparison)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression(">", Reader.read_additive)) |n| {
+        if (self.read_binary_expression(">", Reader.read_additive, Reader.read_comparison)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression("<=", Reader.read_additive)) |n| {
+        if (self.read_binary_expression("<=", Reader.read_additive, Reader.read_comparison)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression(">=", Reader.read_additive)) |n| {
+        if (self.read_binary_expression(">=", Reader.read_additive, Reader.read_comparison)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
     }
 
-    // additive = multiplicative, {("+" | "-"), multiplicative}
+    // additive = multiplicative, {("+" | "-"), additive}
     pub fn read_additive(self: *Reader) ParseError!*v.Value {
-        if (self.read_binary_expression("+", Reader.read_multiplicative)) |n| {
+        if (self.read_binary_expression("+", Reader.read_multiplicative, Reader.read_additive)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression("-", Reader.read_multiplicative)) |n| {
+        if (self.read_binary_expression("-", Reader.read_multiplicative, Reader.read_additive)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
     }
 
-    // multiplicative = unary, {("*" | "/"), unary};
+    // multiplicative = unary, {("*" | "/"), multiplicative};
     pub fn read_multiplicative(self: *Reader) ParseError!*v.Value {
-        if (self.read_binary_expression("*", Reader.read_unary)) |n| {
+        if (self.read_binary_expression("*", Reader.read_unary, Reader.read_multiplicative)) |n| {
             return n;
         } else |_| {}
-        if (self.read_binary_expression("/", Reader.read_unary)) |n| {
+        if (self.read_binary_expression("/", Reader.read_unary, Reader.read_multiplicative)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;

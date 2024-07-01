@@ -1,4 +1,5 @@
 const std = @import("std");
+const json = std.json;
 
 pub const ValueType = enum { nothing, number, string, symbol, boolean, cons };
 
@@ -28,6 +29,13 @@ pub const Value = union(ValueType) {
 
     pub fn is_false(self: *const Value) bool {
         return !self.is_true();
+    }
+
+    pub fn stringify(allocator: std.mem.Allocator, self: *const Value) ![]const u8 {
+        var string = std.ArrayList(u8).init(allocator);
+        defer string.deinit();
+        try json.stringify(self, .{ .whitespace = .indent_2 }, string.writer());
+        return string.toOwnedSlice();
     }
 };
 

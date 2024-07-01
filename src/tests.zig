@@ -92,8 +92,14 @@ test "reading unary expressions" {
 }
 
 test "reading binary expressions" {
-    var reader = r.Reader.init_load(std.testing.allocator, "1 or 1");
+    var reader = r.Reader.init_load(std.testing.allocator, "1 or 2 or 3");
     const val = try reader.read_expression();
     defer reader.deinit(val);
-    std.debug.print("{}", .{val});
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    const str = try v.Value.stringify(allocator, val);
+    defer allocator.free(str);
+
+    std.debug.print("{s}\n", .{str});
 }
