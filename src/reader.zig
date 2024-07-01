@@ -17,7 +17,23 @@ pub const Reader = struct {
     }
 
     pub fn deinit(self: *Reader, val: *v.Value) void {
-        self.allocator.destroy(val);
+        switch (val.*) {
+            .cons => {
+                var it: ?*v.Value = val;
+                while (it != null) {
+                    if (it) |value| {
+                        it = value.cons.cdr;
+                        if (value.cons.car) |idx_value| {
+                            self.allocator.destroy(idx_value);
+                        }
+                        self.allocator.destroy(value);
+                    }
+                }
+            },
+            else => {
+                self.allocator.destroy(val);
+            },
+        }
     }
 
     pub fn load(self: *Reader, code: []const u8) void {
@@ -168,25 +184,35 @@ pub const Reader = struct {
 
     // unary = unary_operator, primary
     //       | primary;
-    pub fn read_unary(self: *Reader) ParseError!v.Value {
-        // WIP
-        const op = switch (self.read_unary_operator()) {
-            *v.Value => |n| n.*,
-            else => {},
+    pub fn read_unary(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        const op = self.read_unary_operator() catch |err| switch (err) {
+            else => {
+                self.it = start;
+                return error.NoMatch;
+            },
         };
 
-        _ = op;
-        return self.read_literal();
+        const primary = self.read_primary() catch |err| switch (err) {
+            else => {
+                self.it = start;
+                self.allocator.destroy(op);
+                return error.NoMatch;
+            },
+        };
+
+        return v.cons(self.allocator, op, v.cons(self.allocator, primary, null));
     }
 
     // unary_operator = "-" | "not" | "~" | "'";
     pub fn read_unary_operator(self: *Reader) ParseError!*v.Value {
         if (self.chr() == '-' or self.chr() == '~' or self.chr() == '\'') {
-            self.next();
             const val = self.allocator.create(v.Value) catch |err| {
                 std.debug.panic("Panicked at Error: {any}", .{err});
             };
-            val.* = .{ .symbol = self.code[self.it - 1 .. self.it] };
+            const slice = self.code[self.it .. self.it + 1];
+            val.* = .{ .symbol = slice };
+            self.next();
             return val;
         }
 
@@ -207,7 +233,7 @@ pub const Reader = struct {
     }
 
     // primary = literal
-    //         | identifier
+    //         | symbol
     //         | function_call
     //         | list_comprehension
     //         | dict_comprehension
@@ -218,11 +244,17 @@ pub const Reader = struct {
     //         | return_expression
     //         | assignment
     //         | function_definition;
-    pub fn read_primary(self: *Reader) v.Value {
-        switch (self.read_literal()) {
-            *v.Value => |n| return n.*,
-            else => {},
-        }
+    pub fn read_primary(self: *Reader) ParseError!*v.Value {
+        if (self.read_literal()) |value| {
+            return value;
+        } else |_| {}
+
+        if (self.read_symbol()) |value| {
+            return value;
+        } else |_| {}
+
+        // WIP
+        return error.NoMatch;
     }
 
     // function_definition = identifier, parameter_list, ["->" type], block;
@@ -267,23 +299,10 @@ pub const Reader = struct {
     // literal = number | string | boolean | list | dictionary;
     pub fn read_literal(self: *Reader) ParseError!*v.Value {
         self.skip_whitespace();
-
-        switch (self.read_number()) {
-            *v.Value => |n| return n.*,
-            else => {},
-        }
-
-        switch (self.read_string()) {
-            *v.Value => |n| return n.*,
-            else => {},
-        }
-
-        switch (self.read_boolean()) {
-            *v.Value => |n| return n.*,
-            else => {},
-        }
-
-        return error.NoMatch;
+        return self.read_number() catch
+            self.read_string() catch
+            self.read_boolean() catch
+            error.NoMatch;
     }
 
     // number = float = digit, {digit}, ".", digit, {digit};

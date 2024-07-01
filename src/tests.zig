@@ -1,5 +1,6 @@
 const std = @import("std");
 const r = @import("reader.zig");
+const v = @import("values.zig");
 const expect = std.testing.expect;
 
 test "skipping whitespace" {
@@ -78,4 +79,14 @@ test "reading unary operators" {
         defer reader.deinit(val);
         try expect(std.mem.eql(u8, val.symbol, "not"));
     }
+}
+
+test "reading unary expressions" {
+    var reader = r.Reader.init_load(std.testing.allocator, "-1");
+    const val = try reader.read_unary();
+    defer reader.deinit(val);
+    const s = v.car(val) orelse unreachable;
+    try expect(std.mem.eql(u8, s.symbol, "-"));
+    const n = v.car(v.cdr(val)) orelse unreachable;
+    try expect(n.number == 1.0);
 }

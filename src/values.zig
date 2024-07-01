@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, list };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
@@ -10,7 +10,7 @@ pub const Value = union(ValueType) {
     string: []const u8,
     symbol: []const u8, // TODO intern
     boolean: bool,
-    list: Cons,
+    cons: Cons,
 
     pub fn is_boolean(self: *const Value) bool {
         return switch (self.*) {
@@ -31,8 +31,26 @@ pub const Value = union(ValueType) {
     }
 };
 
-pub fn cons(allocator: std.mem.Allocator, car: *Value, cdr: *Value) *Value {
-    const cs = allocator.create(Value);
-    cs.* = .{ .cons = .{ .car = car, .cdr = cdr } };
+pub fn cons(allocator: std.mem.Allocator, vcar: ?*Value, vcdr: ?*Value) *Value {
+    const cs = allocator.create(Value) catch |err| {
+        std.debug.panic("Panicked at Error: {any}", .{err});
+    };
+    cs.* = .{ .cons = .{ .car = vcar, .cdr = vcdr } };
     return cs;
+}
+
+pub fn car(v: ?*Value) ?*Value {
+    const val = v orelse return null;
+    return switch (val.*) {
+        .cons => val.cons.car,
+        else => null,
+    };
+}
+
+pub fn cdr(v: ?*Value) ?*Value {
+    const val = v orelse return null;
+    return switch (val.*) {
+        .cons => val.cons.cdr,
+        else => null,
+    };
 }
