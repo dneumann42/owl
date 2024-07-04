@@ -1,7 +1,7 @@
 const std = @import("std");
 const r = @import("reader.zig");
 const v = @import("values.zig");
-const eval = @import("evaluation.zig");
+const e = @import("evaluation.zig");
 const expect = std.testing.expect;
 const a = std.testing.allocator;
 
@@ -130,7 +130,7 @@ test "evaluating symbols" {
     try env.set("hello", n);
     const s = v.Value.sym(a, "hello") catch unreachable;
     defer a.destroy(s);
-    const value = try eval.evaluate(env, s);
+    const value = try e.evaluate(env, s);
     try expect(value.number == 123.0);
 }
 
@@ -141,6 +141,15 @@ test "evaluating code" {
     defer a.destroy(n);
     try env.set("hello", n);
 
-    const value = try eval.eval(env, "hello");
+    const value = try e.eval(env, "hello");
     try expect(value.number == 123.0);
+}
+
+test "evaluating binary expressions" {
+    var env = try v.Environment.init(a);
+    defer env.deinit();
+
+    const value = try e.eval(env, "1 + 2");
+    defer std.testing.allocator.destroy(value);
+    try expect(value.number == 3.0);
 }

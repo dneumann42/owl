@@ -55,6 +55,13 @@ pub const Value = union(ValueType) {
         return !self.is_true();
     }
 
+    pub fn to_number(self: *const Value) f64 {
+        return switch (self.*) {
+            .number => self.number,
+            else => 0.0,
+        };
+    }
+
     pub fn stringify(allocator: std.mem.Allocator, self: *const Value) ![]const u8 {
         var string = std.ArrayList(u8).init(allocator);
         defer string.deinit();
