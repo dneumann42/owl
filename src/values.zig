@@ -39,6 +39,22 @@ pub const Value = union(ValueType) {
     }
 };
 
+pub const Environment = struct {
+    allocator: std.mem.Allocator,
+    next: *Environment,
+    values: std.AutoHashMap,
+
+    pub fn init(allocator: std.mem.Allocator) Environment {
+        return .{ .allocator = allocator, .next = null, .values = std.AutoHashMap([]const u8, Value).init(allocator) };
+    }
+
+    pub fn push(self: *Environment) Environment {
+        var new_environment = Environment.init(self.allocator);
+        new_environment.next = self;
+        return new_environment;
+    }
+};
+
 pub fn cons(allocator: std.mem.Allocator, vcar: ?*Value, vcdr: ?*Value) *Value {
     const cs = allocator.create(Value) catch |err| {
         std.debug.panic("Panicked at Error: {any}", .{err});
