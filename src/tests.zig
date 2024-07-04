@@ -3,14 +3,6 @@ const r = @import("reader.zig");
 const v = @import("values.zig");
 const expect = std.testing.expect;
 
-fn repr(val: *v.Value) void {
-    const gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    const str = v.Value.stringify(allocator, val);
-    defer allocator.free(str);
-    std.debug.print("{}", .{str});
-}
-
 test "skipping whitespace" {
     {
         var reader = r.Reader.init_load(std.testing.allocator, "  \n\t X ");
@@ -113,9 +105,15 @@ test "reading binary expressions" {
     try expect(item2.number == 1.0);
     it = v.cdr(it) orelse unreachable;
 
-    // try expect(std.mem.eql(u8, item3.symbol, "or"));
-    // it = v.cdr(it) orelse unreachable;
+    const item3 = v.car(it) orelse unreachable;
+    try expect(std.mem.eql(u8, item3.symbol, "or"));
+    it = v.cdr(it) orelse unreachable;
 
-    // const item4 = v.car(it) orelse unreachable;
-    // try expect(item4.number == 1.0);
+    const item4 = v.car(it) orelse unreachable;
+    try expect(item4.number == 2.0);
+    it = v.cdr(it) orelse unreachable;
+
+    const item5 = v.car(it) orelse unreachable;
+    try expect(item5.number == 3.0);
+    try expect(v.cdr(it) == null);
 }

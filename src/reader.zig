@@ -108,6 +108,16 @@ pub const Reader = struct {
             return left_value;
         };
 
+        switch (right_value.*) {
+            v.Value.cons => {
+                var op = v.cons(self.allocator, null, null);
+                op.cons.car = symbol;
+                op.cons.cdr = v.cons(self.allocator, left_value, right_value);
+                return op;
+            },
+            else => {},
+        }
+
         return v.cons(self.allocator, symbol, v.cons(self.allocator, left_value, v.cons(self.allocator, right_value, null)));
     }
 

@@ -62,3 +62,11 @@ pub fn cdr(v: ?*Value) ?*Value {
         else => null,
     };
 }
+
+pub fn repr(val: *Value) void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    const str = Value.stringify(allocator, val) catch return;
+    defer allocator.free(str);
+    std.debug.print("{s}\n", .{str});
+}
