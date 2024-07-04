@@ -58,21 +58,63 @@ pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) !*v.Value {
-    _ = env;
-    _ = args;
-    return error.InvalidValue;
+    var it = args;
+    var total: f64 = 1.0;
+    while (it) |c| {
+        if (c.cons.car) |value| {
+            const adder = try evaluate(env, value);
+            total *= adder.to_number();
+        }
+        it = c.cons.cdr;
+    }
+    const n = v.Value.num(env.allocator, total) catch {
+        return error.InvalidValue;
+    };
+    return n;
 }
 
 pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) !*v.Value {
-    _ = env;
-    _ = args;
-    return error.InvalidValue;
+    var it = args;
+    var total: f64 = undefined;
+    var idx = 0;
+    while (it) |c| {
+        if (c.cons.car) |value| {
+            const other = try evaluate(env, value);
+            if (idx == 0) {
+                total = other.to_number();
+            } else {
+                total -= other.to_number();
+            }
+        }
+        it = c.cons.cdr;
+        idx += 1;
+    }
+    const n = v.Value.num(env.allocator, total) catch {
+        return error.InvalidValue;
+    };
+    return n;
 }
 
 pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) !*v.Value {
-    _ = env;
-    _ = args;
-    return error.InvalidValue;
+    var it = args;
+    var total: f64 = undefined;
+    var idx = 0;
+    while (it) |c| {
+        if (c.cons.car) |value| {
+            const other = try evaluate(env, value);
+            if (idx == 0) {
+                total = other.to_number();
+            } else {
+                total /= other.to_number();
+            }
+        }
+        it = c.cons.cdr;
+        idx += 1;
+    }
+    const n = v.Value.num(env.allocator, total) catch {
+        return error.InvalidValue;
+    };
+    return n;
 }
 
 pub fn evaluate_call(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Value {
