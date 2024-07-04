@@ -13,6 +13,30 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
 
+    pub fn num(allocator: std.mem.Allocator, n: f64) !*Value {
+        const v = try allocator.create(Value);
+        v.* = .{ .number = n };
+        return v;
+    }
+
+    pub fn sym(allocator: std.mem.Allocator, s: []const u8) !*Value {
+        const v = try allocator.create(Value);
+        v.* = .{ .symbol = s };
+        return v;
+    }
+
+    pub fn True(allocator: std.mem.Allocator) *Value {
+        const v = allocator.create(Value);
+        v.* = .{ .boolean = true };
+        return v;
+    }
+
+    pub fn False(allocator: std.mem.Allocator) *Value {
+        const v = allocator.create(Value);
+        v.* = .{ .boolean = false };
+        return v;
+    }
+
     pub fn is_boolean(self: *const Value) bool {
         return switch (self.*) {
             .boolean => true,
@@ -39,19 +63,49 @@ pub const Value = union(ValueType) {
     }
 };
 
+// Environment does not own the values and will not free them
 pub const Environment = struct {
     allocator: std.mem.Allocator,
-    next: *Environment,
-    values: std.AutoHashMap,
+    next: ?*Environment,
+    values: std.StringHashMap(*Value),
 
-    pub fn init(allocator: std.mem.Allocator) Environment {
-        return .{ .allocator = allocator, .next = null, .values = std.AutoHashMap([]const u8, Value).init(allocator) };
+    pub fn init(allocator: std.mem.Allocator) !*Environment {
+        const e = try allocator.create(Environment);
+        e.* = .{ .allocator = allocator, .next = null, .values = std.StringHashMap(*Value).init(allocator) };
+        return e;
+    }
+
+    pub fn deinit(self: *Environment) void {
+        self.values.deinit();
+        var allocator = self.allocator;
+        allocator.destroy(self);
+
+        // defer self.allocator.destroy(self);
+        // if (self.next) |n| {
+        //     n.deinit();
+        // }
     }
 
     pub fn push(self: *Environment) Environment {
         var new_environment = Environment.init(self.allocator);
         new_environment.next = self;
         return new_environment;
+    }
+
+    pub fn find(self: *Environment, key: []const u8) ?*Value {
+        if (self.values.get(key)) |v| {
+            return v;
+        }
+
+        if (self.next != null) {
+            return self.next.?.find(key);
+        }
+
+        return null;
+    }
+
+    pub fn set(self: *Environment, key: []const u8, val: *Value) !void {
+        try self.values.put(key, val);
     }
 };
 
