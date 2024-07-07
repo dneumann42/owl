@@ -4,13 +4,21 @@ const std = @import("std");
 
 const EvalError = error{InvalidValue};
 
+pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
+    var reader = r.Reader.init_load(env.allocator, code);
+    const val = try reader.read_expression();
+    return evaluate(env, val);
+}
+
 pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
     return switch (value.*) {
         v.Value.number, v.Value.string, v.Value.nothing, v.Value.boolean => value,
         v.Value.symbol => |s| {
             if (env.find(s)) |val| {
+                // for now we will assume that the 'value' has been used and is no longer needed
                 return val;
             } else {
+                std.debug.print("ERROR: '{s}'\n", .{s});
                 return error.InvalidValue;
             }
         },
@@ -45,6 +53,7 @@ pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = 0.0;
     while (it) |c| {
+        v.repr(c);
         if (c.cons.car) |value| {
             const adder = try evaluate(env, value);
             total += adder.to_number();
@@ -57,7 +66,7 @@ pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     return n;
 }
 
-pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) !*v.Value {
+pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = 1.0;
     while (it) |c| {
@@ -73,10 +82,10 @@ pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) !*v.Value {
     return n;
 }
 
-pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) !*v.Value {
+pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
-    var idx = 0;
+    var idx: i32 = 0;
     while (it) |c| {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
@@ -95,10 +104,10 @@ pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) !*v.Value {
     return n;
 }
 
-pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) !*v.Value {
+pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
-    var idx = 0;
+    var idx: i32 = 0;
     while (it) |c| {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
@@ -122,11 +131,4 @@ pub fn evaluate_call(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.V
     _ = call;
     _ = args;
     return error.InvalidValue;
-}
-
-pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
-    var reader = r.Reader.init_load(env.allocator, code);
-    const val = try reader.read_expression();
-    defer reader.deinit(val);
-    return evaluate(env, val);
 }

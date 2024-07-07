@@ -66,6 +66,7 @@ test "reading numbers" {
     const val = try reader.read_number();
     defer reader.deinit(val);
     try expect(val.number == 123.0);
+    try expect(reader.it == 3.0);
 }
 
 test "reading unary operators" {
@@ -121,6 +122,14 @@ test "reading binary expressions" {
 }
 
 // Evaluation Tests
+
+test "evaluating numbers" {
+    var env = try v.Environment.init(a);
+    defer env.deinit();
+    const value = try e.eval(env, "123");
+    defer env.allocator.destroy(value);
+    try expect(value.number == 123.0);
+}
 
 test "evaluating symbols" {
     var env = try v.Environment.init(a);

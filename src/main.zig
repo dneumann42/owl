@@ -3,6 +3,7 @@ const reader = @import("reader.zig");
 const term = @import("terminal.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");
+const gc = @import("garbage.zig");
 
 pub fn repl() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

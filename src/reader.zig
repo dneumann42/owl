@@ -74,7 +74,8 @@ pub const Reader = struct {
 
     // expression = logical_or
     pub fn read_expression(self: *Reader) ParseError!*v.Value {
-        return self.read_binary_logical_or();
+        const n = try self.read_binary_logical_or();
+        return n;
     }
 
     pub fn read_binary_expression(
@@ -90,6 +91,7 @@ pub const Reader = struct {
             return error.NoMatch;
         };
 
+        self.skip_whitespace();
         pin = self.it;
         const symbol = self.read_symbol() catch {
             self.it = pin;
@@ -102,6 +104,7 @@ pub const Reader = struct {
             return left_value;
         }
 
+        self.skip_whitespace();
         const right_value = right_parse(self) catch {
             self.allocator.destroy(symbol);
             self.it = pin;
@@ -112,7 +115,7 @@ pub const Reader = struct {
             v.Value.cons => {
                 var op = v.cons(self.allocator, null, null);
                 op.cons.car = symbol;
-                op.cons.cdr = v.cons(self.allocator, left_value, right_value);
+                op.cons.cdr = v.cons(self.allocator, left_value, v.cons(self.allocator, right_value, null));
                 return op;
             },
             else => {},
@@ -244,9 +247,6 @@ pub const Reader = struct {
         if (self.read_symbol()) |value| {
             return value;
         } else |_| {}
-        if (self.read_number()) |value| {
-            return value;
-        } else |_| {}
 
         // WIP
         return error.NoMatch;
@@ -306,16 +306,17 @@ pub const Reader = struct {
     // number = float = digit, {digit}, ".", digit, {digit};
     pub fn read_number(self: *Reader) ParseError!*v.Value {
         // for now I just read integers
-        if (!ascii.isDigit(self.chr()))
+        if (!ascii.isDigit(self.chr())) {
             return error.NoMatch;
+        }
         const start = self.it;
         while (!self.at_eof() and ascii.isDigit(self.chr())) {
             self.next();
         }
-        self.next();
-        if (start == self.it)
+        if (start == self.it) {
             return error.NoMatch;
-        const slice = self.code[start .. self.it - 1];
+        }
+        const slice = self.code[start..self.it];
         const number: f64 = std.fmt.parseFloat(f64, slice) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
@@ -397,6 +398,9 @@ pub const Reader = struct {
     // symbol
     pub fn read_symbol(reader: *Reader) ParseError!*v.Value {
         const start = reader.it;
+        if (ascii.isDigit(reader.chr())) {
+            return error.NoMatch;
+        }
         while (!reader.at_eof() and !ascii.isWhitespace(reader.chr())) {
             reader.next();
         }
