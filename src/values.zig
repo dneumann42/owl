@@ -48,7 +48,7 @@ pub const Value = union(ValueType) {
         return !self.is_true();
     }
 
-    pub fn to_number(self: *const Value) f64 {
+    pub fn toNumber(self: *const Value) f64 {
         return switch (self.*) {
             .number => self.number,
             else => 0.0,

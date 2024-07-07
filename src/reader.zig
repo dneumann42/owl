@@ -229,8 +229,8 @@ pub const Reader = struct {
     }
 
     // primary = literal
-    //         | symbol
     //         | function_call
+    //         | symbol
     //         | list_comprehension
     //         | dict_comprehension
     //         | "(", expression, ")"
@@ -244,10 +244,12 @@ pub const Reader = struct {
         if (self.readLiteral()) |value| {
             return value;
         } else |_| {}
+        if (self.readFunctionCall()) |value| {
+            return value;
+        } else |_| {}
         if (self.readSymbol()) |value| {
             return value;
         } else |_| {}
-
         // WIP
         return error.NoMatch;
     }

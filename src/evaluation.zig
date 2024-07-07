@@ -5,8 +5,8 @@ const std = @import("std");
 const EvalError = error{InvalidValue};
 
 pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
-    var reader = r.Reader.init_load(env.gc, code);
-    const val = try reader.read_expression();
+    var reader = r.Reader.initLoad(env.gc, code);
+    const val = try reader.readExpression();
     return evaluate(env, val);
 }
 
@@ -27,16 +27,20 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
                 switch (car.*) {
                     .symbol => {
                         if (std.mem.eql(u8, car.symbol, "+")) {
-                            return evaluate_add(env, list.cdr);
+                            return evaluateAdd(env, list.cdr);
                         } else if (std.mem.eql(u8, car.symbol, "-")) {
-                            return evaluate_sub(env, list.cdr);
+                            return evaluateSub(env, list.cdr);
                         } else if (std.mem.eql(u8, car.symbol, "*")) {
-                            return evaluate_mul(env, list.cdr);
+                            return evaluateMul(env, list.cdr);
                         } else if (std.mem.eql(u8, car.symbol, "/")) {
-                            return evaluate_div(env, list.cdr);
+                            return evaluateDiv(env, list.cdr);
+                        } else if (std.mem.eql(u8, car.symbol, "echo")) {
+                            const val = list.cdr orelse unreachable;
+                            v.repr(val);
+                            return value;
                         } else {
                             const call = env.find(car.symbol) orelse return error.InvalidValue;
-                            return evaluate_call(env, call, list.cdr);
+                            return evaluateCall(env, call, list.cdr);
                         }
                     },
                     else => {
@@ -49,14 +53,14 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
     };
 }
 
-pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = 0.0;
     while (it) |c| {
         v.repr(c);
         if (c.cons.car) |value| {
             const adder = try evaluate(env, value);
-            total += adder.to_number();
+            total += adder.toNumber();
         }
         it = c.cons.cdr;
     }
@@ -66,13 +70,13 @@ pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     return n;
 }
 
-pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+pub fn evaluateMul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = 1.0;
     while (it) |c| {
         if (c.cons.car) |value| {
             const adder = try evaluate(env, value);
-            total *= adder.to_number();
+            total *= adder.toNumber();
         }
         it = c.cons.cdr;
     }
@@ -82,7 +86,7 @@ pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     return n;
 }
 
-pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
     var idx: i32 = 0;
@@ -90,9 +94,9 @@ pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
             if (idx == 0) {
-                total = other.to_number();
+                total = other.toNumber();
             } else {
-                total -= other.to_number();
+                total -= other.toNumber();
             }
         }
         it = c.cons.cdr;
@@ -104,7 +108,7 @@ pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     return n;
 }
 
-pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
     var idx: i32 = 0;
@@ -112,9 +116,9 @@ pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
             if (idx == 0) {
-                total = other.to_number();
+                total = other.toNumber();
             } else {
-                total /= other.to_number();
+                total /= other.toNumber();
             }
         }
         it = c.cons.cdr;
@@ -126,7 +130,7 @@ pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     return n;
 }
 
-pub fn evaluate_call(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Value {
+pub fn evaluateCall(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Value {
     _ = env;
     _ = call;
     _ = args;
