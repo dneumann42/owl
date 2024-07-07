@@ -1,5 +1,6 @@
 const std = @import("std");
 const json = std.json;
+const gc = @import("gc.zig");
 
 pub const ValueType = enum { nothing, number, string, symbol, boolean, cons };
 
@@ -13,28 +14,20 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
 
-    pub fn num(allocator: std.mem.Allocator, n: f64) !*Value {
-        const v = try allocator.create(Value);
-        v.* = .{ .number = n };
-        return v;
+    pub fn num(g: gc.Gc, n: f64) !*Value {
+        return g.create(.{ .number = n });
     }
 
-    pub fn sym(allocator: std.mem.Allocator, s: []const u8) !*Value {
-        const v = try allocator.create(Value);
-        v.* = .{ .symbol = s };
-        return v;
+    pub fn sym(g: gc.Gc, s: []const u8) !*Value {
+        return g.create(.{ .symbol = s });
     }
 
-    pub fn True(allocator: std.mem.Allocator) *Value {
-        const v = allocator.create(Value);
-        v.* = .{ .boolean = true };
-        return v;
+    pub fn True(g: gc.Gc) !*Value {
+        return g.create(.{ .boolean = true });
     }
 
-    pub fn False(allocator: std.mem.Allocator) *Value {
-        const v = allocator.create(Value);
-        v.* = .{ .boolean = false };
-        return v;
+    pub fn False(g: gc.Gc) !*Value {
+        return g.create(.{ .boolean = false });
     }
 
     pub fn is_boolean(self: *const Value) bool {
@@ -72,25 +65,14 @@ pub const Value = union(ValueType) {
 
 // Environment does not own the values and will not free them
 pub const Environment = struct {
-    allocator: std.mem.Allocator,
+    gc: gc.Gc,
     next: ?*Environment,
     values: std.StringHashMap(*Value),
 
-    pub fn init(allocator: std.mem.Allocator) !*Environment {
-        const e = try allocator.create(Environment);
-        e.* = .{ .allocator = allocator, .next = null, .values = std.StringHashMap(*Value).init(allocator) };
+    pub fn init(g: gc.Gc) !*Environment {
+        const e = try g.allocator.create(Environment);
+        e.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.allocator) };
         return e;
-    }
-
-    pub fn deinit(self: *Environment) void {
-        self.values.deinit();
-        var allocator = self.allocator;
-        allocator.destroy(self);
-
-        // defer self.allocator.destroy(self);
-        // if (self.next) |n| {
-        //     n.deinit();
-        // }
     }
 
     pub fn push(self: *Environment) Environment {
@@ -116,12 +98,10 @@ pub const Environment = struct {
     }
 };
 
-pub fn cons(allocator: std.mem.Allocator, vcar: ?*Value, vcdr: ?*Value) *Value {
-    const cs = allocator.create(Value) catch |err| {
+pub fn cons(g: gc.Gc, vcar: ?*Value, vcdr: ?*Value) *Value {
+    return g.create(.{ .cons = .{ .car = vcar, .cdr = vcdr } }) catch |err| {
         std.debug.panic("Panicked at Error: {any}", .{err});
     };
-    cs.* = .{ .cons = .{ .car = vcar, .cdr = vcdr } };
-    return cs;
 }
 
 pub fn car(v: ?*Value) ?*Value {

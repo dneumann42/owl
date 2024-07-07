@@ -5,7 +5,7 @@ const std = @import("std");
 const EvalError = error{InvalidValue};
 
 pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
-    var reader = r.Reader.init_load(env.allocator, code);
+    var reader = r.Reader.init_load(env.gc, code);
     const val = try reader.read_expression();
     return evaluate(env, val);
 }
@@ -60,7 +60,7 @@ pub fn evaluate_add(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         }
         it = c.cons.cdr;
     }
-    const n = v.Value.num(env.allocator, total) catch {
+    const n = v.Value.num(env.gc, total) catch {
         return error.InvalidValue;
     };
     return n;
@@ -76,7 +76,7 @@ pub fn evaluate_mul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         }
         it = c.cons.cdr;
     }
-    const n = v.Value.num(env.allocator, total) catch {
+    const n = v.Value.num(env.gc, total) catch {
         return error.InvalidValue;
     };
     return n;
@@ -98,7 +98,7 @@ pub fn evaluate_sub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
         idx += 1;
     }
-    const n = v.Value.num(env.allocator, total) catch {
+    const n = v.Value.num(env.gc, total) catch {
         return error.InvalidValue;
     };
     return n;
@@ -120,7 +120,7 @@ pub fn evaluate_div(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
         idx += 1;
     }
-    const n = v.Value.num(env.allocator, total) catch {
+    const n = v.Value.num(env.gc, total) catch {
         return error.InvalidValue;
     };
     return n;

@@ -2,19 +2,20 @@
 
 const v = @import("values.zig");
 const std = @import("std");
+const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
 const ParseError = error{ NoMatch, Invalid };
 
 pub const Reader = struct {
-    allocator: std.mem.Allocator,
+    gc: gc.Gc,
     code: []const u8,
     it: usize,
     end: usize,
 
-    pub fn init(allocator: std.mem.Allocator) Reader {
-        return Reader{ .allocator = allocator, .code = "", .it = 0, .end = 0 };
+    pub fn init(g: gc.Gc) Reader {
+        return Reader{ .gc = g, .code = "", .it = 0, .end = 0 };
     }
 
     pub fn deinit(self: *Reader, val: *v.Value) void {
@@ -27,12 +28,12 @@ pub const Reader = struct {
                         if (value.cons.car) |idx_value| {
                             self.deinit(idx_value);
                         }
-                        self.allocator.destroy(value);
+                        self.gc.destroy(value);
                     }
                 }
             },
             else => {
-                self.allocator.destroy(val);
+                self.gc.destroy(val);
             },
         }
     }
@@ -43,8 +44,8 @@ pub const Reader = struct {
         self.end = code.len;
     }
 
-    pub fn init_load(allocator: std.mem.Allocator, code: []const u8) Reader {
-        var reader = Reader.init(allocator);
+    pub fn init_load(g: gc.Gc, code: []const u8) Reader {
+        var reader = Reader.init(g);
         reader.load(code);
         return reader;
     }
@@ -99,29 +100,29 @@ pub const Reader = struct {
         };
 
         if (!std.mem.eql(u8, symbol.symbol, operator)) {
-            self.allocator.destroy(symbol);
+            self.gc.destroy(symbol);
             self.it = pin;
             return left_value;
         }
 
         self.skip_whitespace();
         const right_value = right_parse(self) catch {
-            self.allocator.destroy(symbol);
+            self.gc.destroy(symbol);
             self.it = pin;
             return left_value;
         };
 
         switch (right_value.*) {
             v.Value.cons => {
-                var op = v.cons(self.allocator, null, null);
+                var op = v.cons(self.gc, null, null);
                 op.cons.car = symbol;
-                op.cons.cdr = v.cons(self.allocator, left_value, v.cons(self.allocator, right_value, null));
+                op.cons.cdr = v.cons(self.gc, left_value, v.cons(self.gc, right_value, null));
                 return op;
             },
             else => {},
         }
 
-        return v.cons(self.allocator, symbol, v.cons(self.allocator, left_value, v.cons(self.allocator, right_value, null)));
+        return v.cons(self.gc, symbol, v.cons(self.gc, left_value, v.cons(self.gc, right_value, null)));
     }
 
     // logical_or = logical_and, {"or", logical_or};
@@ -194,21 +195,20 @@ pub const Reader = struct {
         };
         const primary = self.read_primary() catch {
             self.it = start;
-            self.allocator.destroy(op);
+            self.gc.destroy(op);
             return error.NoMatch;
         };
 
-        return v.cons(self.allocator, op, v.cons(self.allocator, primary, null));
+        return v.cons(self.gc, op, v.cons(self.gc, primary, null));
     }
 
     // unary_operator = "-" | "not" | "~" | "'";
     pub fn read_unary_operator(self: *Reader) ParseError!*v.Value {
         if (self.chr() == '-' or self.chr() == '~' or self.chr() == '\'') {
-            const val = self.allocator.create(v.Value) catch |err| {
+            const slice = self.code[self.it .. self.it + 1];
+            const val = self.gc.create(.{ .symbol = slice }) catch |err| {
                 std.debug.panic("Panicked at Error: {any}", .{err});
             };
-            const slice = self.code[self.it .. self.it + 1];
-            val.* = .{ .symbol = slice };
             self.next();
             return val;
         }
@@ -220,7 +220,7 @@ pub const Reader = struct {
         };
 
         if (!std.mem.eql(u8, symbol.symbol, "not")) {
-            self.allocator.destroy(symbol);
+            self.gc.destroy(symbol);
             self.it = pin;
             return error.NoMatch;
         }
@@ -320,11 +320,9 @@ pub const Reader = struct {
         const number: f64 = std.fmt.parseFloat(f64, slice) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
-        const val = self.allocator.create(v.Value) catch |err| {
+        return self.gc.create(.{ .number = number }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
-        val.* = .{ .number = number };
-        return val;
     }
 
     // string = '"', {any_character}, '"';
@@ -340,20 +338,16 @@ pub const Reader = struct {
                 break;
             }
         }
-        const val = self.allocator.create(v.Value) catch |err| {
+        return self.gc.create(.{ .string = self.code[start .. self.it - 1] }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
-        val.* = .{ .string = self.code[start .. self.it - 1] };
-        return val;
     }
 
     // boolean = "true" | "false";
     pub fn make_boolean(self: *Reader, b: bool) *v.Value {
-        const val = self.allocator.create(v.Value) catch |err| {
+        return self.gc.create(.{ .boolean = b }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
-        val.* = .{ .boolean = b };
-        return val;
     }
     pub fn read_boolean(self: *Reader) ParseError!*v.Value {
         const start = self.it;
@@ -407,11 +401,9 @@ pub const Reader = struct {
         if (reader.it == start) {
             return error.NoMatch;
         }
-        const val = reader.allocator.create(v.Value) catch |err| {
+        return reader.gc.create(.{ .symbol = reader.code[start..reader.it] }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
-        val.* = .{ .symbol = reader.code[start..reader.it] };
-        return val;
     }
 };
 

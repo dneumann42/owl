@@ -3,11 +3,12 @@ const reader = @import("reader.zig");
 const term = @import("terminal.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");
-const gc = @import("garbage.zig");
+const gc = @import("gc.zig");
 
 pub fn repl() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    const g = gc.Gc.init(allocator);
     term.Terminal.clear();
 
     const outw = std.io.getStdOut().writer();
@@ -29,7 +30,7 @@ pub fn repl() !void {
         if (line) |l| {
             const inp_line = std.mem.trimRight(u8, l, "\r\n");
 
-            const env = try v.Environment.init(allocator);
+            const env = try v.Environment.init(g);
             const val = try e.eval(env, inp_line);
 
             std.debug.print("{any}\n", .{val});
@@ -39,4 +40,11 @@ pub fn repl() !void {
 
 pub fn main() !void {
     try repl();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // var g = gc.Gc.init(gpa.allocator());
+    // const num = try g.create();
+    // defer g.destroy(num);
+    // num.* = .{ .number = 1.23 };
+    // const header = gc.Gc.getHeader(num);
+    // std.debug.print("{any}", .{header});
 }
