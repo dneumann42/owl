@@ -15,22 +15,24 @@ pub const Gc = struct {
         // this could store line and meta information
     };
     allocator: std.mem.Allocator,
+    listAllocator: std.mem.Allocator,
     values: std.ArrayList(*v.Value),
 
-    pub fn init(allocator: std.mem.Allocator) Gc {
-        return .{ .allocator = allocator, .values = std.ArrayList(*v.Value).init(allocator) };
+    pub fn init(allocator: std.mem.Allocator, listAllocator: std.mem.Allocator) Gc {
+        return .{ .allocator = allocator, .listAllocator = listAllocator, .values = std.ArrayList(*v.Value).init(listAllocator) };
     }
 
-    pub fn destroy(self: *Gc, value: *v.Value) void {
+    fn destroy(self: *Gc, value: *v.Value) void {
         const pair: *AlignedPair = @fieldParentPtr("value", value);
         self.allocator.destroy(pair);
     }
 
-    pub fn create(self: Gc, default: v.Value) !*v.Value {
+    pub fn create(self: *Gc, default: v.Value) !*v.Value {
         const pair = try self.allocator.create(AlignedPair);
         pair.header = GcHeader{ .marked = false };
         const ptr = &pair.value;
         ptr.* = default;
+        try self.values.append(ptr);
         return ptr;
     }
 
@@ -41,8 +43,9 @@ pub const Gc = struct {
 
     pub fn destroyAll(self: *Gc) void {
         for (self.values.items) |val| {
-            self.allocator.destroy(val);
+            self.destroy(val);
         }
+        self.values.resize(0) catch {};
     }
 
     pub fn mark(self: *Gc, root: *v.Value) void {

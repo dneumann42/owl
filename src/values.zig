@@ -3,7 +3,7 @@ const json = std.json;
 const gc = @import("gc.zig");
 const e = @import("evaluation.zig");
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, nativeFunction };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
@@ -14,25 +14,26 @@ pub const Value = union(ValueType) {
     symbol: []const u8, // TODO intern
     boolean: bool,
     cons: Cons,
+    function: Function,
     nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
-    pub fn num(g: gc.Gc, n: f64) !*Value {
+    pub fn num(g: *gc.Gc, n: f64) !*Value {
         return g.create(.{ .number = n });
     }
 
-    pub fn sym(g: gc.Gc, s: []const u8) !*Value {
+    pub fn sym(g: *gc.Gc, s: []const u8) !*Value {
         return g.create(.{ .symbol = s });
     }
 
-    pub fn nfun(g: gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
+    pub fn nfun(g: *gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
         return g.create(.{ .nativeFunction = f });
     }
 
-    pub fn True(g: gc.Gc) !*Value {
+    pub fn True(g: *gc.Gc) !*Value {
         return g.create(.{ .boolean = true });
     }
 
-    pub fn False(g: gc.Gc) !*Value {
+    pub fn False(g: *gc.Gc) !*Value {
         return g.create(.{ .boolean = false });
     }
 
@@ -77,6 +78,11 @@ pub const Value = union(ValueType) {
     }
 };
 
+pub const Function = struct {
+    body: *Value,
+    params: *Value,
+};
+
 fn preludeEcho(env: *Environment, args0: ?*Value) *Value {
     if (args0) |args| {
         var it: ?*Value = args;
@@ -94,13 +100,13 @@ fn preludeEcho(env: *Environment, args0: ?*Value) *Value {
 
 // Environment does not own the values and will not free them
 pub const Environment = struct {
-    gc: gc.Gc,
+    gc: *gc.Gc,
     next: ?*Environment,
     values: std.StringHashMap(*Value),
 
-    pub fn init(g: gc.Gc) !*Environment {
-        const env = try g.allocator.create(Environment);
-        env.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.allocator) };
+    pub fn init(g: *gc.Gc) !*Environment {
+        const env = try g.listAllocator.create(Environment);
+        env.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.listAllocator) };
 
         try env.set("echo", try Value.nfun(g, preludeEcho));
 
@@ -130,7 +136,7 @@ pub const Environment = struct {
     }
 };
 
-pub fn cons(g: gc.Gc, vcar: ?*Value, vcdr: ?*Value) *Value {
+pub fn cons(g: *gc.Gc, vcar: ?*Value, vcdr: ?*Value) *Value {
     return g.create(.{ .cons = .{ .car = vcar, .cdr = vcdr } }) catch |err| {
         std.debug.panic("Panicked at Error: {any}", .{err});
     };
@@ -153,9 +159,5 @@ pub fn cdr(v: ?*Value) ?*Value {
 }
 
 pub fn repr(val: *Value) void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    const str = Value.stringify(allocator, val) catch return;
-    defer allocator.free(str);
-    std.debug.print("{s}\n", .{str});
+    _ = val;
 }

@@ -30,7 +30,8 @@ pub fn repl() !void {
         if (line) |l| {
             const inp_line = std.mem.trimRight(u8, l, "\r\n");
 
-            const env = try v.Environment.init(g);
+            const env = try v.Environment.init(&g);
+            try env.set("read-value", try v.Value.nfun(env.gc, readValue));
             const val = try e.eval(env, inp_line);
 
             std.debug.print("{any}\n", .{val});
@@ -40,4 +41,18 @@ pub fn repl() !void {
 
 pub fn main() !void {
     try repl();
+}
+
+fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {
+    const args = args0 orelse unreachable;
+    const str = v.car(args) orelse unreachable;
+    return switch (str.*) {
+        v.Value.string => |s| {
+            var r = reader.Reader.initLoad(env.gc, s);
+            return r.readExpression() catch {
+                return str;
+            };
+        },
+        else => str,
+    };
 }

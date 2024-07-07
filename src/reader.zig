@@ -9,12 +9,12 @@ const print = std.debug.print;
 const ParseError = error{ NoMatch, Invalid };
 
 pub const Reader = struct {
-    gc: gc.Gc,
+    gc: *gc.Gc,
     code: []const u8,
     it: usize,
     end: usize,
 
-    pub fn init(g: gc.Gc) Reader {
+    pub fn init(g: *gc.Gc) Reader {
         return Reader{ .gc = g, .code = "", .it = 0, .end = 0 };
     }
 
@@ -28,13 +28,10 @@ pub const Reader = struct {
                         if (value.cons.car) |idx_value| {
                             self.deinit(idx_value);
                         }
-                        self.gc.destroy(value);
                     }
                 }
             },
-            else => {
-                self.gc.destroy(val);
-            },
+            else => {},
         }
     }
 
@@ -44,7 +41,7 @@ pub const Reader = struct {
         self.end = code.len;
     }
 
-    pub fn initLoad(g: gc.Gc, code: []const u8) Reader {
+    pub fn initLoad(g: *gc.Gc, code: []const u8) Reader {
         var reader = Reader.init(g);
         reader.load(code);
         return reader;
@@ -100,14 +97,12 @@ pub const Reader = struct {
         };
 
         if (!std.mem.eql(u8, symbol.symbol, operator)) {
-            self.gc.destroy(symbol);
             self.it = pin;
             return left_value;
         }
 
         self.skipWhitespace();
         const right_value = right_parse(self) catch {
-            self.gc.destroy(symbol);
             self.it = pin;
             return left_value;
         };
@@ -195,7 +190,6 @@ pub const Reader = struct {
         };
         const primary = self.readPrimary() catch {
             self.it = start;
-            self.gc.destroy(op);
             return error.NoMatch;
         };
 
@@ -220,7 +214,6 @@ pub const Reader = struct {
         };
 
         if (!std.mem.eql(u8, symbol.symbol, "not")) {
-            self.gc.destroy(symbol);
             self.it = pin;
             return error.NoMatch;
         }
@@ -250,15 +243,78 @@ pub const Reader = struct {
         if (self.readSymbol()) |value| {
             return value;
         } else |_| {}
+
+        self.skipWhitespace();
+        if (self.chr() == '(') {
+            self.next();
+            const expr = try self.readExpression();
+            self.skipWhitespace();
+            if (self.chr() == ')') {
+                self.next();
+                return expr;
+            }
+        }
+
         // WIP
         return error.NoMatch;
     }
 
-    // function_definition = identifier, parameter_list, ["->" type], block;
-    pub fn readFunctionDefinition() v.Value {}
+    // function_definition = "fun", identifier, parameter_list, ["->" type], block;
+    pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        const symbol = self.readSymbol() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        if (!std.mem.eql(u8, symbol.symbol, "fun")) {
+            self.it = start;
+            return error.NoMatch;
+        }
+        self.skipWhitespace();
+        const literal = self.readSymbol() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        const params = self.readParameterList() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        const body = self.readBlock() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        return self.gc.create(.{ .function = .{ .value = literal, .body = body, .params = params } });
+    }
 
     // parameter_list = "(", [parameter, {",", parameter}], ")";
-    pub fn readParameterList() v.Value {}
+    pub fn readParameterList(self: *Reader) ParseError!*v.Value {
+        var it: ?*v.Value = null;
+        var first = true;
+
+        self.next();
+        while (!self.atEof()) {
+            defer first = false;
+            self.skipWhitespace();
+            if (self.chr() == ')') {
+                self.next();
+                break;
+            }
+            if (self.chr() == ',' and !first) {
+                self.next();
+            } else if (!first) {
+                std.debug.print("Missing comma got: {c}\n", .{self.chr()});
+                return error.NoMatch;
+            }
+            const start2 = self.it;
+            const expr = self.readExpression() catch {
+                self.it = start2;
+                break;
+            };
+            it = v.cons(self.gc, expr, it);
+        }
+
+        return it.reverse();
+    }
 
     // parameter = identifier, ":", type;
     pub fn readParameter() v.Value {}
@@ -276,7 +332,42 @@ pub const Reader = struct {
     pub fn readDictType() v.Value {}
 
     // block = "$(", {expression}, ")";
-    pub fn readBlock() v.Value {}
+    pub fn readBlock(self: *Reader) ParseError!*v.Value {
+        self.skipWhitespace();
+        const start = self.it;
+        if (self.chr() != '$') {
+            return error.NoMatch;
+        }
+        self.next();
+        if (self.chr() != '(') {
+            self.it = start;
+            return error.NoMatch;
+        }
+        self.next();
+
+        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "do" }) catch null, null);
+        while (!self.atEof() and it != null) {
+            self.skipWhitespace();
+            if (self.atEof()) {
+                std.debug.print("Missing closing parenthesis.\n", .{});
+                return error.NoMatch;
+            }
+            if (self.chr() == ')') {
+                self.next();
+                break;
+            }
+            const expr = self.readExpression() catch {
+                self.it = start;
+                break;
+            };
+            it = v.cons(self.gc, expr, it);
+        }
+
+        if (it) |xs| {
+            return xs.reverse();
+        }
+        return error.NoMatch;
+    }
 
     // assignment = "def", identifier, [":", type], "=", expression;
     pub fn readAssignment() v.Value {}

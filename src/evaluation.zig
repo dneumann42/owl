@@ -25,6 +25,9 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
         v.Value.nativeFunction => {
             return value;
         },
+        v.Value.function => {
+            return value;
+        },
         v.Value.cons => |list| {
             if (list.car) |car| {
                 switch (car.*) {

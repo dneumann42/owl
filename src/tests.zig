@@ -5,172 +5,157 @@ const e = @import("evaluation.zig");
 const expect = std.testing.expect;
 const gc = @import("gc.zig");
 
-var G = gc.Gc.init(std.testing.allocator);
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var G = gc.Gc.init(std.testing.allocator, gpa.allocator());
+
+//test "reading blocks" {
+//    var reader = r.Reader.initLoad(&G, " $(a + b + c) ");
+//    const block = try reader.readBlock();
+//    defer G.destroyAll();
+//    v.repr(block);
+//}
 
 test "gc" {
-    var reader = r.Reader.initLoad(G, "echo(1, 2, 3)");
-    const val = try reader.readFunctionCall();
-    defer reader.deinit(val);
-    v.repr(val);
+    const n = try G.create(.{ .number = 42.0 });
+    try expect(n.number == 42.0);
+    G.destroyAll();
 }
 
-// test "skipping whitespace" {
-//     {
-//         var reader = r.Reader.init_load(G, "  \n\t X ");
-//         reader.skip_whitespace();
-//         try expect(reader.chr() == 'X');
-//     }
-//     {
-//         var reader = r.Reader.init_load(G, "  \n\t ");
-//         reader.skip_whitespace();
-//         try expect(reader.at_eof());
-//     }
-// }
-//
-// test "reading symbols" {
-//     {
-//         var reader = r.Reader.init_load(G, "hello");
-//         const val = try reader.read_symbol();
-//         defer reader.deinit(val);
-//         try expect(std.mem.eql(u8, val.symbol, "hello"));
-//         try expect(reader.it == 5);
-//         try expect(reader.at_eof());
-//     }
-//     {
-//         var reader = r.Reader.init_load(G, "hello ");
-//         const val = try reader.read_symbol();
-//         defer reader.deinit(val);
-//         try expect(std.mem.eql(u8, val.symbol, "hello"));
-//         try expect(reader.it == 5);
-//         try expect(!reader.at_eof());
-//     }
-// }
-//
-// test "reading boolean literals" {
-//     {
-//         var reader = r.Reader.init_load(G, "true");
-//         const val = try reader.read_boolean();
-//         defer reader.deinit(val);
-//         try expect(val.is_boolean());
-//         try expect(val.is_true());
-//     }
-//     {
-//         var reader = r.Reader.init_load(G, "false");
-//         const val = try reader.read_boolean();
-//         defer reader.deinit(val);
-//         try expect(val.is_boolean());
-//         try expect(val.is_false());
-//     }
-// }
-//
-// test "reading string literals" {
-//     var reader = r.Reader.init_load(G, "\"Hello, World!\"");
-//     const val = try reader.read_string();
-//     defer reader.deinit(val);
-//     try expect(std.mem.eql(u8, val.string, "Hello, World!"));
-// }
-//
-// test "reading numbers" {
-//     var reader = r.Reader.init_load(G, "123");
-//     const val = try reader.read_number();
-//     defer reader.deinit(val);
-//     try expect(val.number == 123.0);
-//     try expect(reader.it == 3.0);
-// }
-//
-// test "reading unary operators" {
-//     {
-//         var reader = r.Reader.init_load(G, "-");
-//         const val = try reader.read_unary_operator();
-//         defer reader.deinit(val);
-//         try expect(std.mem.eql(u8, val.symbol, "-"));
-//     }
-//     {
-//         var reader = r.Reader.init_load(G, "not");
-//         const val = try reader.read_unary_operator();
-//         defer reader.deinit(val);
-//         try expect(std.mem.eql(u8, val.symbol, "not"));
-//     }
-// }
-//
-// test "reading unary expressions" {
-//     var reader = r.Reader.init_load(G, "-1");
-//     const val = try reader.read_unary();
-//     defer reader.deinit(val);
-//     const s = v.car(val) orelse unreachable;
-//     try expect(std.mem.eql(u8, s.symbol, "-"));
-//     const n = v.car(v.cdr(val)) orelse unreachable;
-//     try expect(n.number == 1.0);
-// }
-//
-// //test "reading binary expressions" {
-// //    var reader = r.Reader.init_load(std.testing.allocator, "1 or 2 or 3");
-// //    const val = try reader.read_expression();
-// //    defer reader.deinit(val);
-// //
-// //    var it = val;
-// //    const item1 = v.car(it) orelse unreachable;
-// //    try expect(std.mem.eql(u8, item1.symbol, "or"));
-// //    it = v.cdr(it) orelse unreachable;
-// //
-// //    const item2 = v.car(it) orelse unreachable;
-// //    try expect(item2.number == 1.0);
-// //    it = v.cdr(it) orelse unreachable;
-// //
-// //    const item3 = v.car(it) orelse unreachable;
-// //    try expect(std.mem.eql(u8, item3.symbol, "or"));
-// //    it = v.cdr(it) orelse unreachable;
-// //
-// //    const item4 = v.car(it) orelse unreachable;
-// //    try expect(item4.number == 2.0);
-// //    it = v.cdr(it) orelse unreachable;
-// //
-// //    const item5 = v.car(it) orelse unreachable;
-// //    try expect(item5.number == 3.0);
-// //    try expect(v.cdr(it) == null);
-// //}
-// //
-// // Evaluation Tests
-//
-// test "evaluating numbers" {
-//     const env = try v.Environment.init(G);
-//     const value = try e.eval(env, "123");
-//     try expect(value.number == 123.0);
-//     G.destroyAll();
-// }
-//
-// test "evaluating symbols" {
-//     const env = try v.Environment.init(G);
-//     const n = v.Value.num(G, 123.0) catch unreachable;
-//     try env.set("hello", n);
-//     const s = v.Value.sym(G, "hello") catch unreachable;
-//     const value = try e.evaluate(env, s);
-//     try expect(value.number == 123.0);
-//     G.destroyAll();
-// }
-//
-// test "evaluating code" {
-//     const env = try v.Environment.init(G);
-//     const n = v.Value.num(G, 123.0) catch unreachable;
-//     try env.set("hello", n);
-//
-//     const value = try e.eval(env, "hello");
-//     try expect(value.number == 123.0);
-//     G.destroyAll();
-// }
-//
-// test "evaluating binary expressions" {
-//     const env = try v.Environment.init(G);
-//     const value = try e.eval(env, "1 + 2");
-//     try expect(value.number == 3.0);
-//     G.destroyAll();
-// }
-//
-// test "garbage collection" {
-//     var g = gc.Gc.init(std.testing.allocator);
-//     const num = try g.create(.{ .number = 1.23 });
-//     try expect(num.number == 1.23);
-//     const header = gc.Gc.getHeader(num);
-//     try expect(header.marked == false);
-//     G.destroyAll();
-// }
+test "skipping whitespace" {
+    {
+        var reader = r.Reader.initLoad(&G, "  \n\t X ");
+        reader.skipWhitespace();
+        try expect(reader.chr() == 'X');
+    }
+    {
+        var reader = r.Reader.initLoad(&G, "  \n\t ");
+        reader.skipWhitespace();
+        try expect(reader.atEof());
+    }
+}
+
+test "reading symbols" {
+    {
+        var reader = r.Reader.initLoad(&G, "hello");
+        const val = try reader.readSymbol();
+        try expect(std.mem.eql(u8, val.symbol, "hello"));
+        try expect(reader.it == 5);
+        try expect(reader.atEof());
+    }
+    {
+        var reader = r.Reader.initLoad(&G, "hello ");
+        const val = try reader.readSymbol();
+        try expect(std.mem.eql(u8, val.symbol, "hello"));
+        try expect(reader.it == 5);
+        try expect(!reader.atEof());
+    }
+    G.destroyAll();
+}
+
+test "reading boolean literals" {
+    {
+        var reader = r.Reader.initLoad(&G, "true");
+        const val = try reader.readBoolean();
+        try expect(val.isBoolean());
+        try expect(val.isTrue());
+    }
+    {
+        var reader = r.Reader.initLoad(&G, "false");
+        const val = try reader.readBoolean();
+        try expect(val.isBoolean());
+        try expect(val.isFalse());
+    }
+    G.destroyAll();
+}
+
+test "reading string literals" {
+    var reader = r.Reader.initLoad(&G, "\"Hello, World!\"");
+    const val = try reader.readString();
+    try expect(std.mem.eql(u8, val.string, "Hello, World!"));
+    G.destroyAll();
+}
+
+test "reading numbers" {
+    var reader = r.Reader.initLoad(&G, "123");
+    const val = try reader.readNumber();
+    try expect(val.number == 123.0);
+    try expect(reader.it == 3.0);
+    G.destroyAll();
+}
+
+test "reading unary operators" {
+    {
+        var reader = r.Reader.initLoad(&G, "-");
+        const val = try reader.readUnaryOperator();
+        try expect(std.mem.eql(u8, val.symbol, "-"));
+    }
+    {
+        var reader = r.Reader.initLoad(&G, "not");
+        const val = try reader.readUnaryOperator();
+        try expect(std.mem.eql(u8, val.symbol, "not"));
+    }
+    G.destroyAll();
+}
+
+test "reading unary expressions" {
+    var reader = r.Reader.initLoad(&G, "-1");
+    const val = try reader.readUnary();
+    const s = v.car(val) orelse unreachable;
+    try expect(std.mem.eql(u8, s.symbol, "-"));
+    const n = v.car(v.cdr(val)) orelse unreachable;
+    try expect(n.number == 1.0);
+    G.destroyAll();
+}
+
+test "reading binary expressions" {
+    var reader = r.Reader.initLoad(&G, "1 or 2 or 3");
+    const exp = try reader.readExpression();
+
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "or"));
+    G.destroyAll();
+}
+
+// Evaluation Tests
+
+test "evaluating numbers" {
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env, "123");
+    try expect(value.number == 123.0);
+    G.destroyAll();
+}
+
+test "evaluating symbols" {
+    const env = try v.Environment.init(&G);
+    const n = v.Value.num(&G, 123.0) catch unreachable;
+    try env.set("hello", n);
+    const s = v.Value.sym(&G, "hello") catch unreachable;
+    const value = try e.evaluate(env, s);
+    try expect(value.number == 123.0);
+    G.destroyAll();
+}
+
+test "evaluating code" {
+    const env = try v.Environment.init(&G);
+    const n = v.Value.num(&G, 123.0) catch unreachable;
+    try env.set("hello", n);
+
+    const value = try e.eval(env, "hello");
+    try expect(value.number == 123.0);
+    G.destroyAll();
+}
+
+test "evaluating binary expressions" {
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env, "1 + 2");
+    try expect(value.number == 3.0);
+    G.destroyAll();
+}
+
+test "garbage collection" {
+    var g = gc.Gc.init(std.testing.allocator, gpa.allocator());
+    defer g.destroyAll();
+    const num = try g.create(.{ .number = 1.23 });
+    try expect(num.number == 1.23);
+    const header = gc.Gc.getHeader(num);
+    try expect(header.marked == false);
+}
