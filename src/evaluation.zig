@@ -22,26 +22,14 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
                 return error.InvalidValue;
             }
         },
+        v.Value.nativeFunction => {
+            return value;
+        },
         v.Value.cons => |list| {
             if (list.car) |car| {
                 switch (car.*) {
                     .symbol => {
-                        if (std.mem.eql(u8, car.symbol, "+")) {
-                            return evaluateAdd(env, list.cdr);
-                        } else if (std.mem.eql(u8, car.symbol, "-")) {
-                            return evaluateSub(env, list.cdr);
-                        } else if (std.mem.eql(u8, car.symbol, "*")) {
-                            return evaluateMul(env, list.cdr);
-                        } else if (std.mem.eql(u8, car.symbol, "/")) {
-                            return evaluateDiv(env, list.cdr);
-                        } else if (std.mem.eql(u8, car.symbol, "echo")) {
-                            const val = list.cdr orelse unreachable;
-                            v.repr(val);
-                            return value;
-                        } else {
-                            const call = env.find(car.symbol) orelse return error.InvalidValue;
-                            return evaluateCall(env, call, list.cdr);
-                        }
+                        return evaluateForms(env, car.symbol, list.cdr);
                     },
                     else => {
                         return error.InvalidValue;
@@ -53,11 +41,25 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
     };
 }
 
+pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.Value {
+    if (std.mem.eql(u8, sym, "+")) {
+        return evaluateAdd(env, args);
+    } else if (std.mem.eql(u8, sym, "-")) {
+        return evaluateSub(env, args);
+    } else if (std.mem.eql(u8, sym, "*")) {
+        return evaluateMul(env, args);
+    } else if (std.mem.eql(u8, sym, "/")) {
+        return evaluateDiv(env, args);
+    } else {
+        const call = env.find(sym) orelse return error.InvalidValue;
+        return evaluateCall(env, call, args);
+    }
+}
+
 pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = 0.0;
     while (it) |c| {
-        v.repr(c);
         if (c.cons.car) |value| {
             const adder = try evaluate(env, value);
             total += adder.toNumber();
@@ -94,6 +96,9 @@ pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
             if (idx == 0) {
+                if (c.cons.cdr == null) {
+                    return v.Value.num(env.gc, -other.toNumber()) catch unreachable;
+                }
                 total = other.toNumber();
             } else {
                 total -= other.toNumber();
@@ -131,8 +136,13 @@ pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluateCall(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Value {
-    _ = env;
-    _ = call;
-    _ = args;
-    return error.InvalidValue;
+    switch (call.*) {
+        v.Value.nativeFunction => |nfun| {
+            return nfun(env, args);
+        },
+        else => {
+            std.debug.print("CALL: {any},  ARGS: {any}", .{ call, args });
+            return error.InvalidValue;
+        },
+    }
 }

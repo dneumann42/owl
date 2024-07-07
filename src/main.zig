@@ -40,11 +40,4 @@ pub fn repl() !void {
 
 pub fn main() !void {
     try repl();
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // var g = gc.Gc.init(gpa.allocator());
-    // const num = try g.create();
-    // defer g.destroy(num);
-    // num.* = .{ .number = 1.23 };
-    // const header = gc.Gc.getHeader(num);
-    // std.debug.print("{any}", .{header});
 }

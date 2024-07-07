@@ -1,8 +1,9 @@
 const std = @import("std");
 const json = std.json;
 const gc = @import("gc.zig");
+const e = @import("evaluation.zig");
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
@@ -13,6 +14,7 @@ pub const Value = union(ValueType) {
     symbol: []const u8, // TODO intern
     boolean: bool,
     cons: Cons,
+    nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
     pub fn num(g: gc.Gc, n: f64) !*Value {
         return g.create(.{ .number = n });
@@ -20,6 +22,10 @@ pub const Value = union(ValueType) {
 
     pub fn sym(g: gc.Gc, s: []const u8) !*Value {
         return g.create(.{ .symbol = s });
+    }
+
+    pub fn nfun(g: gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
+        return g.create(.{ .nativeFunction = f });
     }
 
     pub fn True(g: gc.Gc) !*Value {
@@ -30,22 +36,22 @@ pub const Value = union(ValueType) {
         return g.create(.{ .boolean = false });
     }
 
-    pub fn is_boolean(self: *const Value) bool {
+    pub fn isBoolean(self: *const Value) bool {
         return switch (self.*) {
             .boolean => true,
             else => false,
         };
     }
 
-    pub fn is_true(self: *const Value) bool {
+    pub fn isTrue(self: *const Value) bool {
         return switch (self.*) {
             .boolean => |t| t != false,
             else => true,
         };
     }
 
-    pub fn is_false(self: *const Value) bool {
-        return !self.is_true();
+    pub fn isFalse(self: *const Value) bool {
+        return !self.isTrue();
     }
 
     pub fn toNumber(self: *const Value) f64 {
@@ -53,13 +59,6 @@ pub const Value = union(ValueType) {
             .number => self.number,
             else => 0.0,
         };
-    }
-
-    pub fn stringify(allocator: std.mem.Allocator, self: *const Value) ![]const u8 {
-        var string = std.ArrayList(u8).init(allocator);
-        defer string.deinit();
-        try json.stringify(self, .{ .whitespace = .indent_2 }, string.writer());
-        return string.toOwnedSlice();
     }
 
     pub fn reverse(self: *Value) *Value {
@@ -78,6 +77,21 @@ pub const Value = union(ValueType) {
     }
 };
 
+fn preludeEcho(env: *Environment, args0: ?*Value) *Value {
+    if (args0) |args| {
+        var it: ?*Value = args;
+        while (it != null) {
+            if (it) |value| {
+                const val = e.evaluate(env, value.cons.car orelse unreachable);
+                std.debug.print("{any} ", .{val});
+                it = value.cons.cdr;
+            }
+        }
+    }
+    std.debug.print("\n", .{});
+    return Value.True(env.gc) catch unreachable;
+}
+
 // Environment does not own the values and will not free them
 pub const Environment = struct {
     gc: gc.Gc,
@@ -85,9 +99,12 @@ pub const Environment = struct {
     values: std.StringHashMap(*Value),
 
     pub fn init(g: gc.Gc) !*Environment {
-        const e = try g.allocator.create(Environment);
-        e.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.allocator) };
-        return e;
+        const env = try g.allocator.create(Environment);
+        env.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.allocator) };
+
+        try env.set("echo", try Value.nfun(g, preludeEcho));
+
+        return env;
     }
 
     pub fn push(self: *Environment) Environment {
