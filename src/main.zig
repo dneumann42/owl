@@ -8,7 +8,7 @@ const gc = @import("gc.zig");
 pub fn repl() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    const g = gc.Gc.init(allocator);
+    var g = gc.Gc.init(allocator, allocator);
     term.Terminal.clear();
 
     const outw = std.io.getStdOut().writer();
