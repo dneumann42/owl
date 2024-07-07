@@ -61,6 +61,21 @@ pub const Value = union(ValueType) {
         try json.stringify(self, .{ .whitespace = .indent_2 }, string.writer());
         return string.toOwnedSlice();
     }
+
+    pub fn reverse(self: *Value) *Value {
+        var prev: ?*Value = null;
+        var current: ?*Value = self;
+        while (current) |value| {
+            const next = value.cons.cdr;
+            value.cons.cdr = prev;
+            prev = value;
+            current = next;
+        }
+        if (prev) |value| {
+            return value;
+        }
+        return self;
+    }
 };
 
 // Environment does not own the values and will not free them
