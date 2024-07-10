@@ -5,10 +5,76 @@ const v = @import("values.zig");
 const e = @import("evaluation.zig");
 const gc = @import("gc.zig");
 
-pub fn repl() !void {
+const Cli = struct {
+    run_script: ?[]const u8,
+    new_project: ?NewProject,
+
+    fn should_run_repl(self: @This()) bool {
+        return self.run_script == null;
+    }
+};
+
+const ProjectKind = enum { Library, Binary };
+
+const NewProject = struct {
+    name: []const u8,
+    kind: ProjectKind,
+};
+
+pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    var cli = Cli{ .run_script = null, .new_project = null };
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "run")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Run is missing argument\n", .{});
+                return;
+            }
+            cli.run_script = args[i];
+        } else if (std.mem.eql(u8, arg, "new")) {
+            std.debug.print("TODO!", .{});
+            return;
+        }
+    }
+
+    if (cli.should_run_repl()) {
+        try repl(allocator);
+    }
+    if (cli.run_script) |path| {
+        try runScript(allocator, path);
+    }
+}
+
+pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
+    defer file.close();
+
+    const file_content = try file.readToEndAlloc(allocator, comptime std.math.maxInt(usize));
+    defer allocator.free(file_content);
+
     var g = gc.Gc.init(allocator, allocator);
+    defer g.deinit();
+
+    const env = try v.Environment.init(&g);
+    defer env.deinit();
+
+    const val = try e.eval(env, file_content);
+    std.debug.print("{any}\n", .{val});
+}
+
+pub fn repl(allocator: std.mem.Allocator) !void {
+    var g = gc.Gc.init(allocator, allocator);
+    defer g.deinit();
     term.Terminal.clear();
 
     const outw = std.io.getStdOut().writer();
@@ -37,10 +103,6 @@ pub fn repl() !void {
             std.debug.print("{any}\n", .{val});
         }
     }
-}
-
-pub fn main() !void {
-    try repl();
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {

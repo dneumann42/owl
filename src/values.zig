@@ -114,6 +114,10 @@ pub const Environment = struct {
         return env;
     }
 
+    pub fn deinit(self: *Environment) void {
+        self.gc.listAllocator.destroy(self);
+    }
+
     pub fn push(self: *Environment) Environment {
         var new_environment = Environment.init(self.allocator);
         new_environment.next = self;

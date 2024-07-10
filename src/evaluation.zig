@@ -6,6 +6,7 @@ const EvalError = error{InvalidValue};
 
 pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
     var reader = r.Reader.initLoad(env.gc, code);
+    // TODO: switch to read program once it is built
     const val = try reader.readExpression();
     return evaluate(env, val);
 }

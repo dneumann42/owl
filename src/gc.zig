@@ -22,6 +22,11 @@ pub const Gc = struct {
         return .{ .allocator = allocator, .listAllocator = listAllocator, .values = std.ArrayList(*v.Value).init(listAllocator) };
     }
 
+    pub fn deinit(self: *Gc) void {
+        self.destroyAll();
+        self.values.deinit();
+    }
+
     fn destroy(self: *Gc, value: *v.Value) void {
         const pair: *AlignedPair = @fieldParentPtr("value", value);
         self.allocator.destroy(pair);
