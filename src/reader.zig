@@ -91,7 +91,7 @@ pub const Reader = struct {
 
         self.skipWhitespace();
         pin = self.it;
-        const symbol = self.readSymbol() catch {
+        const symbol = self.readSymbol(false) catch {
             self.it = pin;
             return left_value;
         };
@@ -208,7 +208,7 @@ pub const Reader = struct {
         }
 
         const pin = self.it;
-        const symbol = self.readSymbol() catch {
+        const symbol = self.readSymbol(false) catch {
             self.it = pin;
             return error.NoMatch;
         };
@@ -240,7 +240,7 @@ pub const Reader = struct {
         if (self.readFunctionCall()) |value| {
             return value;
         } else |_| {}
-        if (self.readSymbol()) |value| {
+        if (self.readSymbol(false)) |value| {
             return value;
         } else |_| {}
 
@@ -268,8 +268,7 @@ pub const Reader = struct {
     // function_definition = "fun", identifier, parameter_list, ["->" type], block;
     pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const symbol = self.readSymbol() catch {
-            std.debug.print("HERE?\n", .{});
+        const symbol = self.readSymbol(true) catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -278,7 +277,7 @@ pub const Reader = struct {
             return error.NoMatch;
         }
         self.skipWhitespace();
-        const literal = self.readSymbol() catch {
+        const literal = self.readSymbol(false) catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -399,7 +398,7 @@ pub const Reader = struct {
         self.skipWhitespace();
         const start = self.it;
 
-        const symbol = self.readSymbol() catch {
+        const symbol = self.readSymbol(false) catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -497,7 +496,7 @@ pub const Reader = struct {
     }
     pub fn readBoolean(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const sym = self.readSymbol() catch |err| switch (err) {
+        const sym = self.readSymbol(false) catch |err| switch (err) {
             else => {
                 self.it = start;
                 return error.NoMatch;
@@ -544,7 +543,7 @@ pub const Reader = struct {
         if (std.mem.eql(u8, sym, "for")) return true;
         return false;
     }
-    pub fn readSymbol(reader: *Reader) ParseError!*v.Value {
+    pub fn readSymbol(reader: *Reader, readkeywords: bool) ParseError!*v.Value {
         const start = reader.it;
         if (ascii.isDigit(reader.chr())) {
             return error.NoMatch;
@@ -556,7 +555,7 @@ pub const Reader = struct {
             return error.NoMatch;
         }
         const sym = reader.code[start..reader.it];
-        if (isOwlKeyword(sym)) {
+        if (!readkeywords and isOwlKeyword(sym)) {
             reader.it = start;
             return error.NoMatch;
         }

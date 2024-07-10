@@ -38,14 +38,14 @@ test "skipping whitespace" {
 test "reading symbols" {
     {
         var reader = r.Reader.initLoad(&G, "hello");
-        const val = try reader.readSymbol();
+        const val = try reader.readSymbol(false);
         try expect(std.mem.eql(u8, val.symbol, "hello"));
         try expect(reader.it == 5);
         try expect(reader.atEof());
     }
     {
         var reader = r.Reader.initLoad(&G, "hello ");
-        const val = try reader.readSymbol();
+        const val = try reader.readSymbol(false);
         try expect(std.mem.eql(u8, val.symbol, "hello"));
         try expect(reader.it == 5);
         try expect(!reader.atEof());
@@ -137,8 +137,9 @@ test "reading function definitions" {
     var reader = r.Reader.initLoad(&G, "fun add-1(y) $(y + 1)");
     defer G.destroyAll();
     const exp = try reader.readExpression();
-    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "fun"));
-    try expect(std.mem.eql(u8, exp.cons.cdr.?.cons.car.?.symbol, "add-1"));
+    try expect(std.mem.eql(u8, exp.function.name.symbol, "add-1"));
+    try expect(std.mem.eql(u8, exp.function.params.cons.car.?.symbol, "y"));
+    try expect(std.mem.eql(u8, exp.function.body.cons.car.?.symbol, "do"));
 }
 
 // Evaluation Tests
