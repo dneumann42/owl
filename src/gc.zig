@@ -8,11 +8,11 @@ pub const GcError = error{
 pub const Gc = struct {
     const GcHeader = struct {
         marked: bool,
+        // this could store line and meta information
     };
     const AlignedPair = struct {
         value: v.Value,
         header: GcHeader,
-        // this could store line and meta information
     };
     allocator: std.mem.Allocator,
     listAllocator: std.mem.Allocator,

@@ -255,6 +255,12 @@ pub const Reader = struct {
             }
         }
 
+        // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
+        // so we can get to this point
+        if (self.readFunctionDefinition()) |value| {
+            return value;
+        } else |_| {}
+
         // WIP
         return error.NoMatch;
     }
@@ -263,6 +269,7 @@ pub const Reader = struct {
     pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
         const start = self.it;
         const symbol = self.readSymbol() catch {
+            std.debug.print("HERE?\n", .{});
             self.it = start;
             return error.NoMatch;
         };
@@ -283,7 +290,9 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
-        return self.gc.create(.{ .function = .{ .value = literal, .body = body, .params = params } });
+        return self.gc.create(.{ .function = .{ .name = literal, .body = body, .params = params } }) catch {
+            return error.NoMatch;
+        };
     }
 
     // parameter_list = "(", [parameter, {",", parameter}], ")";
@@ -313,7 +322,11 @@ pub const Reader = struct {
             it = v.cons(self.gc, expr, it);
         }
 
-        return it.reverse();
+        if (it) |list| {
+            return list.reverse();
+        }
+
+        return error.NoMatch;
     }
 
     // parameter = identifier, ":", type;
@@ -372,10 +385,10 @@ pub const Reader = struct {
     // assignment = "def", identifier, [":", type], "=", expression;
     pub fn readAssignment() v.Value {}
 
-    // if_expression = "if", "(", expression, ")", expression, ["else", expression];
+    // if_expression = "if", expression, "then", expression, ["else", expression];
     pub fn readIfExpression() v.Value {}
 
-    // for_expression = "for", "(", identifier, "in", expression, ")", expression;
+    // for_expression = "for", identifier, "in", expression, "do", expression;
     pub fn readForExpression() v.Value {}
 
     // return_expression = "return", expression;
@@ -523,6 +536,14 @@ pub const Reader = struct {
     pub fn readKeyValuePair() v.Value {}
 
     // symbol
+    pub fn isOwlKeyword(sym: []const u8) bool {
+        if (std.mem.eql(u8, sym, "fun")) return true;
+        if (std.mem.eql(u8, sym, "if")) return true;
+        if (std.mem.eql(u8, sym, "then")) return true;
+        if (std.mem.eql(u8, sym, "else")) return true;
+        if (std.mem.eql(u8, sym, "for")) return true;
+        return false;
+    }
     pub fn readSymbol(reader: *Reader) ParseError!*v.Value {
         const start = reader.it;
         if (ascii.isDigit(reader.chr())) {
@@ -534,7 +555,12 @@ pub const Reader = struct {
         if (reader.it == start) {
             return error.NoMatch;
         }
-        return reader.gc.create(.{ .symbol = reader.code[start..reader.it] }) catch |err| {
+        const sym = reader.code[start..reader.it];
+        if (isOwlKeyword(sym)) {
+            reader.it = start;
+            return error.NoMatch;
+        }
+        return reader.gc.create(.{ .symbol = sym }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
     }

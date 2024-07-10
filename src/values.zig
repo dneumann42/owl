@@ -79,6 +79,7 @@ pub const Value = union(ValueType) {
 };
 
 pub const Function = struct {
+    name: *Value,
     body: *Value,
     params: *Value,
 };
