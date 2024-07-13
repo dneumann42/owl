@@ -37,6 +37,33 @@ pub const Value = union(ValueType) {
         return g.create(.{ .boolean = false });
     }
 
+    pub fn toString(self: *const Value, allocator: std.mem.Allocator) ![]const u8 {
+        switch (self.*) {
+            Value.nothing => {
+                return std.fmt.allocPrint(allocator, "None", .{});
+            },
+            Value.symbol => {
+                return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
+            },
+            Value.number => {
+                return std.fmt.allocPrint(allocator, "{d}", .{self.number});
+            },
+            Value.boolean => |b| {
+                const s = if (b) "true" else "false";
+                return std.fmt.allocPrint(allocator, "{s}", .{s});
+            },
+            Value.function => |f| {
+                return std.fmt.allocPrint(allocator, "[fn: {s}]", .{f.name.symbol});
+            },
+            Value.nativeFunction => {
+                return std.fmt.allocPrint(allocator, "[native-fn]", .{});
+            },
+            else => {
+                return std.fmt.allocPrint(allocator, "{any}", .{self.*});
+            },
+        }
+    }
+
     pub fn isBoolean(self: *const Value) bool {
         return switch (self.*) {
             .boolean => true,
@@ -89,11 +116,14 @@ fn preludeEcho(env: *Environment, args0: ?*Value) *Value {
         var it: ?*Value = args;
         while (it != null) {
             if (it) |value| {
-                const val = e.evaluate(env, value.cons.car orelse unreachable);
-                std.debug.print("{any} ", .{val});
+                const val = e.evaluate(env, value.cons.car.?) catch unreachable;
+                const s = val.toString(env.gc.listAllocator) catch unreachable;
+                defer env.gc.listAllocator.free(s);
+                std.debug.print("{s} ", .{s});
                 it = value.cons.cdr;
             }
         }
+        std.debug.print("\n", .{});
     }
     std.debug.print("\n", .{});
     return Value.True(env.gc) catch unreachable;

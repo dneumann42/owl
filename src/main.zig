@@ -99,8 +99,9 @@ pub fn repl(allocator: std.mem.Allocator) !void {
             const env = try v.Environment.init(&g);
             try env.set("read-value", try v.Value.nfun(env.gc, readValue));
             const val = try e.eval(env, inp_line);
-
-            std.debug.print("{any}\n", .{val});
+            const s = try val.toString(allocator);
+            defer allocator.free(s);
+            std.debug.print("{s}\n", .{s});
         }
     }
 }
