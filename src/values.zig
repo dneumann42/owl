@@ -145,6 +145,7 @@ pub const Environment = struct {
     }
 
     pub fn deinit(self: *Environment) void {
+        self.values.deinit();
         self.gc.listAllocator.destroy(self);
     }
 

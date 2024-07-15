@@ -68,12 +68,27 @@ pub const Reader = struct {
     }
 
     // program = {expression};
-    pub fn readProgram() v.Value {}
+    pub fn readProgram(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "do" }) catch null, null);
+        while (!self.atEof() and it != null) {
+            const expr = self.readExpression() catch {
+                self.it = start;
+                break;
+            };
+            it = v.cons(self.gc, expr, it);
+        }
+
+        if (it) |xs| {
+            return xs.reverse();
+        }
+        return error.NoMatch;
+    }
 
     // expression = logical_or
     pub fn readExpression(self: *Reader) ParseError!*v.Value {
-        const n = try self.readBinaryLogicalOr();
-        return n;
+        self.skipWhitespace();
+        return self.readBinaryLogicalOr();
     }
 
     pub fn readBinaryExpression(
@@ -255,6 +270,10 @@ pub const Reader = struct {
             }
         }
 
+        if (self.readBlock()) |value| {
+            return value;
+        } else |_| {}
+
         // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
         // so we can get to this point
         if (self.readFunctionDefinition()) |value| {
@@ -296,6 +315,7 @@ pub const Reader = struct {
 
     // parameter_list = "(", [parameter, {",", parameter}], ")";
     pub fn readParameterList(self: *Reader) ParseError!*v.Value {
+        self.skipWhitespace();
         var it: ?*v.Value = null;
         var first = true;
 

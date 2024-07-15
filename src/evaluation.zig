@@ -6,9 +6,7 @@ const EvalError = error{InvalidValue};
 
 pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
     var reader = r.Reader.initLoad(env.gc, code);
-    // TODO: switch to read program once it is built
-    const val = try reader.readExpression();
-    return evaluate(env, val);
+    return evaluate(env, try reader.readProgram());
 }
 
 pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
@@ -26,7 +24,8 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
         v.Value.nativeFunction => {
             return value;
         },
-        v.Value.function => {
+        v.Value.function => |f| {
+            env.set(f.name.symbol, value) catch return error.InvalidValue;
             return value;
         },
         v.Value.cons => |list| {
@@ -54,10 +53,32 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateMul(env, args);
     } else if (std.mem.eql(u8, sym, "/")) {
         return evaluateDiv(env, args);
+    } else if (std.mem.eql(u8, sym, "do")) {
+        return evaluateDo(env, args);
     } else {
-        const call = env.find(sym) orelse return error.InvalidValue;
+        const call = env.find(sym) orelse {
+            std.debug.print("Undefined identifier '{s}'.\n", .{sym});
+            return error.InvalidValue;
+        };
         return evaluateCall(env, call, args);
     }
+}
+
+pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    var it: ?*v.Value = args;
+    while (it != null) {
+        const value = it.?.cons.car;
+        if (value != null) {
+            const evaluated = try evaluate(env, value.?);
+            it = it.?.cons.cdr;
+            if (it == null) {
+                return evaluated;
+            }
+        } else {
+            it = it.?.cons.cdr;
+        }
+    }
+    return error.InvalidValue;
 }
 
 pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
