@@ -104,15 +104,15 @@ pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 
 pub fn evaluateLessThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
-    const a = arg.cons.car orelse return error.InvalidValue;
-    const b = arg.cons.cdr.?.cons.car orelse return error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.InvalidValue);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.InvalidValue);
     return env.gc.create(.{ .boolean = a.number < b.number }) catch error.InvalidValue;
 }
 
 pub fn evaluateGreaterThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
-    const a = arg.cons.car orelse return error.InvalidValue;
-    const b = arg.cons.cdr.?.cons.car orelse return error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.InvalidValue);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.InvalidValue);
     return env.gc.create(.{ .boolean = a.number > b.number }) catch error.InvalidValue;
 }
 
@@ -220,13 +220,9 @@ pub fn evaluateFunction(env: *v.Environment, call: *const v.Function, args: ?*v.
         var ps: ?*v.Value = call.params;
         while (it != null and ps != null) : (it = it.?.cons.cdr) {
             defer ps = ps.?.cons.cdr;
-            const param = ps.?.cons.car;
-            const value = it.?.cons.car;
-            if (value == null)
-                break;
-            if (param == null)
-                break;
-            next.set(param.?.symbol, value.?) catch return error.InvalidValue;
+            const param = ps.?.cons.car orelse return error.InvalidValue;
+            const value = it.?.cons.car orelse return error.InvalidValue;
+            next.set(param.symbol, try evaluate(next, value)) catch return error.InvalidValue;
         }
     }
 
