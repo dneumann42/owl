@@ -91,9 +91,9 @@ pub const Reader = struct {
         return self.readBinaryLogicalOr();
     }
 
-    pub fn readBinaryExpression(
+    pub fn readBinaryExpression2(
         self: *Reader,
-        operator: []const u8,
+        operators: []const []const u8,
         left_parse: fn (self: *Reader) ParseError!*v.Value,
         right_parse: fn (self: *Reader) ParseError!*v.Value,
     ) ParseError!*v.Value {
@@ -111,7 +111,15 @@ pub const Reader = struct {
             return left_value;
         };
 
-        if (!std.mem.eql(u8, symbol.symbol, operator)) {
+        var operator_match = false;
+        for (operators) |operator| {
+            if (std.mem.eql(u8, symbol.symbol, operator)) {
+                operator_match = true;
+                break;
+            }
+        }
+
+        if (!operator_match) {
             self.it = pin;
             return left_value;
         }
@@ -135,6 +143,15 @@ pub const Reader = struct {
         return v.cons(self.gc, symbol, v.cons(self.gc, left_value, v.cons(self.gc, right_value, null)));
     }
 
+    pub fn readBinaryExpression(
+        self: *Reader,
+        operator: []const u8,
+        left_parse: fn (self: *Reader) ParseError!*v.Value,
+        right_parse: fn (self: *Reader) ParseError!*v.Value,
+    ) ParseError!*v.Value {
+        return readBinaryExpression2(self, &[_][]const u8{operator}, left_parse, right_parse);
+    }
+
     // logical_or = logical_and, {"or", logical_or};
     pub fn readBinaryLogicalOr(self: *Reader) ParseError!*v.Value {
         return self.readBinaryExpression("or", Reader.readBinaryLogicalAnd, Reader.readBinaryLogicalOr);
@@ -147,10 +164,7 @@ pub const Reader = struct {
 
     // equality = comparison, {("==" | "!="), equality};
     pub fn readEquality(self: *Reader) ParseError!*v.Value {
-        if (self.readBinaryExpression("==", Reader.readComparison, Reader.readEquality)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression("!=", Reader.readComparison, Reader.readEquality)) |n| {
+        if (self.readBinaryExpression2(&[_][]const u8{ "==", "!=" }, Reader.readComparison, Reader.readEquality)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
@@ -158,16 +172,7 @@ pub const Reader = struct {
 
     // comparison = additive, {("<" | ">" | "<=" | ">="), comparison};
     pub fn readComparison(self: *Reader) ParseError!*v.Value {
-        if (self.readBinaryExpression("<", Reader.readAdditive, Reader.readComparison)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression(">", Reader.readAdditive, Reader.readComparison)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression("<=", Reader.readAdditive, Reader.readComparison)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression(">=", Reader.readAdditive, Reader.readComparison)) |n| {
+        if (self.readBinaryExpression2(&[_][]const u8{ "<", ">", "<=", ">=" }, Reader.readAdditive, Reader.readComparison)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
@@ -175,10 +180,7 @@ pub const Reader = struct {
 
     // additive = multiplicative, {("+" | "-"), additive}
     pub fn readAdditive(self: *Reader) ParseError!*v.Value {
-        if (self.readBinaryExpression("+", Reader.readMultiplicative, Reader.readAdditive)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression("-", Reader.readMultiplicative, Reader.readAdditive)) |n| {
+        if (self.readBinaryExpression2(&[_][]const u8{ "+", "-" }, Reader.readMultiplicative, Reader.readAdditive)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
@@ -186,10 +188,7 @@ pub const Reader = struct {
 
     // multiplicative = unary, {("*" | "/"), multiplicative};
     pub fn readMultiplicative(self: *Reader) ParseError!*v.Value {
-        if (self.readBinaryExpression("*", Reader.readUnary, Reader.readMultiplicative)) |n| {
-            return n;
-        } else |_| {}
-        if (self.readBinaryExpression("/", Reader.readUnary, Reader.readMultiplicative)) |n| {
+        if (self.readBinaryExpression2(&[_][]const u8{ "*", "/" }, Reader.readUnary, Reader.readMultiplicative)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
@@ -274,6 +273,10 @@ pub const Reader = struct {
             return value;
         } else |_| {}
 
+        if (self.readIfExpression()) |value| {
+            return value;
+        } else |_| {}
+
         // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
         // so we can get to this point
         if (self.readFunctionDefinition()) |value| {
@@ -284,17 +287,25 @@ pub const Reader = struct {
         return error.NoMatch;
     }
 
-    // function_definition = "fun", identifier, parameter_list, ["->" type], block;
-    pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
+    // Yields no match if the next expression is not
+    // a symbol that matches the 'sym' string
+    pub fn expectKeyword(self: *Reader, sym: []const u8) ParseError!void {
+        self.skipWhitespace();
         const start = self.it;
         const symbol = self.readSymbol(true) catch {
             self.it = start;
             return error.NoMatch;
         };
-        if (!std.mem.eql(u8, symbol.symbol, "fun")) {
+        if (!std.mem.eql(u8, symbol.symbol, sym)) {
             self.it = start;
             return error.NoMatch;
         }
+    }
+
+    // function_definition = "fun", identifier, parameter_list, ["->" type], block;
+    pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        try self.expectKeyword("fun");
         self.skipWhitespace();
         const literal = self.readSymbol(false) catch {
             self.it = start;
@@ -403,14 +414,7 @@ pub const Reader = struct {
     pub fn readBlock(self: *Reader) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
-        const sym = self.readSymbol(true) catch {
-            self.it = start;
-            return error.NoMatch;
-        };
-        if (!std.mem.eql(u8, sym.symbol, "do")) {
-            self.it = start;
-            return error.NoMatch;
-        }
+        try self.expectKeyword("do");
         return self.readBlockTillEnd() catch {
             self.it = start;
             return error.NoMatch;
@@ -420,8 +424,27 @@ pub const Reader = struct {
     // assignment = "def", identifier, [":", type], "=", expression;
     pub fn readAssignment() v.Value {}
 
-    // if_expression = "if", expression, "then", expression, ["else", expression];
-    pub fn readIfExpression() v.Value {}
+    // if_expression = "if", expression, "then", expression, ["else", expression], "end";
+    pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        try self.expectKeyword("if");
+        const ifsym = self.gc.create(.{ .symbol = "if" }) catch unreachable;
+        const condition = try self.readExpression();
+        self.expectKeyword("then") catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        const consequent = try self.readExpression();
+        const start2 = self.it;
+        _ = self.expectKeyword("else") catch {
+            self.it = start2;
+            try self.expectKeyword("end");
+            return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, null)));
+        };
+        const alternative = try self.readExpression();
+        try self.expectKeyword("end");
+        return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, v.cons(self.gc, alternative, null))));
+    }
 
     // for_expression = "for", identifier, "in", expression, "do", expression;
     pub fn readForExpression() v.Value {}
@@ -586,7 +609,7 @@ pub const Reader = struct {
         if (ascii.isDigit(reader.chr())) {
             return error.NoMatch;
         }
-        while (!reader.atEof() and !ascii.isWhitespace(reader.chr()) and Reader.validSymbolcharacter(reader.chr())) {
+        while (!reader.atEof() and !ascii.isWhitespace(reader.chr()) and Reader.validSymbolCharacter(reader.chr())) {
             reader.next();
         }
         if (reader.it == start) {
@@ -602,9 +625,9 @@ pub const Reader = struct {
         };
     }
 
-    pub fn validSymbolcharacter(ch: u8) bool {
+    pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '*', '%', '$', '-' => true,
+            '+', '*', '%', '$', '-', '>', '<', '=' => true,
             else => ascii.isAlphanumeric(ch),
         };
     }

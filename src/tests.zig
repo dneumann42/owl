@@ -105,7 +105,6 @@ test "reading binary expressions" {
     defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "1 or 2 or 3");
     const exp = try reader.readExpression();
-
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "or"));
 }
 
@@ -125,6 +124,25 @@ test "reading function definitions" {
     try expect(std.mem.eql(u8, exp.function.name.symbol, "add-1"));
     try expect(std.mem.eql(u8, exp.function.params.cons.car.?.symbol, "y"));
     try expect(std.mem.eql(u8, exp.function.body.cons.car.?.symbol, "do"));
+}
+
+test "reading if expressions" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "if true then 1 else 2 end");
+    const exp = try reader.readExpression();
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "if"));
+    try expect(exp.cons.cdr.?.cons.car.?.boolean == true);
+    try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
+    try expect(exp.cons.cdr.?.cons.cdr.?.cons.cdr.?.cons.car.?.number == 2.0);
+}
+
+test "reading if expressions without else" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "if true then 1 end");
+    const exp = try reader.readExpression();
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "if"));
+    try expect(exp.cons.cdr.?.cons.car.?.boolean == true);
+    try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
 }
 
 // Evaluation Tests

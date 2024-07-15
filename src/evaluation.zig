@@ -55,8 +55,14 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateMul(env, args);
     } else if (std.mem.eql(u8, sym, "/")) {
         return evaluateDiv(env, args);
+    } else if (std.mem.eql(u8, sym, "<")) {
+        return evaluateLessThan(env, args);
+    } else if (std.mem.eql(u8, sym, ">")) {
+        return evaluateGreaterThan(env, args);
     } else if (std.mem.eql(u8, sym, "do")) {
         return evaluateDo(env, args);
+    } else if (std.mem.eql(u8, sym, "if")) {
+        return evaluateIf(env, args);
     } else {
         const call = env.find(sym) orelse {
             std.debug.print("Undefined identifier '{s}'.\n", .{sym});
@@ -64,6 +70,19 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         };
         return evaluateCall(env, call, args);
     }
+}
+
+pub fn evaluateIf(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const cond = args.?.cons.car orelse return error.InvalidValue;
+    const cond_result = try evaluate(env, cond);
+    if (cond_result.boolean) {
+        const cons = args.?.cons.cdr.?.cons.car orelse return error.InvalidValue;
+        return evaluate(env, cons);
+    } else {
+        const alt = args.?.cons.cdr.?.cons.cdr.?.cons.car orelse return error.InvalidValue;
+        return evaluate(env, alt);
+    }
+    return error.InvalidValue;
 }
 
 pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
@@ -81,6 +100,20 @@ pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         }
     }
     return error.InvalidValue;
+}
+
+pub fn evaluateLessThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const arg = args orelse return error.InvalidValue;
+    const a = arg.cons.car orelse return error.InvalidValue;
+    const b = arg.cons.cdr.?.cons.car orelse return error.InvalidValue;
+    return env.gc.create(.{ .boolean = a.number < b.number }) catch error.InvalidValue;
+}
+
+pub fn evaluateGreaterThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const arg = args orelse return error.InvalidValue;
+    const a = arg.cons.car orelse return error.InvalidValue;
+    const b = arg.cons.cdr.?.cons.car orelse return error.InvalidValue;
+    return env.gc.create(.{ .boolean = a.number > b.number }) catch error.InvalidValue;
 }
 
 pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
