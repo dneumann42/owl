@@ -1,5 +1,9 @@
-fun add-1 (a)
-  a + 1
+fun factorial(n)
+  if n < 2 then
+    1
+  else
+    n * factorial(n - 1)
+  end
 end
 
-add-1(19)
+echo(factorial(5))

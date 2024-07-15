@@ -9,12 +9,13 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var G = gc.Gc.init(std.testing.allocator, gpa.allocator());
 
 test "gc" {
+    defer G.destroyAll();
     const n = try G.create(.{ .number = 42.0 });
     try expect(n.number == 42.0);
-    G.destroyAll();
 }
 
 test "skipping whitespace" {
+    defer G.destroyAll();
     {
         var reader = r.Reader.initLoad(&G, "  \n\t X ");
         reader.skipWhitespace();
@@ -28,6 +29,7 @@ test "skipping whitespace" {
 }
 
 test "reading symbols" {
+    defer G.destroyAll();
     {
         var reader = r.Reader.initLoad(&G, "hello");
         const val = try reader.readSymbol(false);
@@ -42,10 +44,10 @@ test "reading symbols" {
         try expect(reader.it == 5);
         try expect(!reader.atEof());
     }
-    G.destroyAll();
 }
 
 test "reading boolean literals" {
+    defer G.destroyAll();
     {
         var reader = r.Reader.initLoad(&G, "true");
         const val = try reader.readBoolean();
@@ -58,25 +60,25 @@ test "reading boolean literals" {
         try expect(val.isBoolean());
         try expect(val.isFalse());
     }
-    G.destroyAll();
 }
 
 test "reading string literals" {
+    defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "\"Hello, World!\"");
     const val = try reader.readString();
     try expect(std.mem.eql(u8, val.string, "Hello, World!"));
-    G.destroyAll();
 }
 
 test "reading numbers" {
+    defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "123");
     const val = try reader.readNumber();
     try expect(val.number == 123.0);
     try expect(reader.it == 3.0);
-    G.destroyAll();
 }
 
 test "reading unary operators" {
+    defer G.destroyAll();
     {
         var reader = r.Reader.initLoad(&G, "-");
         const val = try reader.readUnaryOperator();
@@ -87,30 +89,29 @@ test "reading unary operators" {
         const val = try reader.readUnaryOperator();
         try expect(std.mem.eql(u8, val.symbol, "not"));
     }
-    G.destroyAll();
 }
 
 test "reading unary expressions" {
+    defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "-1");
     const val = try reader.readUnary();
     const s = v.car(val) orelse unreachable;
     try expect(std.mem.eql(u8, s.symbol, "-"));
     const n = v.car(v.cdr(val)) orelse unreachable;
     try expect(n.number == 1.0);
-    G.destroyAll();
 }
 
 test "reading binary expressions" {
+    defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "1 or 2 or 3");
     const exp = try reader.readExpression();
 
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "or"));
-    G.destroyAll();
 }
 
 test "reading function calls" {
-    var reader = r.Reader.initLoad(&G, "call(x, y)");
     defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "call(x, y)");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "call"));
     try expect(std.mem.eql(u8, exp.cons.cdr.?.cons.car.?.symbol, "x"));
@@ -118,8 +119,8 @@ test "reading function calls" {
 }
 
 test "reading function definitions" {
-    var reader = r.Reader.initLoad(&G, "fun add-1(y) y + 1 end");
     defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "fun add-1(y) y + 1 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.function.name.symbol, "add-1"));
     try expect(std.mem.eql(u8, exp.function.params.cons.car.?.symbol, "y"));
@@ -129,6 +130,7 @@ test "reading function definitions" {
 // Evaluation Tests
 
 test "evaluating numbers" {
+    defer G.destroyAll();
     const env = try v.Environment.init(&G);
     const value = try e.eval(env, "123");
     try expect(value.number == 123.0);
@@ -136,30 +138,40 @@ test "evaluating numbers" {
 }
 
 test "evaluating symbols" {
+    defer G.destroyAll();
     const env = try v.Environment.init(&G);
     const n = v.Value.num(&G, 123.0) catch unreachable;
     try env.set("hello", n);
     const s = v.Value.sym(&G, "hello") catch unreachable;
     const value = try e.evaluate(env, s);
     try expect(value.number == 123.0);
-    G.destroyAll();
 }
 
 test "evaluating code" {
+    defer G.destroyAll();
     const env = try v.Environment.init(&G);
     const n = v.Value.num(&G, 123.0) catch unreachable;
     try env.set("hello", n);
 
     const value = try e.eval(env, "hello");
     try expect(value.number == 123.0);
-    G.destroyAll();
 }
 
 test "evaluating binary expressions" {
+    defer G.destroyAll();
     const env = try v.Environment.init(&G);
     const value = try e.eval(env, "1 + 2");
     try expect(value.number == 3.0);
-    G.destroyAll();
+}
+
+test "evaluating function definitions and calls" {
+    defer G.destroyAll();
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env,
+        \\fun a(y) y + 1 end
+        \\a(9)
+    );
+    try expect(value.number == 10.0);
 }
 
 test "garbage collection" {
