@@ -304,7 +304,8 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
-        const body = self.readBlock() catch {
+
+        const body = self.readBlockTillEnd() catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -363,35 +364,32 @@ pub const Reader = struct {
     // dict_type = "dict", "[", type, ",", type, "]";
     pub fn readDictType() v.Value {}
 
-    // block = "$(", {expression}, ")";
-    pub fn readBlock(self: *Reader) ParseError!*v.Value {
-        self.skipWhitespace();
+    pub fn readBlockTillEnd(self: *Reader) ParseError!*v.Value {
+        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "do" }) catch unreachable, null);
         const start = self.it;
-        if (self.chr() != '$') {
-            return error.NoMatch;
-        }
-        self.next();
-        if (self.chr() != '(') {
-            self.it = start;
-            return error.NoMatch;
-        }
-        self.next();
 
-        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "do" }) catch null, null);
         while (!self.atEof() and it != null) {
             self.skipWhitespace();
+
             if (self.atEof()) {
                 std.debug.print("Missing closing parenthesis.\n", .{});
                 return error.NoMatch;
             }
-            if (self.chr() == ')') {
-                self.next();
-                break;
-            }
-            const expr = self.readExpression() catch {
+
+            const expr = self.readExpression() catch |e| {
                 self.it = start;
-                break;
+                return e;
             };
+
+            switch (expr.*) {
+                v.Value.symbol => {
+                    if (std.mem.eql(u8, expr.symbol, "end")) {
+                        break;
+                    }
+                },
+                else => {},
+            }
+
             it = v.cons(self.gc, expr, it);
         }
 
@@ -399,6 +397,24 @@ pub const Reader = struct {
             return xs.reverse();
         }
         return error.NoMatch;
+    }
+
+    // block = "do", {expression}, "end";
+    pub fn readBlock(self: *Reader) ParseError!*v.Value {
+        self.skipWhitespace();
+        const start = self.it;
+        const sym = self.readSymbol(true) catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        if (!std.mem.eql(u8, sym.symbol, "do")) {
+            self.it = start;
+            return error.NoMatch;
+        }
+        return self.readBlockTillEnd() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
     }
 
     // assignment = "def", identifier, [":", type], "=", expression;
@@ -561,6 +577,8 @@ pub const Reader = struct {
         if (std.mem.eql(u8, sym, "then")) return true;
         if (std.mem.eql(u8, sym, "else")) return true;
         if (std.mem.eql(u8, sym, "for")) return true;
+        if (std.mem.eql(u8, sym, "do")) return true;
+        if (std.mem.eql(u8, sym, "cond")) return true;
         return false;
     }
     pub fn readSymbol(reader: *Reader, readkeywords: bool) ParseError!*v.Value {

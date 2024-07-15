@@ -8,13 +8,6 @@ const gc = @import("gc.zig");
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var G = gc.Gc.init(std.testing.allocator, gpa.allocator());
 
-//test "reading blocks" {
-//    var reader = r.Reader.initLoad(&G, " $(a + b + c) ");
-//    const block = try reader.readBlock();
-//    defer G.destroyAll();
-//    v.repr(block);
-//}
-
 test "gc" {
     const n = try G.create(.{ .number = 42.0 });
     try expect(n.number == 42.0);
@@ -32,7 +25,6 @@ test "skipping whitespace" {
         reader.skipWhitespace();
         try expect(reader.atEof());
     }
-    return error.SkipZigTest;
 }
 
 test "reading symbols" {
@@ -51,7 +43,6 @@ test "reading symbols" {
         try expect(!reader.atEof());
     }
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading boolean literals" {
@@ -68,7 +59,6 @@ test "reading boolean literals" {
         try expect(val.isFalse());
     }
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading string literals" {
@@ -76,7 +66,6 @@ test "reading string literals" {
     const val = try reader.readString();
     try expect(std.mem.eql(u8, val.string, "Hello, World!"));
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading numbers" {
@@ -85,7 +74,6 @@ test "reading numbers" {
     try expect(val.number == 123.0);
     try expect(reader.it == 3.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading unary operators" {
@@ -100,7 +88,6 @@ test "reading unary operators" {
         try expect(std.mem.eql(u8, val.symbol, "not"));
     }
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading unary expressions" {
@@ -111,7 +98,6 @@ test "reading unary expressions" {
     const n = v.car(v.cdr(val)) orelse unreachable;
     try expect(n.number == 1.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading binary expressions" {
@@ -120,7 +106,6 @@ test "reading binary expressions" {
 
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "or"));
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "reading function calls" {
@@ -130,11 +115,10 @@ test "reading function calls" {
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "call"));
     try expect(std.mem.eql(u8, exp.cons.cdr.?.cons.car.?.symbol, "x"));
     try expect(std.mem.eql(u8, exp.cons.cdr.?.cons.cdr.?.cons.car.?.symbol, "y"));
-    return error.SkipZigTest;
 }
 
 test "reading function definitions" {
-    var reader = r.Reader.initLoad(&G, "fun add-1(y) $(y + 1)");
+    var reader = r.Reader.initLoad(&G, "fun add-1(y) y + 1 end");
     defer G.destroyAll();
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.function.name.symbol, "add-1"));
@@ -149,7 +133,6 @@ test "evaluating numbers" {
     const value = try e.eval(env, "123");
     try expect(value.number == 123.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "evaluating symbols" {
@@ -160,7 +143,6 @@ test "evaluating symbols" {
     const value = try e.evaluate(env, s);
     try expect(value.number == 123.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "evaluating code" {
@@ -171,7 +153,6 @@ test "evaluating code" {
     const value = try e.eval(env, "hello");
     try expect(value.number == 123.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "evaluating binary expressions" {
@@ -179,7 +160,6 @@ test "evaluating binary expressions" {
     const value = try e.eval(env, "1 + 2");
     try expect(value.number == 3.0);
     G.destroyAll();
-    return error.SkipZigTest;
 }
 
 test "garbage collection" {
@@ -189,5 +169,4 @@ test "garbage collection" {
     try expect(num.number == 1.23);
     const header = gc.Gc.getHeader(num);
     try expect(header.marked == false);
-    return error.SkipZigTest;
 }
