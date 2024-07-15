@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, Invalid };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid };
 
 pub const Reader = struct {
     gc: *gc.Gc,
@@ -277,6 +277,10 @@ pub const Reader = struct {
             return value;
         } else |_| {}
 
+        if (self.readAssignment()) |value| {
+            return value;
+        } else |_| {}
+
         // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
         // so we can get to this point
         if (self.readFunctionDefinition()) |value| {
@@ -289,7 +293,7 @@ pub const Reader = struct {
 
     // Yields no match if the next expression is not
     // a symbol that matches the 'sym' string
-    pub fn expectKeyword(self: *Reader, sym: []const u8) ParseError!void {
+    pub fn expectKeyword(self: *Reader, sym: []const u8) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
         const symbol = self.readSymbol(true) catch {
@@ -300,12 +304,13 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         }
+        return symbol;
     }
 
     // function_definition = "fun", identifier, parameter_list, ["->" type], block;
     pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        try self.expectKeyword("fun");
+        _ = try self.expectKeyword("fun");
         self.skipWhitespace();
         const literal = self.readSymbol(false) catch {
             self.it = start;
@@ -414,23 +419,37 @@ pub const Reader = struct {
     pub fn readBlock(self: *Reader) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
-        try self.expectKeyword("do");
+        _ = try self.expectKeyword("do");
         return self.readBlockTillEnd() catch {
             self.it = start;
             return error.NoMatch;
         };
     }
 
-    // assignment = "def", identifier, [":", type], "=", expression;
-    pub fn readAssignment() v.Value {}
+    // assignment = "def", identifier, [":", type], expression;
+    pub fn readAssignment(self: *Reader) ParseError!*v.Value {
+        const def = try self.expectKeyword("def");
+        self.skipWhitespace();
+        const symbol = self.readSymbol(false) catch {
+            // This should be an actual error since we read a 'def'
+            return error.DefMissingIdentifier;
+        };
+
+        // TODO: [":", type]
+
+        const expression = self.readExpression() catch {
+            return error.DefMissingValue;
+        };
+
+        return v.cons(self.gc, def, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
+    }
 
     // if_expression = "if", expression, "then", expression, ["else", expression], "end";
     pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        try self.expectKeyword("if");
-        const ifsym = self.gc.create(.{ .symbol = "if" }) catch unreachable;
+        const ifsym = try self.expectKeyword("if");
         const condition = try self.readExpression();
-        self.expectKeyword("then") catch {
+        _ = self.expectKeyword("then") catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -438,11 +457,11 @@ pub const Reader = struct {
         const start2 = self.it;
         _ = self.expectKeyword("else") catch {
             self.it = start2;
-            try self.expectKeyword("end");
+            _ = try self.expectKeyword("end");
             return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, null)));
         };
         const alternative = try self.readExpression();
-        try self.expectKeyword("end");
+        _ = try self.expectKeyword("end");
         return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, v.cons(self.gc, alternative, null))));
     }
 
@@ -602,6 +621,7 @@ pub const Reader = struct {
         if (std.mem.eql(u8, sym, "for")) return true;
         if (std.mem.eql(u8, sym, "do")) return true;
         if (std.mem.eql(u8, sym, "cond")) return true;
+        if (std.mem.eql(u8, sym, "def")) return true;
         return false;
     }
     pub fn readSymbol(reader: *Reader, readkeywords: bool) ParseError!*v.Value {

@@ -1,9 +1,5 @@
-fun factorial(n)
-  if n < 2 then
-    1
-  else
-    n * factorial(n - 1)
-  end
-end
+def y 10
+def x def z if 10 > 100 then 69 else 420 end
 
-factorial(5)
+echo(z * z + z)
+x

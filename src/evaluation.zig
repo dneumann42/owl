@@ -63,6 +63,8 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateDo(env, args);
     } else if (std.mem.eql(u8, sym, "if")) {
         return evaluateIf(env, args);
+    } else if (std.mem.eql(u8, sym, "def")) {
+        return evaluateDefinition(env, args);
     } else {
         const call = env.find(sym) orelse {
             std.debug.print("Undefined identifier '{s}'.\n", .{sym});
@@ -70,6 +72,16 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         };
         return evaluateCall(env, call, args);
     }
+}
+
+pub fn evaluateDefinition(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const sym = args.?.cons.car.?;
+    const exp = args.?.cons.cdr.?.cons.car.?;
+    const value = try evaluate(env, exp);
+    env.set(sym.symbol, value) catch {
+        return error.InvalidValue;
+    };
+    return value;
 }
 
 pub fn evaluateIf(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
