@@ -149,8 +149,8 @@ pub const Environment = struct {
         self.gc.listAllocator.destroy(self);
     }
 
-    pub fn push(self: *Environment) Environment {
-        var new_environment = Environment.init(self.allocator);
+    pub fn push(self: *Environment) !*Environment {
+        var new_environment = try Environment.init(self.gc);
         new_environment.next = self;
         return new_environment;
     }

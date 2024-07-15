@@ -69,7 +69,10 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     defer env.deinit();
 
     const val = try e.eval(env, file_content);
-    std.debug.print("{any}\n", .{val});
+    const sval = try val.toString(g.listAllocator);
+
+    defer g.listAllocator.free(sval);
+    std.debug.print("{s}\n", .{sval});
 }
 
 pub fn repl(allocator: std.mem.Allocator) !void {

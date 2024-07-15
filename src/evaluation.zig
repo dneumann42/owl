@@ -2,14 +2,16 @@ const v = @import("values.zig");
 const r = @import("reader.zig");
 const std = @import("std");
 
-const EvalError = error{InvalidValue};
+const EvalError = error{ InvalidValue, ParseError };
 
-pub fn eval(env: *v.Environment, code: []const u8) !*v.Value {
+pub fn eval(env: *v.Environment, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.initLoad(env.gc, code);
-    return evaluate(env, try reader.readProgram());
+    return evaluate(env, reader.readProgram() catch {
+        return error.ParseError;
+    });
 }
 
-pub fn evaluate(env: *v.Environment, value: *v.Value) !*v.Value {
+pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
     return switch (value.*) {
         v.Value.number, v.Value.string, v.Value.nothing, v.Value.boolean => value,
         v.Value.symbol => |s| {
@@ -165,9 +167,39 @@ pub fn evaluateCall(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Va
         v.Value.nativeFunction => |nfun| {
             return nfun(env, args);
         },
+        v.Value.function => |fun| {
+            return evaluateFunction(env, &fun, args);
+        },
         else => {
-            std.debug.print("CALL: {any},  ARGS: {any}", .{ call, args });
             return error.InvalidValue;
         },
     }
+}
+
+pub fn evaluateFunction(env: *v.Environment, call: *const v.Function, args: ?*v.Value) !*v.Value {
+    var next = env.push() catch return error.InvalidValue;
+    // NOTE: this environment will eventually live on the function, so we should not deinit
+    // until all references are invalid
+    defer next.deinit();
+
+    if (args) |arguments| {
+        var it: ?*v.Value = arguments;
+        var ps: ?*v.Value = call.params;
+        while (it != null and ps != null) : (it = it.?.cons.cdr) {
+            defer ps = ps.?.cons.cdr;
+            const param = ps.?.cons.car;
+            const value = it.?.cons.car;
+            if (value == null)
+                break;
+            if (param == null)
+                break;
+            next.set(param.?.symbol, value.?) catch return error.InvalidValue;
+        }
+    }
+
+    const result = evaluate(next, call.body) catch {
+        return error.InvalidValue;
+    };
+
+    return result;
 }

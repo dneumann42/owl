@@ -1,3 +1,5 @@
 fun add-1 (a)
   a + 1
 end
+
+add-1(19)
