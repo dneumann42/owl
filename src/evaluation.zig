@@ -27,7 +27,9 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
             return value;
         },
         v.Value.function => |f| {
-            env.set(f.name.symbol, value) catch return error.InvalidValue;
+            if (f.name) |sym| {
+                env.set(sym.symbol, value) catch return error.InvalidValue;
+            }
             return value;
         },
         v.Value.cons => |list| {

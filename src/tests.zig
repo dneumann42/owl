@@ -121,7 +121,7 @@ test "reading function definitions" {
     defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "fun add-1(y) y + 1 end");
     const exp = try reader.readExpression();
-    try expect(std.mem.eql(u8, exp.function.name.symbol, "add-1"));
+    try expect(std.mem.eql(u8, exp.function.name.?.symbol, "add-1"));
     try expect(std.mem.eql(u8, exp.function.params.cons.car.?.symbol, "y"));
     try expect(std.mem.eql(u8, exp.function.body.cons.car.?.symbol, "do"));
 }
@@ -190,6 +190,34 @@ test "evaluating function definitions and calls" {
         \\a(9)
     );
     try expect(value.number == 10.0);
+}
+
+test "evaluating function definitions and lambdas" {
+    defer G.destroyAll();
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env,
+        \\fun x1(y) y + 1 end
+        \\def x2 fun(y) y + 1 end
+        \\def x3 fn(y) y + 1
+        \\x1(1) + x2(1) + x3(1)
+    );
+    try expect(value.number == 6.0);
+}
+
+test "evaluating recursive functions" {
+    defer G.destroyAll();
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env,
+        \\fun factorial(n)
+        \\  if n < 2 then
+        \\    1
+        \\  else
+        \\    n * factorial(n - 1)
+        \\  end
+        \\end
+        \\factorial(5)
+    );
+    try expect(value.number == 120);
 }
 
 test "garbage collection" {

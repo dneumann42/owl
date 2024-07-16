@@ -286,6 +286,12 @@ pub const Reader = struct {
         if (self.readFunctionDefinition()) |value| {
             return value;
         } else |_| {}
+        if (self.readFunctionDefinitionAnon()) |value| {
+            return value;
+        } else |_| {}
+        if (self.readLambdaDefinition()) |value| {
+            return value;
+        } else |_| {}
 
         // WIP
         return error.NoMatch;
@@ -326,6 +332,49 @@ pub const Reader = struct {
             return error.NoMatch;
         };
         return self.gc.create(.{ .function = .{ .name = literal, .body = body, .params = params } }) catch {
+            return error.NoMatch;
+        };
+    }
+    //
+    // function_definition = "fun", parameter_list, ["->" type], block;
+    pub fn readFunctionDefinitionAnon(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        _ = try self.expectKeyword("fun");
+        self.skipWhitespace();
+        const params = self.readParameterList() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+
+        const body = self.readBlockTillEnd() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params } }) catch {
+            return error.NoMatch;
+        };
+    }
+
+    pub fn readLambdaDefinition(self: *Reader) ParseError!*v.Value {
+        const start = self.it;
+        _ = try self.expectKeyword("fn");
+        self.skipWhitespace();
+
+        if (self.chr() != '(') {
+            self.it = start;
+            // TODO: return proper error, same with rest of no matches
+            return error.NoMatch;
+        }
+        const params = self.readParameterList() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        const body = self.readExpression() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+        return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params } }) catch {
+            self.it = start;
             return error.NoMatch;
         };
     }
@@ -609,12 +658,13 @@ pub const Reader = struct {
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
     pub fn readDictionary() v.Value {}
 
-    // key_value_pair = (symbol | string), ":", expression;
+    // key_value_pair = ((".", (symbol | string)) | ("[", expression, "]")), expression, ("," | "\n");
     pub fn readKeyValuePair() v.Value {}
 
     // symbol
     pub fn isOwlKeyword(sym: []const u8) bool {
         if (std.mem.eql(u8, sym, "fun")) return true;
+        if (std.mem.eql(u8, sym, "fn")) return true;
         if (std.mem.eql(u8, sym, "if")) return true;
         if (std.mem.eql(u8, sym, "then")) return true;
         if (std.mem.eql(u8, sym, "else")) return true;

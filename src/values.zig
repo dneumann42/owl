@@ -53,7 +53,8 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
             },
             Value.function => |f| {
-                return std.fmt.allocPrint(allocator, "[fn: {s}]", .{f.name.symbol});
+                const n = f.name.?.symbol;
+                return std.fmt.allocPrint(allocator, "[fn: {s}]", .{n});
             },
             Value.nativeFunction => {
                 return std.fmt.allocPrint(allocator, "[native-fn]", .{});
@@ -106,7 +107,7 @@ pub const Value = union(ValueType) {
 };
 
 pub const Function = struct {
-    name: *Value,
+    name: ?*Value,
     body: *Value,
     params: *Value,
 };
