@@ -145,6 +145,13 @@ test "reading if expressions without else" {
     try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
 }
 
+test "reading dictionaries" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "{ .x 1 }");
+    const exp = try reader.readExpression();
+    std.debug.print("EXP: {any}", .{exp});
+}
+
 // Evaluation Tests
 
 test "evaluating numbers" {

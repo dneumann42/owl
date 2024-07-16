@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, InvalidRecord, InvalidKeyValue, MissingClosingBrace };
 
 pub const Reader = struct {
     gc: *gc.Gc,
@@ -49,6 +49,12 @@ pub const Reader = struct {
 
     pub fn skipWhitespace(self: *Reader) void {
         while (!self.atEof() and ascii.isWhitespace(self.chr())) {
+            self.next();
+        }
+    }
+
+    pub fn skipSpace(self: *Reader) void {
+        while (!self.atEof() and self.chr() != '\n' and ascii.isWhitespace(self.chr())) {
             self.next();
         }
     }
@@ -569,7 +575,8 @@ pub const Reader = struct {
         const start = self.it;
         return self.readNumber() catch
             self.readString() catch
-            self.readBoolean() catch {
+            self.readBoolean() catch
+            self.readDictionary() catch {
             self.it = start;
             return error.NoMatch;
         };
@@ -656,10 +663,71 @@ pub const Reader = struct {
     }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
-    pub fn readDictionary() v.Value {}
+    pub fn readDictionary(self: *Reader) ParseError!*v.Value {
+        if (self.chr() != '{') {
+            return error.NoMatch;
+        }
+        self.next();
 
-    // key_value_pair = ((".", (symbol | string)) | ("[", expression, "]")), expression, ("," | "\n");
-    pub fn readKeyValuePair() v.Value {}
+        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "dict" }) catch unreachable, null);
+        while (!self.atEof()) {
+            const kv = self.readKeyValuePair('}') catch |err| {
+                switch (err) {
+                    error.NoMatch => break,
+                    else => return err,
+                }
+            };
+
+            it = v.cons(self.gc, kv, it);
+
+            if (self.chr() == '}') {
+                break;
+            }
+            if (self.atEof()) {
+                return error.MissingClosingBrace;
+            }
+        }
+
+        if (it) |xs| {
+            return xs.reverse();
+        }
+        return error.NoMatch;
+    }
+
+    // key_value_pair = (((".", symbol) | string)) | ("[", expression, "]")), expression, ("," | "\n");
+    pub fn readKeyValuePair(self: *Reader, terminalChar: u8) ParseError!*v.Value {
+        self.skipWhitespace();
+        const start = self.it;
+        // TODO: handle ("[", expression, "]")
+        if (self.chr() != '.') {
+            return error.NoMatch;
+        }
+        self.next();
+        // I may be able to read owl keywords also, allow for owl keyword dictionary keys
+        const key = self.readSymbol(false) catch self.readString() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+
+        const value = self.readExpression() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+
+        self.skipSpace();
+        if (self.chr() == '\n') {
+            self.skipWhitespace();
+        } else if (self.chr() == ',') {
+            self.next();
+        } else {
+            self.skipWhitespace();
+            if (self.chr() != terminalChar) {
+                return error.InvalidKeyValue;
+            }
+        }
+
+        return v.cons(self.gc, key, value);
+    }
 
     // symbol
     pub fn isOwlKeyword(sym: []const u8) bool {
