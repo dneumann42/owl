@@ -53,6 +53,17 @@ pub const Reader = struct {
         }
     }
 
+    pub fn skipComment(self: *Reader) void {
+        self.skipWhitespace();
+        defer self.skipWhitespace();
+        if (self.chr() != ';') {
+            return;
+        }
+        while (!self.atEof() and self.chr() != '\n') {
+            self.next();
+        }
+    }
+
     pub fn skipSpace(self: *Reader) void {
         while (!self.atEof() and self.chr() != '\n' and ascii.isWhitespace(self.chr())) {
             self.next();
@@ -96,7 +107,7 @@ pub const Reader = struct {
 
     // expression = logical_or
     pub fn readExpression(self: *Reader) ParseError!*v.Value {
-        self.skipWhitespace();
+        self.skipComment();
         return self.readBinaryLogicalOr();
     }
 

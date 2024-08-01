@@ -19,11 +19,11 @@ fun compute-factorial(n)
   end
 end
 
-compute-factorial(5) ;; 120
+compute-factorial(5) ; 120
 
 def x do
   def y 10
   1 + y
 end
-x ;; 11
+x ; 11
 ```
