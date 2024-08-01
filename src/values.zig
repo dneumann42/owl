@@ -3,7 +3,7 @@ const json = std.json;
 const gc = @import("gc.zig");
 const e = @import("evaluation.zig");
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, nativeFunction };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, dictionary, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
@@ -15,6 +15,8 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
+    // NOTE: symbol values may not be the same pointer
+    dictionary: std.AutoHashMap(*Value, Value),
     nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
     pub fn num(g: *gc.Gc, n: f64) !*Value {
@@ -37,10 +39,10 @@ pub const Value = union(ValueType) {
         return g.create(.{ .boolean = false });
     }
 
-    pub fn toString(self: *const Value, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn toString(self: *Value, allocator: std.mem.Allocator) ![]const u8 {
         switch (self.*) {
             Value.nothing => {
-                return std.fmt.allocPrint(allocator, "None", .{});
+                return std.fmt.allocPrint(allocator, "Nothing", .{});
             },
             Value.symbol => {
                 return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
@@ -59,10 +61,37 @@ pub const Value = union(ValueType) {
             Value.nativeFunction => {
                 return std.fmt.allocPrint(allocator, "[native-fn]", .{});
             },
+            Value.cons => {
+                var it: ?*Value = self;
+                var strings = std.ArrayList([]const u8).init(allocator);
+                while (it != null) {
+                    if (it) |xs| {
+                        if (xs.cons.car) |val| {
+                            try strings.append(try val.toString(allocator));
+                        }
+                        it = xs.cons.cdr;
+                    }
+                }
+                const finalStr = try joinWithSpaces(allocator, strings);
+                return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
+            },
             else => {
                 return std.fmt.allocPrint(allocator, "{any}", .{self.*});
             },
         }
+    }
+
+    fn getFormatString(value: *Value) []const u8 {
+        return switch (value.*) {
+            Value.nothing => "Nothing",
+            Value.symbol => "{s}",
+            Value.number => "{d}",
+            Value.boolean => "{s}",
+            Value.function => "[fn: {s}]",
+            Value.nativeFunction => "[native-fn]",
+            Value.cons => "({s})",
+            else => "{any}",
+        };
     }
 
     pub fn isBoolean(self: *const Value) bool {
@@ -105,6 +134,10 @@ pub const Value = union(ValueType) {
         return self;
     }
 };
+
+pub fn joinWithSpaces(allocator: std.mem.Allocator, list: std.ArrayList([]const u8)) ![]u8 {
+    return std.mem.join(allocator, " ", list.items);
+}
 
 pub const Function = struct {
     name: ?*Value,

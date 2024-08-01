@@ -83,6 +83,9 @@ pub const Reader = struct {
                 break;
             };
             it = v.cons(self.gc, expr, it);
+            self.skipWhitespace();
+            if (self.atEof())
+                break;
         }
 
         if (it) |xs| {
@@ -443,7 +446,7 @@ pub const Reader = struct {
             self.skipWhitespace();
 
             if (self.atEof()) {
-                std.debug.print("Missing closing parenthesis.\n", .{});
+                std.debug.print("Missing closing 'end'.\n", .{});
                 return error.NoMatch;
             }
 
@@ -458,7 +461,9 @@ pub const Reader = struct {
                         break;
                     }
                 },
-                else => {},
+                else => {
+                    it = v.cons(self.gc, expr, it);
+                },
             }
 
             it = v.cons(self.gc, expr, it);

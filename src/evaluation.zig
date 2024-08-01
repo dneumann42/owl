@@ -13,7 +13,7 @@ pub fn eval(env: *v.Environment, code: []const u8) EvalError!*v.Value {
 
 pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
     return switch (value.*) {
-        v.Value.number, v.Value.string, v.Value.nothing, v.Value.boolean => value,
+        v.Value.number, v.Value.string, v.Value.nothing, v.Value.boolean, v.Value.dictionary => value,
         v.Value.symbol => |s| {
             if (env.find(s)) |val| {
                 // for now we will assume that the 'value' has been used and is no longer needed
@@ -67,6 +67,8 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateIf(env, args);
     } else if (std.mem.eql(u8, sym, "def")) {
         return evaluateDefinition(env, args);
+    } else if (std.mem.eql(u8, sym, "dict")) {
+        return evaluateDictionary(env, args);
     } else {
         const call = env.find(sym) orelse {
             std.debug.print("Undefined identifier '{s}'.\n", .{sym});
@@ -74,6 +76,28 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         };
         return evaluateCall(env, call, args);
     }
+}
+
+pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    var it = args;
+    var dict = std.AutoHashMap(*v.Value, v.Value).init(env.gc.listAllocator);
+    while (it) |xs| {
+        const key = xs.cons.car.?;
+        it = xs.cons.cdr;
+        if (it) |vs| {
+            const value = try evaluate(env, vs.cons.car.?);
+            dict.put(key, value.*) catch {
+                return error.InvalidValue;
+            };
+        } else {
+            return error.InvalidValue;
+        }
+    }
+    return env.gc.create(.{
+        .dictionary = dict,
+    }) catch {
+        return error.InvalidValue;
+    };
 }
 
 pub fn evaluateDefinition(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
