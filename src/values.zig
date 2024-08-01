@@ -47,6 +47,9 @@ pub const Value = union(ValueType) {
             Value.symbol => {
                 return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
             },
+            Value.string => |s| {
+                return std.fmt.allocPrint(allocator, "{s}", .{s});
+            },
             Value.number => {
                 return std.fmt.allocPrint(allocator, "{d}", .{self.number});
             },

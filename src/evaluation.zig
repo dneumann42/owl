@@ -2,7 +2,7 @@ const v = @import("values.zig");
 const r = @import("reader.zig");
 const std = @import("std");
 
-const EvalError = error{ InvalidValue, ParseError };
+const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
 
 pub fn eval(env: *v.Environment, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.initLoad(env.gc, code);
@@ -19,8 +19,8 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
                 // for now we will assume that the 'value' has been used and is no longer needed
                 return val;
             } else {
-                std.debug.print("ERROR: '{s}'\n", .{s});
-                return error.InvalidValue;
+                std.log.err("Undefined symbol: '{s}'\n", .{s});
+                return error.UndefinedSymbol;
             }
         },
         v.Value.nativeFunction => {
@@ -28,22 +28,18 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
         },
         v.Value.function => |f| {
             if (f.name) |sym| {
-                env.set(sym.symbol, value) catch return error.InvalidValue;
+                env.set(sym.symbol, value) catch return error.AllocError;
             }
             return value;
         },
         v.Value.cons => |list| {
             if (list.car) |car| {
-                switch (car.*) {
-                    .symbol => {
-                        return evaluateForms(env, car.symbol, list.cdr);
-                    },
-                    else => {
-                        return error.InvalidValue;
-                    },
-                }
+                return switch (car.*) {
+                    .symbol => evaluateForms(env, car.symbol, list.cdr),
+                    else => error.ExpectedSymbol,
+                };
             }
-            return error.InvalidValue;
+            return error.InvalidCall;
         },
     };
 }
@@ -71,8 +67,8 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateDictionary(env, args);
     } else {
         const call = env.find(sym) orelse {
-            std.debug.print("Undefined identifier '{s}'.\n", .{sym});
-            return error.InvalidValue;
+            std.log.err("Undefined symbol: '{s}'.\n", .{sym});
+            return error.UndefinedSymbol;
         };
         return evaluateCall(env, call, args);
     }
@@ -87,16 +83,16 @@ pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Val
         if (it) |vs| {
             const value = try evaluate(env, vs.cons.car.?);
             dict.put(key, value.*) catch {
-                return error.InvalidValue;
+                return error.AllocError;
             };
         } else {
-            return error.InvalidValue;
+            return error.InvalidKeyValue;
         }
     }
     return env.gc.create(.{
         .dictionary = dict,
     }) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
 }
 
@@ -105,7 +101,7 @@ pub fn evaluateDefinition(env: *v.Environment, args: ?*v.Value) EvalError!*v.Val
     const exp = args.?.cons.cdr.?.cons.car.?;
     const value = try evaluate(env, exp);
     env.set(sym.symbol, value) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
     return value;
 }
@@ -114,10 +110,10 @@ pub fn evaluateIf(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     const cond = args.?.cons.car orelse return error.InvalidValue;
     const cond_result = try evaluate(env, cond);
     if (cond_result.boolean) {
-        const cons = args.?.cons.cdr.?.cons.car orelse return error.InvalidValue;
+        const cons = args.?.cons.cdr.?.cons.car orelse return error.InvalidIf;
         return evaluate(env, cons);
     } else {
-        const alt = args.?.cons.cdr.?.cons.cdr.?.cons.car orelse return error.InvalidValue;
+        const alt = args.?.cons.cdr.?.cons.cdr.?.cons.car orelse return error.InvalidIf;
         return evaluate(env, alt);
     }
     return error.InvalidValue;
@@ -142,16 +138,16 @@ pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 
 pub fn evaluateLessThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
-    const a = try evaluate(env, arg.cons.car orelse return error.InvalidValue);
-    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.InvalidValue);
-    return env.gc.create(.{ .boolean = a.number < b.number }) catch error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.ExpectedNumber);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.ExpectedNumber);
+    return env.gc.create(.{ .boolean = a.number < b.number }) catch error.AllocError;
 }
 
 pub fn evaluateGreaterThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
-    const a = try evaluate(env, arg.cons.car orelse return error.InvalidValue);
-    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.InvalidValue);
-    return env.gc.create(.{ .boolean = a.number > b.number }) catch error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.ExpectedNumber);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.ExpectedNumber);
+    return env.gc.create(.{ .boolean = a.number > b.number }) catch error.AllocError;
 }
 
 pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
@@ -165,7 +161,7 @@ pub fn evaluateAdd(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
     }
     const n = v.Value.num(env.gc, total) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
     return n;
 }
@@ -181,7 +177,7 @@ pub fn evaluateMul(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
     }
     const n = v.Value.num(env.gc, total) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
     return n;
 }
@@ -195,7 +191,7 @@ pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
             const other = try evaluate(env, value);
             if (idx == 0) {
                 if (c.cons.cdr == null) {
-                    return v.Value.num(env.gc, -other.toNumber()) catch unreachable;
+                    return v.Value.num(env.gc, -other.toNumber()) catch error.AllocError;
                 }
                 total = other.toNumber();
             } else {
@@ -206,7 +202,7 @@ pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         idx += 1;
     }
     const n = v.Value.num(env.gc, total) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
     return n;
 }
@@ -228,7 +224,7 @@ pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         idx += 1;
     }
     const n = v.Value.num(env.gc, total) catch {
-        return error.InvalidValue;
+        return error.AllocError;
     };
     return n;
 }
@@ -242,7 +238,7 @@ pub fn evaluateCall(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Va
             return evaluateFunction(env, &fun, args);
         },
         else => {
-            return error.InvalidValue;
+            return error.ExpectedCallable;
         },
     }
 }
@@ -264,9 +260,7 @@ pub fn evaluateFunction(env: *v.Environment, call: *const v.Function, args: ?*v.
         }
     }
 
-    const result = evaluate(next, call.body) catch {
-        return error.InvalidValue;
-    };
+    const result = evaluate(next, call.body);
 
     return result;
 }
