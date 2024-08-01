@@ -4,6 +4,7 @@ const term = @import("terminal.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");
 const gc = @import("gc.zig");
+const owlStd = @import("base.zig");
 
 const Cli = struct {
     run_script: ?[]const u8,
@@ -66,13 +67,10 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     defer g.deinit();
 
     const env = try v.Environment.init(&g);
+    owlStd.installBase(env, &g);
     defer env.deinit();
 
-    const val = try e.eval(env, file_content);
-    const sval = try val.toString(g.listAllocator);
-
-    defer g.listAllocator.free(sval);
-    std.debug.print("{s}\n", .{sval});
+    _ = try e.eval(env, file_content);
 }
 
 pub fn repl(allocator: std.mem.Allocator) !void {
@@ -100,7 +98,7 @@ pub fn repl(allocator: std.mem.Allocator) !void {
             const inp_line = std.mem.trimRight(u8, l, "\r\n");
 
             const env = try v.Environment.init(&g);
-            try env.set("read-value", try v.Value.nfun(env.gc, readValue));
+            try env.set("read-value", try v.Value.nativeFun(env.gc, readValue));
             const val = try e.eval(env, inp_line);
             const s = try val.toString(allocator);
             defer allocator.free(s);

@@ -27,15 +27,19 @@ pub const Value = union(ValueType) {
         return g.create(.{ .symbol = s });
     }
 
-    pub fn nfun(g: *gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
+    pub fn str(g: *gc.Gc, s: []const u8) !*Value {
+        return g.create(.{ .string = s });
+    }
+
+    pub fn nativeFun(g: *gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
         return g.create(.{ .nativeFunction = f });
     }
 
-    pub fn True(g: *gc.Gc) !*Value {
+    pub fn owlTrue(g: *gc.Gc) !*Value {
         return g.create(.{ .boolean = true });
     }
 
-    pub fn False(g: *gc.Gc) !*Value {
+    pub fn owlFalse(g: *gc.Gc) !*Value {
         return g.create(.{ .boolean = false });
     }
 
@@ -148,24 +152,6 @@ pub const Function = struct {
     params: *Value,
 };
 
-fn preludeEcho(env: *Environment, args0: ?*Value) *Value {
-    if (args0) |args| {
-        var it: ?*Value = args;
-        while (it != null) {
-            if (it) |value| {
-                const val = e.evaluate(env, value.cons.car.?) catch unreachable;
-                const s = val.toString(env.gc.listAllocator) catch unreachable;
-                defer env.gc.listAllocator.free(s);
-                std.debug.print("{s} ", .{s});
-                it = value.cons.cdr;
-            }
-        }
-        std.debug.print("\n", .{});
-    }
-    std.debug.print("\n", .{});
-    return Value.True(env.gc) catch unreachable;
-}
-
 // Environment does not own the values and will not free them
 pub const Environment = struct {
     gc: *gc.Gc,
@@ -175,9 +161,6 @@ pub const Environment = struct {
     pub fn init(g: *gc.Gc) !*Environment {
         const env = try g.listAllocator.create(Environment);
         env.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.listAllocator) };
-
-        try env.set("echo", try Value.nfun(g, preludeEcho));
-
         return env;
     }
 

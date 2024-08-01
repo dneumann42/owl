@@ -11,12 +11,21 @@ pub fn eval(env: *v.Environment, code: []const u8) EvalError!*v.Value {
     });
 }
 
+pub fn nothing(env: *v.Environment) *v.Value {
+    const memo = struct {
+        var value: ?*v.Value = null;
+    };
+    if (memo.value == null) {
+        memo.value = env.gc.create(v.Value.nothing) catch unreachable;
+    }
+    return memo.value orelse unreachable;
+}
+
 pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
     return switch (value.*) {
         v.Value.number, v.Value.string, v.Value.nothing, v.Value.boolean, v.Value.dictionary => value,
         v.Value.symbol => |s| {
             if (env.find(s)) |val| {
-                // for now we will assume that the 'value' has been used and is no longer needed
                 return val;
             } else {
                 std.log.err("Undefined symbol: '{s}'\n", .{s});

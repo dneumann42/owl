@@ -419,9 +419,9 @@ pub const Reader = struct {
                 std.debug.print("Missing comma got: {c}\n", .{self.chr()});
                 return error.NoMatch;
             }
-            const start2 = self.it;
+            const start = self.it;
             const expr = self.readExpression() catch {
-                self.it = start2;
+                self.it = start;
                 break;
             };
             it = v.cons(self.gc, expr, it);
