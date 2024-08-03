@@ -5,7 +5,6 @@
  {O,o}
 /)___)
   ' '
-A programming language and environment
 </pre>
 
 ### Example
