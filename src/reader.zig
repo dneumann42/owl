@@ -342,6 +342,7 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
+
         const params = self.readParameterList() catch {
             self.it = start;
             return error.NoMatch;
@@ -351,6 +352,7 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
+
         return self.gc.create(.{ .function = .{ .name = literal, .body = body, .params = params } }) catch {
             return error.NoMatch;
         };
@@ -361,6 +363,7 @@ pub const Reader = struct {
         const start = self.it;
         _ = try self.expectKeyword("fun");
         self.skipWhitespace();
+
         const params = self.readParameterList() catch {
             self.it = start;
             return error.NoMatch;
@@ -370,6 +373,7 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
+
         return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params } }) catch {
             return error.NoMatch;
         };
@@ -404,26 +408,30 @@ pub const Reader = struct {
         self.skipWhitespace();
         var it: ?*v.Value = null;
         var first = true;
-
         self.next();
+
         while (!self.atEof()) {
             defer first = false;
             self.skipWhitespace();
             if (self.chr() == ')') {
                 self.next();
+                it = v.cons(self.gc, null, null);
                 break;
             }
+
             if (self.chr() == ',' and !first) {
                 self.next();
             } else if (!first) {
                 std.debug.print("Missing comma got: {c}\n", .{self.chr()});
                 return error.NoMatch;
             }
+
             const start = self.it;
             const expr = self.readExpression() catch {
                 self.it = start;
                 break;
             };
+
             it = v.cons(self.gc, expr, it);
         }
 

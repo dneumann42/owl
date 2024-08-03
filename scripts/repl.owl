@@ -1,6 +1,3 @@
-fun repl() do
-  def input read-line("> ")
-  echo(input)
+fun repl()
+  1
 end
-
-repl()

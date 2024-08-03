@@ -1,2 +1,5 @@
-def inp read-line("> ")
-echo(inp)
+fun repl()
+  1
+end
+
+echo(repl())
