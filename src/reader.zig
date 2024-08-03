@@ -406,30 +406,34 @@ pub const Reader = struct {
     // parameter_list = "(", [parameter, {",", parameter}], ")";
     pub fn readParameterList(self: *Reader) ParseError!*v.Value {
         self.skipWhitespace();
+
         var it: ?*v.Value = null;
         var first = true;
-        self.next();
+
+        self.next(); // skips the '('
 
         while (!self.atEof()) {
             defer first = false;
+
             self.skipWhitespace();
+
             if (self.chr() == ')') {
                 self.next();
-                it = v.cons(self.gc, null, null);
                 break;
             }
 
             if (self.chr() == ',' and !first) {
                 self.next();
             } else if (!first) {
-                std.debug.print("Missing comma got: {c}\n", .{self.chr()});
+                std.log.err("Missing comma got: {c}\n", .{self.chr()});
                 return error.NoMatch;
             }
 
             const start = self.it;
             const expr = self.readExpression() catch {
+                // error path:
                 self.it = start;
-                break;
+                return error.Invalid;
             };
 
             it = v.cons(self.gc, expr, it);
@@ -439,7 +443,7 @@ pub const Reader = struct {
             return list.reverse();
         }
 
-        return error.NoMatch;
+        return v.cons(self.gc, null, null);
     }
 
     // parameter = identifier, ":", type;
@@ -484,13 +488,12 @@ pub const Reader = struct {
                     it = v.cons(self.gc, expr, it);
                 },
             }
-
-            it = v.cons(self.gc, expr, it);
         }
 
         if (it) |xs| {
             return xs.reverse();
         }
+
         return error.NoMatch;
     }
 

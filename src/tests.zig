@@ -145,11 +145,25 @@ test "reading if expressions without else" {
     try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
 }
 
-test "reading dictionaries" {
+// test "reading dictionaries" {
+//     defer G.destroyAll();
+//     var reader = r.Reader.initLoad(&G, "{ .x 1 }");
+//     const exp = try reader.readExpression();
+//     std.debug.print("EXP: {any}", .{exp});
+// }
+
+test "reading params" {
     defer G.destroyAll();
-    var reader = r.Reader.initLoad(&G, "{ .x 1 }");
-    const exp = try reader.readExpression();
-    std.debug.print("EXP: {any}", .{exp});
+    var reader = r.Reader.initLoad(&G, "()");
+    const exp = try reader.readParameterList();
+    try expect(exp.cons.car == null);
+    reader.load("(a)");
+    const exp2 = try reader.readParameterList();
+    try expect(std.mem.eql(u8, exp2.cons.car.?.symbol, "a"));
+    reader.load("(a, b)");
+    const exp3 = try reader.readParameterList();
+    try expect(std.mem.eql(u8, exp3.cons.car.?.symbol, "a"));
+    try expect(std.mem.eql(u8, exp3.cons.cdr.?.cons.car.?.symbol, "b"));
 }
 
 // Evaluation Tests

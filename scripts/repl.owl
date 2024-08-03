@@ -1,3 +1,5 @@
-fun repl()
-  1
+fun add-1 (a)
+  a + 1
 end
+
+echo(add-1(1))

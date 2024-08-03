@@ -9,7 +9,7 @@
             "request": "launch",
             "type": "lldb",
             "program": "${workspaceFolder}/zig-out/bin/owl",
-            "args": ["run", "scripts/demo.owl"],
+            "args": ["run", "scripts/repl.owl"],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "build",
         }
