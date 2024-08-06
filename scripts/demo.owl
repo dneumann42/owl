@@ -1,5 +1,10 @@
-fun repl()
-  1
+fun my-fun()
+  def line read-line("value: ")
+  if line eq "hello" then
+    echo("Hello!")
+  else
+    echo("World!")
+  end
 end
 
-echo(repl())
+my-fun()

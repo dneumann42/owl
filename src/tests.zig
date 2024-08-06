@@ -133,7 +133,7 @@ test "reading if expressions" {
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "if"));
     try expect(exp.cons.cdr.?.cons.car.?.boolean == true);
     try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
-    try expect(exp.cons.cdr.?.cons.cdr.?.cons.cdr.?.cons.car.?.number == 2.0);
+    try expect(exp.cons.cdr.?.cons.cdr.?.cons.cdr.?.cons.car.?.cons.cdr.?.cons.car.?.number == 2.0);
 }
 
 test "reading if expressions without else" {

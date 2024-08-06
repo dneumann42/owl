@@ -1,15 +1,10 @@
-fun compute-factorial(n)
-  if n < 2 then
-    1
+fun repl()
+  def line read-line("> ")
+  if line eq ":q" then
+    echo("bye.")
   else
-    n * compute-factorial(n - 1)
+    repl()
   end
 end
 
-echo(compute-factorial(5)) ; 120
-
-def x do
-  def y 10
-  1 + y
-end
-echo(x) ; 11
+repl()

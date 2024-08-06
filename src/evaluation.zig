@@ -2,7 +2,7 @@ const v = @import("values.zig");
 const r = @import("reader.zig");
 const std = @import("std");
 
-const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
+const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
 
 pub fn eval(env: *v.Environment, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.initLoad(env.gc, code);
@@ -62,6 +62,10 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateMul(env, args);
     } else if (std.mem.eql(u8, sym, "/")) {
         return evaluateDiv(env, args);
+    } else if (std.mem.eql(u8, sym, "eq")) {
+        return evaluateEql(env, args);
+    } else if (std.mem.eql(u8, sym, "not-eq")) {
+        return evaluateNotEql(env, args);
     } else if (std.mem.eql(u8, sym, "<")) {
         return evaluateLessThan(env, args);
     } else if (std.mem.eql(u8, sym, ">")) {
@@ -236,6 +240,20 @@ pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         return error.AllocError;
     };
     return n;
+}
+
+pub fn evaluateEql(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const arg = args orelse return error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.ExpectedValue);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.ExpectedValue);
+    return v.Value.boole(env.gc, a.isEql(b)) catch error.AllocError;
+}
+
+pub fn evaluateNotEql(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const arg = args orelse return error.InvalidValue;
+    const a = try evaluate(env, arg.cons.car orelse return error.ExpectedValue);
+    const b = try evaluate(env, arg.cons.cdr.?.cons.car orelse return error.ExpectedValue);
+    return v.Value.boole(env.gc, !a.isEql(b)) catch error.AllocError;
 }
 
 pub fn evaluateCall(env: *v.Environment, call: *v.Value, args: ?*v.Value) !*v.Value {

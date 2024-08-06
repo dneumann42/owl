@@ -15,7 +15,6 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
-    // NOTE: symbol values may not be the same pointer
     dictionary: std.AutoHashMap(*Value, Value),
     nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
@@ -33,6 +32,13 @@ pub const Value = union(ValueType) {
 
     pub fn nativeFun(g: *gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
         return g.create(.{ .nativeFunction = f });
+    }
+
+    pub fn boole(g: *gc.Gc, b: bool) !*Value {
+        if (b) {
+            return Value.owlTrue(g);
+        }
+        return Value.owlFalse(g);
     }
 
     pub fn owlTrue(g: *gc.Gc) !*Value {
@@ -86,6 +92,31 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{any}", .{self.*});
             },
         }
+    }
+
+    pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
+        if (self == null) {
+            return other == null;
+        }
+
+        const a = self.?;
+        const b = other.?;
+
+        if (@as(ValueType, a.*) != @as(ValueType, b.*)) {
+            return false;
+        }
+
+        return switch (a.*) {
+            .nothing => true,
+            .number => |n| n == b.number,
+            .string => |s| std.mem.eql(u8, s, b.string),
+            .symbol => |s| std.mem.eql(u8, s, b.symbol),
+            .boolean => |bol| bol == b.boolean,
+            .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
+            .function => |f| f.name == b.function.name and f.body == b.function.body and f.params == b.function.params,
+            .dictionary => false, // TODO
+            .nativeFunction => a.nativeFunction == b.nativeFunction,
+        };
     }
 
     fn getFormatString(value: *Value) []const u8 {

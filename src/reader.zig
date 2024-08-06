@@ -184,7 +184,7 @@ pub const Reader = struct {
 
     // equality = comparison, {("==" | "!="), equality};
     pub fn readEquality(self: *Reader) ParseError!*v.Value {
-        if (self.readBinaryExpression2(&[_][]const u8{ "==", "!=" }, Reader.readComparison, Reader.readEquality)) |n| {
+        if (self.readBinaryExpression2(&[_][]const u8{ "eq", "not-eq" }, Reader.readComparison, Reader.readEquality)) |n| {
             return n;
         } else |_| {}
         return error.NoMatch;
@@ -537,13 +537,15 @@ pub const Reader = struct {
         };
         const consequent = try self.readExpression();
         const start2 = self.it;
+
         _ = self.expectKeyword("else") catch {
             self.it = start2;
             _ = try self.expectKeyword("end");
             return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, null)));
         };
-        const alternative = try self.readExpression();
-        _ = try self.expectKeyword("end");
+
+        const alternative = try self.readBlockTillEnd();
+
         return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, v.cons(self.gc, alternative, null))));
     }
 
