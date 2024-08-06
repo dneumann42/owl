@@ -145,12 +145,12 @@ test "reading if expressions without else" {
     try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
 }
 
-// test "reading dictionaries" {
-//     defer G.destroyAll();
-//     var reader = r.Reader.initLoad(&G, "{ .x 1 }");
-//     const exp = try reader.readExpression();
-//     std.debug.print("EXP: {any}", .{exp});
-// }
+test "reading dictionaries" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "{ .x 1 }");
+    const exp = try reader.readExpression();
+    std.debug.print("EXP: {any}", .{exp});
+}
 
 test "reading params" {
     defer G.destroyAll();
@@ -239,6 +239,28 @@ test "evaluating recursive functions" {
         \\factorial(5)
     );
     try expect(value.number == 120);
+}
+
+test "evaluating functions out of order" {
+    defer G.destroyAll();
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env,
+        \\fun a() b() end
+        \\fun b() 69 end
+        \\a()
+    );
+    try expect(value.number == 69);
+}
+
+test "evaluating passing functions" {
+    defer G.destroyAll();
+    const env = try v.Environment.init(&G);
+    const value = try e.eval(env,
+        \\fun a(b) b() end
+        \\fun b() 69 end
+        \\a(b)
+    );
+    try expect(value.number == 69);
 }
 
 test "garbage collection" {

@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, InvalidRecord, InvalidKeyValue, MissingClosingBrace };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace };
 
 pub const Reader = struct {
     gc: *gc.Gc,
@@ -710,16 +710,31 @@ pub const Reader = struct {
             it = v.cons(self.gc, kv, it);
 
             if (self.chr() == '}') {
+                self.next();
                 break;
             }
+
             if (self.atEof()) {
                 return error.MissingClosingBrace;
             }
         }
 
         if (it) |xs| {
-            return xs.reverse();
+            const list = xs.reverse();
+
+            var map = std.AutoHashMap(*v.Value, v.Value).init(self.gc.allocator);
+
+            var it2: ?*v.Value = list.cons.cdr;
+            while (it2 != null) : (it2 = it2.?.cons.cdr) {
+                const pair = it2.?.cons.car orelse continue;
+                const key = pair.cons.car orelse unreachable;
+                const value = pair.cons.cdr orelse unreachable;
+                map.put(key, value.*) catch return error.MemoryError;
+            }
+
+            return self.gc.create(.{ .dictionary = map }) catch return error.MemoryError;
         }
+
         return error.NoMatch;
     }
 
@@ -727,11 +742,14 @@ pub const Reader = struct {
     pub fn readKeyValuePair(self: *Reader, terminalChar: u8) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
+
         // TODO: handle ("[", expression, "]")
         if (self.chr() != '.') {
             return error.NoMatch;
         }
+
         self.next();
+
         // I may be able to read owl keywords also, allow for owl keyword dictionary keys
         const key = self.readSymbol(false) catch self.readString() catch {
             self.it = start;
