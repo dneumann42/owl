@@ -1,5 +1,7 @@
 # Owl
 
+Note: this project is very very early in development and doesn't do a whole lot
+
 <pre>
  ~___~
  {O,o}
