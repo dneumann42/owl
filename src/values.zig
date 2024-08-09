@@ -15,7 +15,7 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
-    dictionary: std.AutoHashMap(*Value, Value),
+    dictionary: std.HashMap(*Value, Value, ValueContext(*Value), std.hash_map.default_max_load_percentage),
     nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
     pub fn num(g: *gc.Gc, n: f64) !*Value {
@@ -121,13 +121,13 @@ pub const Value = union(ValueType) {
 
     fn getFormatString(value: *Value) []const u8 {
         return switch (value.*) {
-            Value.nothing => "Nothing",
-            Value.symbol => "{s}",
-            Value.number => "{d}",
-            Value.boolean => "{s}",
-            Value.function => "[fn: {s}]",
-            Value.nativeFunction => "[native-fn]",
-            Value.cons => "({s})",
+            .nothing => "Nothing",
+            .symbol => "{s}",
+            .number => "{d}",
+            .boolean => "{s}",
+            .function => "[fn: {s}]",
+            .nativeFunction => "[native-fn]",
+            .cons => "({s})",
             else => "{any}",
         };
     }
@@ -172,6 +172,46 @@ pub const Value = union(ValueType) {
         return self;
     }
 };
+
+pub fn getValueEqlFn(comptime K: type, comptime Context: type) (fn (Context, K, K) bool) {
+    return struct {
+        fn eql(ctx: Context, a: K, b: K) bool {
+            _ = ctx;
+            return a.isEql(b);
+        }
+    };
+}
+
+pub fn hashValue(value: *const Value, hasher: *std.hash.Wyhash) void {
+    switch (value.*) {
+        .string, .symbol => |s| std.hash.autoHashStrat(hasher, s, .Shallow),
+        .cons => |c| {
+            if (c.car) |cr| {
+                hashValue(cr, hasher);
+            }
+            if (c.cdr) |cd| {
+                hashValue(cd, hasher);
+            }
+        },
+        else => {},
+    }
+}
+
+pub fn ValueContext(comptime K: type) type {
+    return struct {
+        pub fn hash(self: @This(), key: K) u64 {
+            _ = self;
+            var hasher = std.hash.Wyhash.init(0);
+            hashValue(key, &hasher);
+            return hasher.final();
+        }
+
+        pub fn eql(self: @This(), a: K, b: K) bool {
+            _ = self;
+            return std.meta.eql(a.*, b.*);
+        }
+    };
+}
 
 pub fn joinWithSpaces(allocator: std.mem.Allocator, list: std.ArrayList([]const u8)) ![]u8 {
     return std.mem.join(allocator, " ", list.items);
@@ -246,5 +286,11 @@ pub fn cdr(v: ?*Value) ?*Value {
 }
 
 pub fn repr(val: *Value) void {
-    _ = val;
+    const allocator = std.heap.page_allocator;
+    const s = val.toString(allocator) catch {
+        std.log.err("Failed to allocate memory for repr.", .{});
+        return;
+    };
+    defer allocator.free(s);
+    std.log.info("{s}\n", .{s});
 }

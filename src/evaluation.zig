@@ -89,7 +89,7 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
 
 pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
-    var dict = std.AutoHashMap(*v.Value, v.Value).init(env.gc.listAllocator);
+    var dict = std.HashMap(*v.Value, v.Value, v.ValueContext(*v.Value), std.hash_map.default_max_load_percentage).init(env.gc.listAllocator);
     while (it) |xs| {
         const key = xs.cons.car.?;
         it = xs.cons.cdr;

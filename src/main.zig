@@ -51,6 +51,7 @@ pub fn main() !void {
         try runScript(allocator, path);
     }
 }
+
 pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     var file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();

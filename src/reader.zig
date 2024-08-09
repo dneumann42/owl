@@ -722,7 +722,7 @@ pub const Reader = struct {
         if (it) |xs| {
             const list = xs.reverse();
 
-            var map = std.AutoHashMap(*v.Value, v.Value).init(self.gc.allocator);
+            var map = std.HashMap(*v.Value, v.Value, v.ValueContext(*v.Value), std.hash_map.default_max_load_percentage).init(self.gc.allocator);
 
             var it2: ?*v.Value = list.cons.cdr;
             while (it2 != null) : (it2 = it2.?.cons.cdr) {

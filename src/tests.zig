@@ -147,9 +147,13 @@ test "reading if expressions without else" {
 
 test "reading dictionaries" {
     defer G.destroyAll();
-    var reader = r.Reader.initLoad(&G, "{ .x 1 }");
+    var reader = r.Reader.initLoad(&G, "{ .x 3 }");
     const exp = try reader.readExpression();
-    std.debug.print("EXP: {any}", .{exp});
+    const key = try v.Value.sym(&G, "x");
+    v.repr(key);
+    const value = exp.dictionary.getPtr(key);
+    _ = value;
+    // try expect(value.?.number == 3);
 }
 
 test "reading params" {

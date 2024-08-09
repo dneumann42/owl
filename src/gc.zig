@@ -48,6 +48,12 @@ pub const Gc = struct {
 
     pub fn destroyAll(self: *Gc) void {
         for (self.values.items) |val| {
+            switch (val.*) {
+                .dictionary => {
+                    val.dictionary.deinit();
+                },
+                else => {},
+            }
             self.destroy(val);
         }
         self.values.resize(0) catch {};
