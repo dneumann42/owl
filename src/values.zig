@@ -184,7 +184,7 @@ pub fn getValueEqlFn(comptime K: type, comptime Context: type) (fn (Context, K, 
 
 pub fn hashValue(value: *const Value, hasher: *std.hash.Wyhash) void {
     switch (value.*) {
-        .string, .symbol => |s| std.hash.autoHashStrat(hasher, s, .Shallow),
+        .string, .symbol => |s| std.hash.autoHashStrat(hasher, s, .Deep),
         .cons => |c| {
             if (c.car) |cr| {
                 hashValue(cr, hasher);
@@ -221,6 +221,69 @@ pub const Function = struct {
     name: ?*Value,
     body: *Value,
     params: *Value,
+};
+
+pub const Dictionary = struct {
+    pairs: *Value,
+    g: *gc.Gc,
+
+    pub fn init(g: *gc.Gc) !@This() {
+        return .{
+            .pairs = try g.create(.{ .cons = .{ .car = null, .cdr = null } }),
+            .g = g,
+        };
+    }
+
+    pub fn get(self: *Dictionary, key: *Value) ?Value {
+        var it: ?*Value = self.pairs;
+        while (it) : (it = it.?.cons.cdr) {
+            const pair = it.?.car;
+            if (pair) |p| {
+                if (p.cons.car) |cr| {
+                    if (cr.isEql(key)) {
+                        return p.cons.cdr;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    pub fn hasKey(self: *Dictionary, key: *Value) bool {
+        var it: ?*Value = self.pairs;
+        while (it) : (it = it.?.cons.cdr) {
+            const pair = it.?.car;
+            if (pair) |p| {
+                if (p.cons.car) |cr| {
+                    if (cr.isEql(key)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    pub fn putOrReplace(self: *Dictionary, key: *Value, value: *Value) !void {
+        var it: ?*Value = self.pairs;
+        while (it) : (it = it.?.cons.cdr) {
+            const pair = it.?.car;
+            if (pair) |p| {
+                if (p.cons.car) |cr| {
+                    if (cr.isEql(key)) {
+                        p.cons.cdr = value;
+                        return;
+                    }
+                }
+            }
+        }
+        self.pairs = cons(self.g, cons(self.g, key, value), self.pairs);
+        return;
+    }
+
+    pub fn put(self: *Dictionary, key: *Value, value: *Value) !void {
+        try self.putOrReplace(key, value);
+    }
 };
 
 // Environment does not own the values and will not free them
@@ -286,11 +349,5 @@ pub fn cdr(v: ?*Value) ?*Value {
 }
 
 pub fn repr(val: *Value) void {
-    const allocator = std.heap.page_allocator;
-    const s = val.toString(allocator) catch {
-        std.log.err("Failed to allocate memory for repr.", .{});
-        return;
-    };
-    defer allocator.free(s);
-    std.log.info("{s}\n", .{s});
+    _ = val; // autofix
 }

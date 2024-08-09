@@ -150,9 +150,11 @@ test "reading dictionaries" {
     var reader = r.Reader.initLoad(&G, "{ .x 3 }");
     const exp = try reader.readExpression();
     const key = try v.Value.sym(&G, "x");
-    v.repr(key);
+    std.debug.print("HERE: '{}'\n", .{key});
     const value = exp.dictionary.getPtr(key);
-    _ = value;
+    if (value) |val| {
+        v.repr(val);
+    }
     // try expect(value.?.number == 3);
 }
 
