@@ -722,14 +722,14 @@ pub const Reader = struct {
         if (it) |xs| {
             const list = xs.reverse();
 
-            var map = std.HashMap(*v.Value, v.Value, v.ValueContext(*v.Value), std.hash_map.default_max_load_percentage).init(self.gc.allocator);
+            var map = v.Dictionary.init(self.gc) catch return error.MemoryError;
 
             var it2: ?*v.Value = list.cons.cdr;
             while (it2 != null) : (it2 = it2.?.cons.cdr) {
                 const pair = it2.?.cons.car orelse continue;
                 const key = pair.cons.car orelse unreachable;
                 const value = pair.cons.cdr orelse unreachable;
-                map.put(key, value.*) catch return error.MemoryError;
+                map.put(key, value) catch return error.MemoryError;
             }
 
             return self.gc.create(.{ .dictionary = map }) catch return error.MemoryError;

@@ -15,7 +15,7 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
-    dictionary: std.HashMap(*Value, Value, ValueContext(*Value), std.hash_map.default_max_load_percentage),
+    dictionary: Dictionary,
     nativeFunction: *const fn (*Environment, ?*Value) *Value,
 
     pub fn num(g: *gc.Gc, n: f64) !*Value {
@@ -234,6 +234,11 @@ pub const Dictionary = struct {
         };
     }
 
+    pub fn deinit(self: *Dictionary) void {
+        // NOTE: this will be needed once we switch to a hash based dictionary
+        _ = self;
+    }
+
     pub fn get(self: *Dictionary, key: *Value) ?Value {
         var it: ?*Value = self.pairs;
         while (it) : (it = it.?.cons.cdr) {
@@ -266,8 +271,8 @@ pub const Dictionary = struct {
 
     pub fn putOrReplace(self: *Dictionary, key: *Value, value: *Value) !void {
         var it: ?*Value = self.pairs;
-        while (it) : (it = it.?.cons.cdr) {
-            const pair = it.?.car;
+        while (it != null) : (it = it.?.cons.cdr) {
+            const pair = it.?.cons.car;
             if (pair) |p| {
                 if (p.cons.car) |cr| {
                     if (cr.isEql(key)) {

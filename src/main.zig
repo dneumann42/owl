@@ -30,55 +30,29 @@ pub fn main() !void {
     var g = gc.Gc.init(allocator, allocator);
     defer g.deinit();
 
-    var readr = reader.Reader.initLoad(&g, "{ .x 3 }");
-    const exp = try readr.readExpression();
-    const key = try v.Value.sym(&g, "x");
+    var cli = Cli{ .run_script = null, .new_project = null };
 
-    var it = exp.dictionary.keyIterator();
-
-    var hasher1 = std.hash.Wyhash.init(0);
-    var hasher2 = std.hash.Wyhash.init(0);
-
-    while (it.next()) |k| {
-        std.debug.print("KEY: {any} = {any}: {any}\n", .{ k.*, key, k.*.isEql(key) });
-        v.hashValue(key, &hasher1);
-        v.hashValue(k.*, &hasher2);
-        const hash1 = hasher1.final();
-        const hash2 = hasher2.final();
-
-        const value = exp.dictionary.get(key);
-        _ = value; // autofix
-        const value2 = exp.dictionary.get(k.*);
-        _ = value2; // autofix
-        _ = value; // autofix
-
-        std.debug.print("HERE: {any} = {any}: {any}", .{ hash1, hash2, hash1 == hash2 });
+    var it = args.iterator();
+    while (it.has_next()) : (it.next()) {
+        if (it.is_arg("run")) {
+            if (!it.has_next()) {
+                std.debug.print("Missing argument, expected path to script.", .{});
+                return;
+            }
+            cli.run_script = it.get_value();
+        } else if (it.is_arg("new")) {
+            std.debug.print("TODO!", .{});
+            return;
+        }
     }
 
-    //    var cli = Cli{ .run_script = null, .new_project = null };
-    //
-    //    var it = args.iterator();
-    //    while (it.has_next()) : (it.next()) {
-    //        if (it.is_arg("run")) {
-    //            if (!it.has_next()) {
-    //                std.debug.print("Missing argument, expected path to script.", .{});
-    //                return;
-    //            }
-    //            cli.run_script = it.get_value();
-    //        } else if (it.is_arg("new")) {
-    //            std.debug.print("TODO!", .{});
-    //            return;
-    //        }
-    //    }
-    //
-    //    if (cli.should_run_repl()) {
-    //        try repl(allocator);
-    //    }
-    //
-    //    if (cli.run_script) |path| {
-    //        try runScript(allocator, path);
-    //    }
+    if (cli.should_run_repl()) {
+        try repl(allocator);
+    }
 
+    if (cli.run_script) |path| {
+        try runScript(allocator, path);
+    }
 }
 
 pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
