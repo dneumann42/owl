@@ -82,6 +82,22 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateDictionary(env, args);
     } else if (std.mem.eql(u8, sym, "list")) {
         return evaluateList(env, args);
+    } else if (std.mem.eql(u8, sym, "car")) {
+        if (args) |xs| {
+            if (xs.cons.car) |value| {
+                return evaluate(env, value);
+            }
+            return env.gc.nothing();
+        }
+        return env.gc.nothing();
+    } else if (std.mem.eql(u8, sym, "cdr")) {
+        if (args) |xs| {
+            if (xs.cons.cdr) |value| {
+                return evaluate(env, value);
+            }
+            return env.gc.nothing();
+        }
+        return env.gc.nothing();
     } else {
         const call = env.find(sym) orelse {
             std.log.err("Undefined symbol: '{s}'.\n", .{sym});

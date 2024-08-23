@@ -1,5 +1,10 @@
 history := list()
 
+archimedes := " ~___~  Owl (0.0.0-dev)
+ {O,o}  run with 'help' for list of commands
+/)___)  enter '?' to show help for repl
+  ' '"
+
 fun repl()
   line := read-line("> ")
   if line eq ":q" then
@@ -10,4 +15,5 @@ fun repl()
   end
 end
 
+echo(archimedes)
 repl()

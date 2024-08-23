@@ -17,9 +17,10 @@ pub const Gc = struct {
     allocator: std.mem.Allocator,
     listAllocator: std.mem.Allocator,
     values: std.ArrayList(*v.Value),
+    nothingValue: ?*v.Value,
 
     pub fn init(allocator: std.mem.Allocator, listAllocator: std.mem.Allocator) Gc {
-        return .{ .allocator = allocator, .listAllocator = listAllocator, .values = std.ArrayList(*v.Value).init(listAllocator) };
+        return .{ .allocator = allocator, .listAllocator = listAllocator, .values = std.ArrayList(*v.Value).init(listAllocator), .nothingValue = null };
     }
 
     pub fn deinit(self: *Gc) void {
@@ -30,6 +31,13 @@ pub const Gc = struct {
     fn destroy(self: *Gc, value: *v.Value) void {
         const pair: *AlignedPair = @fieldParentPtr("value", value);
         self.allocator.destroy(pair);
+    }
+
+    pub fn nothing(self: *Gc) *v.Value {
+        if (self.nothingValue == null) {
+            self.nothingValue = self.create(v.Value.nothing) catch unreachable;
+        }
+        return self.nothingValue.?;
     }
 
     pub fn create(self: *Gc, default: v.Value) !*v.Value {
