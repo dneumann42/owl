@@ -77,36 +77,27 @@ pub const Value = union(ValueType) {
             Value.cons => {
                 var it: ?*Value = self;
                 var strings = std.ArrayList([]const u8).init(allocator);
-                var done = false;
-                while (it != null) {
-                    if (it) |xs| {
-                        if (xs.cons.cdr) |cd| {
-                            switch (cd.*) {
-                                .cons => {
-                                    if (xs.cons.car) |val| {
-                                        try strings.append(try val.toString(allocator));
-                                    }
-                                },
-                                else => {
-                                    if (xs.cons.car) |val| {
-                                        const a = try val.toString(allocator);
-                                        const b = try xs.cons.cdr.?.toString(allocator);
-                                        try strings.append(a);
-                                        try strings.append(" . ");
-                                        try strings.append(b);
-                                        done = true;
-                                    }
-                                },
-                            }
-                        }
 
-                        if (done) {
+                while (it != null) : (it = it.?.cons.cdr) {
+                    const cr = it.?.cons.car;
+                    if (cr) |value| {
+                        try strings.append(try value.toString(allocator));
+
+                        if (it.?.cons.cdr == null) {
                             break;
                         }
 
-                        it = xs.cons.cdr;
+                        switch (it.?.cons.cdr.?.*) {
+                            .cons => {},
+                            else => {
+                                try strings.append(" . ");
+                                try strings.append(try it.?.cons.cdr.?.toString(allocator));
+                                break;
+                            },
+                        }
                     }
                 }
+
                 const finalStr = try joinWithSpaces(allocator, strings);
                 return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
             },
@@ -276,7 +267,7 @@ pub const Dictionary = struct {
 
     pub fn get(self: *Dictionary, key: *Value) ?Value {
         var it: ?*Value = self.pairs;
-        while (it) : (it = it.?.cons.cdr) {
+        while (it != null) : (it = it.?.cons.cdr) {
             const pair = it.?.car;
             if (pair) |p| {
                 if (p.cons.car) |cr| {
@@ -386,8 +377,4 @@ pub fn cdr(v: ?*Value) ?*Value {
         .cons => val.cons.cdr,
         else => null,
     };
-}
-
-pub fn repr(val: *Value) void {
-    _ = val; // autofix
 }

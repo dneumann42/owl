@@ -1,8 +1,11 @@
+history := list()
+
 fun repl()
-  def line read-line("> ")
+  line := read-line("> ")
   if line eq ":q" then
     echo("bye.")
   else
+    echo(eval(line))
     repl()
   end
 end

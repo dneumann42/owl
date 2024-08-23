@@ -147,15 +147,8 @@ test "reading if expressions without else" {
 
 test "reading dictionaries" {
     defer G.destroyAll();
-    var reader = r.Reader.initLoad(&G, "{ .x 3 }");
-    const exp = try reader.readExpression();
-    const key = try v.Value.sym(&G, "x");
-    std.debug.print("HERE: '{}'\n", .{key});
-    const value = exp.dictionary.getPtr(key);
-    if (value) |val| {
-        v.repr(val);
-    }
-    // try expect(value.?.number == 3);
+    var reader = r.Reader.initLoad(&G, "{ .a 1 .b 2 }");
+    _ = try reader.readExpression();
 }
 
 test "reading params" {

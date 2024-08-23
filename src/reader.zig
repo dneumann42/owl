@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma };
 
 pub const Reader = struct {
     gc: *gc.Gc,
@@ -251,6 +251,7 @@ pub const Reader = struct {
 
     // primary = literal
     //         | function_call
+    //         | assignment
     //         | symbol
     //         | list_comprehension
     //         | dict_comprehension
@@ -259,15 +260,20 @@ pub const Reader = struct {
     //         | if_expression
     //         | for_expression
     //         | return_expression
-    //         | assignment
     //         | function_definition;
     pub fn readPrimary(self: *Reader) ParseError!*v.Value {
         if (self.readLiteral()) |value| {
             return value;
         } else |_| {}
+
         if (self.readFunctionCall()) |value| {
             return value;
         } else |_| {}
+
+        if (self.readAssignment()) |value| {
+            return value;
+        } else |_| {}
+
         if (self.readSymbol(false)) |value| {
             return value;
         } else |_| {}
@@ -288,10 +294,6 @@ pub const Reader = struct {
         } else |_| {}
 
         if (self.readIfExpression()) |value| {
-            return value;
-        } else |_| {}
-
-        if (self.readAssignment()) |value| {
             return value;
         } else |_| {}
 
@@ -493,7 +495,6 @@ pub const Reader = struct {
 
     // block = "do", {expression}, "end";
     pub fn readBlock(self: *Reader) ParseError!*v.Value {
-        self.skipWhitespace();
         const start = self.it;
         _ = try self.expectKeyword("do");
         return self.readBlockTillEnd() catch {
@@ -502,14 +503,25 @@ pub const Reader = struct {
         };
     }
 
-    // assignment = "def", identifier, [":", type], expression;
+    // assignment = identifier, [":=", [":" type "="]], expression;
     pub fn readAssignment(self: *Reader) ParseError!*v.Value {
-        const def = try self.expectKeyword("def");
         self.skipWhitespace();
+        const start = self.it;
         const symbol = self.readSymbol(false) catch {
-            // This should be an actual error since we read a 'def'
-            return error.DefMissingIdentifier;
+            return error.NoMatch;
         };
+
+        self.skipWhitespace();
+        if (self.chr() != ':') {
+            self.it = start;
+            return error.NoMatch;
+        }
+        self.next();
+        if (self.chr() != '=') {
+            self.it = start;
+            return error.NoMatch;
+        }
+        self.next();
 
         // TODO: [":", type]
 
@@ -517,7 +529,7 @@ pub const Reader = struct {
             return error.DefMissingValue;
         };
 
-        return v.cons(self.gc, def, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
+        return v.cons(self.gc, v.Value.sym(self.gc, "def") catch unreachable, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
     }
 
     // if_expression = "if", expression, "then", expression, ["else", expression], "end";
@@ -599,6 +611,7 @@ pub const Reader = struct {
         return self.readNumber() catch
             self.readString() catch
             self.readBoolean() catch
+            self.readList() catch
             self.readDictionary() catch {
             self.it = start;
             return error.NoMatch;
@@ -677,12 +690,35 @@ pub const Reader = struct {
     }
 
     // list = "[", [expression, {",", expression}], "]";
-    pub fn readList(reader: *Reader) ParseError!*v.Value {
-        if (reader.chr() != '[') {
+    pub fn readList(self: *Reader) ParseError!*v.Value {
+        if (self.chr() != '[') {
             return error.NoMatch;
         }
-        //
-        return error.NoMatch;
+
+        self.next();
+        var it: ?*v.Value = null;
+        while (!self.atEof()) {
+            const val = try self.readExpression();
+            it = v.cons(self.gc, val, it);
+
+            self.skipComment();
+            if (self.chr() == ']') {
+                self.next();
+                break;
+            } else if (self.chr() == ',') {
+                self.next();
+            } else if (self.atEof()) {
+                return error.MissingClosingBracket;
+            } else {
+                return error.MissingComma;
+            }
+        }
+
+        if (it) |xs| {
+            return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, xs);
+        }
+
+        return v.cons(self.gc, null, null);
     }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
@@ -778,9 +814,9 @@ pub const Reader = struct {
         if (std.mem.eql(u8, sym, "for")) return true;
         if (std.mem.eql(u8, sym, "do")) return true;
         if (std.mem.eql(u8, sym, "cond")) return true;
-        if (std.mem.eql(u8, sym, "def")) return true;
         return false;
     }
+
     pub fn readSymbol(reader: *Reader, readkeywords: bool) ParseError!*v.Value {
         const start = reader.it;
         if (ascii.isDigit(reader.chr())) {
