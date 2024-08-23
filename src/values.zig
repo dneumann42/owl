@@ -77,19 +77,54 @@ pub const Value = union(ValueType) {
             Value.cons => {
                 var it: ?*Value = self;
                 var strings = std.ArrayList([]const u8).init(allocator);
+                var done = false;
                 while (it != null) {
                     if (it) |xs| {
-                        if (xs.cons.car) |val| {
-                            try strings.append(try val.toString(allocator));
+                        if (xs.cons.cdr) |cd| {
+                            switch (cd.*) {
+                                .cons => {
+                                    if (xs.cons.car) |val| {
+                                        try strings.append(try val.toString(allocator));
+                                    }
+                                },
+                                else => {
+                                    if (xs.cons.car) |val| {
+                                        const a = try val.toString(allocator);
+                                        const b = try xs.cons.cdr.?.toString(allocator);
+                                        try strings.append(a);
+                                        try strings.append(" . ");
+                                        try strings.append(b);
+                                        done = true;
+                                    }
+                                },
+                            }
                         }
+
+                        if (done) {
+                            break;
+                        }
+
                         it = xs.cons.cdr;
                     }
                 }
                 const finalStr = try joinWithSpaces(allocator, strings);
                 return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
             },
-            else => {
-                return std.fmt.allocPrint(allocator, "{any}", .{self.*});
+            Value.dictionary => |dict| {
+                var it: ?*Value = dict.pairs;
+                var strings = std.ArrayList([]const u8).init(allocator);
+
+                while (it != null) {
+                    if (it) |xs| {
+                        if (xs.cons.car) |pair| {
+                            try strings.append(try pair.toString(allocator));
+                        }
+                        it = xs.cons.cdr;
+                    }
+                }
+
+                const finalStr = try joinWithSpaces(allocator, strings);
+                return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
             },
         }
     }

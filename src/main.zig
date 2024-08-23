@@ -82,7 +82,7 @@ pub fn repl(allocator: std.mem.Allocator) !void {
         \\ ~___~  Owl (0.0.0-dev)
         \\ {{O,o}}  run with 'help' for list of commands
         \\/)___)  enter '?' to show help for repl
-        \\  ' '"
+        \\  ' '
     , .{});
 
     const running = true;

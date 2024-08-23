@@ -64,12 +64,6 @@ pub const Reader = struct {
         }
     }
 
-    pub fn skipSpace(self: *Reader) void {
-        while (!self.atEof() and self.chr() != '\n' and ascii.isWhitespace(self.chr())) {
-            self.next();
-        }
-    }
-
     pub fn next(self: *Reader) void {
         self.it += 1;
     }
@@ -700,7 +694,7 @@ pub const Reader = struct {
 
         var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "dict" }) catch unreachable, null);
         while (!self.atEof()) {
-            const kv = self.readKeyValuePair('}') catch |err| {
+            const kv = self.readKeyValuePair() catch |err| {
                 switch (err) {
                     error.NoMatch => break,
                     else => return err,
@@ -708,6 +702,8 @@ pub const Reader = struct {
             };
 
             it = v.cons(self.gc, kv, it);
+
+            self.skipWhitespace();
 
             if (self.chr() == '}') {
                 self.next();
@@ -739,8 +735,9 @@ pub const Reader = struct {
     }
 
     // key_value_pair = (((".", symbol) | string)) | ("[", expression, "]")), expression, ("," | "\n");
-    pub fn readKeyValuePair(self: *Reader, terminalChar: u8) ParseError!*v.Value {
-        self.skipWhitespace();
+    pub fn readKeyValuePair(self: *Reader) ParseError!*v.Value {
+        self.skipComment();
+
         const start = self.it;
 
         // TODO: handle ("[", expression, "]")
@@ -761,16 +758,11 @@ pub const Reader = struct {
             return error.NoMatch;
         };
 
-        self.skipSpace();
+        self.skipWhitespace();
         if (self.chr() == '\n') {
             self.skipWhitespace();
         } else if (self.chr() == ',') {
             self.next();
-        } else {
-            self.skipWhitespace();
-            if (self.chr() != terminalChar) {
-                return error.InvalidKeyValue;
-            }
         }
 
         return v.cons(self.gc, key, value);
