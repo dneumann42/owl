@@ -74,6 +74,8 @@ pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.
         return evaluateDo(env, args);
     } else if (std.mem.eql(u8, sym, "if")) {
         return evaluateIf(env, args);
+    } else if (std.mem.eql(u8, sym, "cond")) {
+        return evaluateCond(env, args);
     } else if (std.mem.eql(u8, sym, "def")) {
         return evaluateDefinition(env, args);
     } else if (std.mem.eql(u8, sym, "set")) {
@@ -173,6 +175,20 @@ pub fn evaluateIf(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         return evaluate(env, alt);
     }
     return error.InvalidValue;
+}
+
+pub fn evaluateCond(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    var list = args;
+
+    while (list != null) : (list = list.?.cons.cdr) {
+        const cond = try evaluate(env, list.?.cons.car.?.cons.car.?);
+
+        if (cond.boolean) {
+            return evaluate(env, list.?.cons.car.?.cons.cdr.?);
+        }
+    }
+
+    return env.gc.nothing();
 }
 
 pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {

@@ -297,6 +297,10 @@ pub const Reader = struct {
             return value;
         } else |_| {}
 
+        if (self.readCondExpression()) |value| {
+            return value;
+        } else |_| {}
+
         // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
         // so we can get to this point
         if (self.readFunctionDefinition()) |value| {
@@ -532,7 +536,7 @@ pub const Reader = struct {
         return v.cons(self.gc, v.Value.sym(self.gc, "def") catch unreachable, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
     }
 
-    // if_expression = "if", expression, "then", expression, ["else", expression], "end";
+    // if_expression = "if", expression, "then", expression, (["elif", expression, "then", expression] | ["else", expression]), "end";
     pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
         const start = self.it;
         const ifsym = try self.expectKeyword("if");
@@ -553,6 +557,31 @@ pub const Reader = struct {
         const alternative = try self.readBlockTillEnd();
 
         return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, v.cons(self.gc, alternative, null))));
+    }
+
+    pub fn readCondExpression(self: *Reader) ParseError!*v.Value {
+        const condsym = try self.expectKeyword("cond");
+
+        var list = v.cons(self.gc, condsym, null);
+
+        while (!self.atEof()) {
+            const condition = try self.readExpression();
+            const block = try self.readExpression();
+
+            list = v.cons(self.gc, v.cons(self.gc, condition, block), list);
+
+            const s = self.expectKeyword("end") catch self.gc.nothing();
+            switch (s.*) {
+                .nothing => {
+                    continue;
+                },
+                else => {
+                    break;
+                },
+            }
+        }
+
+        return list.reverse();
     }
 
     // for_expression = "for", identifier, "in", expression, "do", expression;

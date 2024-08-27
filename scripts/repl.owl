@@ -7,10 +7,22 @@ archimedes := " ~___~  Owl (0.0.0-dev)
 
 fun repl()
   line := read-line("> ")
-  if line eq ":q" then
-    echo("bye.")
+  done := #f
+
+  cond
+    line eq ":q" do
+      done = #t
+    end
+    line eq "?" do
+      echo("Help is work in progress.")
+    end
   else
     echo(eval(line))
+  end
+
+  if done then
+    echo("bye.")
+  else
     repl()
   end
 end

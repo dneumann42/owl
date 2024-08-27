@@ -1,1 +1,10 @@
-echo({ .x 1 })
+x := 10
+
+cond
+  x > 15  echo("Nope")
+  x > 9   do 
+    def x 10
+    echo(x + 11)
+  end
+  x > 5   echo("Yes")
+end

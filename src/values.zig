@@ -120,6 +120,10 @@ pub const Value = union(ValueType) {
         }
     }
 
+    pub fn toStr(self: *Value) []const u8 {
+        return self.toString(std.heap.page_allocator) catch "";
+    }
+
     pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
         if (self == null) {
             return other == null;
