@@ -342,6 +342,7 @@ pub const Reader = struct {
     pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
         const start = self.it;
         _ = try self.expectKeyword("fun");
+
         self.skipWhitespace();
         const literal = self.readSymbol(false) catch {
             self.it = start;
@@ -362,7 +363,7 @@ pub const Reader = struct {
             return error.NoMatch;
         };
     }
-    //
+
     // function_definition = "fun", parameter_list, ["->" type], block;
     pub fn readFunctionDefinitionAnon(self: *Reader) ParseError!*v.Value {
         const start = self.it;
@@ -430,7 +431,7 @@ pub const Reader = struct {
             if (self.chr() == ',' and !first) {
                 self.next();
             } else if (!first) {
-                std.log.err("Missing comma got: {c}\n", .{self.chr()});
+                std.log.err("Expected ',' but got '{c}'\n", .{self.chr()});
                 return error.NoMatch;
             }
 

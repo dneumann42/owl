@@ -44,7 +44,7 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
         v.Value.cons => |list| {
             if (list.car) |car| {
                 return switch (car.*) {
-                    .symbol => evaluateForms(env, car.symbol, list.cdr),
+                    .symbol => evaluateSpecialForm(env, car.symbol, list.cdr),
                     else => error.ExpectedSymbol,
                 };
             }
@@ -53,38 +53,33 @@ pub fn evaluate(env: *v.Environment, value: *v.Value) EvalError!*v.Value {
     };
 }
 
-pub fn evaluateForms(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.Value {
-    if (std.mem.eql(u8, sym, "+")) {
-        return evaluateAdd(env, args);
-    } else if (std.mem.eql(u8, sym, "-")) {
-        return evaluateSub(env, args);
-    } else if (std.mem.eql(u8, sym, "*")) {
-        return evaluateMul(env, args);
-    } else if (std.mem.eql(u8, sym, "/")) {
-        return evaluateDiv(env, args);
-    } else if (std.mem.eql(u8, sym, "eq")) {
-        return evaluateEql(env, args);
-    } else if (std.mem.eql(u8, sym, "not-eq")) {
-        return evaluateNotEql(env, args);
-    } else if (std.mem.eql(u8, sym, "<")) {
-        return evaluateLessThan(env, args);
-    } else if (std.mem.eql(u8, sym, ">")) {
-        return evaluateGreaterThan(env, args);
-    } else if (std.mem.eql(u8, sym, "do")) {
-        return evaluateDo(env, args);
-    } else if (std.mem.eql(u8, sym, "if")) {
-        return evaluateIf(env, args);
-    } else if (std.mem.eql(u8, sym, "cond")) {
-        return evaluateCond(env, args);
-    } else if (std.mem.eql(u8, sym, "def")) {
-        return evaluateDefinition(env, args);
-    } else if (std.mem.eql(u8, sym, "set")) {
-        return evaluateSet(env, args);
-    } else if (std.mem.eql(u8, sym, "dict")) {
-        return evaluateDictionary(env, args);
-    } else if (std.mem.eql(u8, sym, "list")) {
-        return evaluateList(env, args);
-    } else if (std.mem.eql(u8, sym, "car")) {
+const FormFun = fn (*v.Environment, ?*v.Value) EvalError!*v.Value;
+const FormTable = struct { sym: []const u8, func: FormFun };
+const specialForms = [_]FormTable{
+    .{ .sym = "+", .func = evaluateAdd },
+    .{ .sym = "-", .func = evaluateSub },
+    .{ .sym = "*", .func = evaluateMul },
+    .{ .sym = "/", .func = evaluateDiv },
+    .{ .sym = "eq", .func = evaluateEql },
+    .{ .sym = "not-eq", .func = evaluateNotEql },
+    .{ .sym = "<", .func = evaluateLessThan },
+    .{ .sym = ">", .func = evaluateGreaterThan },
+    .{ .sym = "do", .func = evaluateDo },
+    .{ .sym = "if", .func = evaluateIf },
+    .{ .sym = "cond", .func = evaluateCond },
+    .{ .sym = "def", .func = evaluateDefinition },
+    .{ .sym = "set", .func = evaluateSet },
+    .{ .sym = "dict", .func = evaluateDictionary },
+    .{ .sym = "list", .func = evaluateList },
+};
+
+pub fn evaluateSpecialForm(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.Value {
+    inline for (specialForms) |op| {
+        if (std.mem.eql(u8, sym, op.sym)) {
+            return op.func(env, args);
+        }
+    }
+    if (std.mem.eql(u8, sym, "car")) {
         if (args) |xs| {
             if (xs.cons.car) |value| {
                 return evaluate(env, value);
@@ -205,7 +200,7 @@ pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
             it = it.?.cons.cdr;
         }
     }
-    return error.InvalidValue;
+    return env.gc.nothing();
 }
 
 pub fn evaluateLessThan(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
