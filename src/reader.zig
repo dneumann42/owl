@@ -251,6 +251,7 @@ pub const Reader = struct {
 
     // primary = literal
     //         | function_call
+    //         | definition
     //         | assignment
     //         | symbol
     //         | list_comprehension
@@ -267,6 +268,10 @@ pub const Reader = struct {
         } else |_| {}
 
         if (self.readFunctionCall()) |value| {
+            return value;
+        } else |_| {}
+
+        if (self.readDefinition()) |value| {
             return value;
         } else |_| {}
 
@@ -507,8 +512,8 @@ pub const Reader = struct {
         };
     }
 
-    // assignment = identifier, [":=", [":" type "="]], expression;
-    pub fn readAssignment(self: *Reader) ParseError!*v.Value {
+    // definition = identifier, [":=", [":" type "="]], expression;
+    pub fn readDefinition(self: *Reader) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
         const symbol = self.readSymbol(false) catch {
@@ -534,6 +539,26 @@ pub const Reader = struct {
         };
 
         return v.cons(self.gc, v.Value.sym(self.gc, "def") catch unreachable, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
+    }
+
+    // assignment = expression, "=", expression
+    pub fn readAssignment(self: *Reader) ParseError!*v.Value {
+        self.skipComment();
+        const start = self.it;
+        const left = self.readSymbol(false) catch {
+            return error.NoMatch;
+        };
+        self.skipWhitespace();
+        if (self.chr() != '=') {
+            self.it = start;
+            return error.NoMatch;
+        }
+        self.next();
+        const expression = self.readExpression() catch {
+            return error.DefMissingValue;
+        };
+
+        return v.cons(self.gc, v.Value.sym(self.gc, "set") catch unreachable, v.cons(self.gc, left, v.cons(self.gc, expression, null)));
     }
 
     // if_expression = "if", expression, "then", expression, (["elif", expression, "then", expression] | ["else", expression]), "end";
