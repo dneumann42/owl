@@ -1,9 +1,0 @@
-fun repl()
-  z := 1
-  cond
-    true do
-      echo(eval("1"))
-    end
-  end
-end
-repl()

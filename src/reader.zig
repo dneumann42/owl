@@ -751,6 +751,13 @@ pub const Reader = struct {
         }
 
         self.next();
+        self.skipWhitespace();
+
+        if (self.chr() == ']') {
+            self.next();
+            return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, null);
+        }
+
         var it: ?*v.Value = null;
         while (!self.atEof()) {
             const val = try self.readExpression();
@@ -773,7 +780,7 @@ pub const Reader = struct {
             return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, xs);
         }
 
-        return v.cons(self.gc, null, null);
+        return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, null);
     }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";

@@ -6,6 +6,7 @@ const e = @import("evaluation.zig");
 pub fn installBase(env: *v.Environment, g: *gc.Gc) void {
     env.set("read-line", v.Value.nativeFun(g, baseReadLine) catch unreachable) catch unreachable;
     env.set("echo", v.Value.nativeFun(g, baseEcho) catch unreachable) catch unreachable;
+    env.set("write", v.Value.nativeFun(g, baseWrite) catch unreachable) catch unreachable;
     env.set("eval", v.Value.nativeFun(g, baseEval) catch unreachable) catch unreachable;
 }
 
@@ -17,6 +18,21 @@ fn baseEcho(env: *v.Environment, args: ?*v.Value) *v.Value {
             const s = val.toString(env.gc.listAllocator) catch unreachable;
             defer env.gc.listAllocator.free(s);
             std.debug.print("{s} ", .{s});
+            it = value.cons.cdr;
+        }
+        std.debug.print("\n", .{});
+    }
+    return v.Value.owlTrue(env.gc) catch unreachable;
+}
+
+fn baseWrite(env: *v.Environment, args: ?*v.Value) *v.Value {
+    if (args) |arguments| {
+        var it: ?*v.Value = arguments;
+        while (it) |value| {
+            const val = e.evaluate(env, value.cons.car.?) catch unreachable;
+            const s = val.toString(env.gc.listAllocator) catch unreachable;
+            defer env.gc.listAllocator.free(s);
+            std.debug.print("{s}", .{s});
             it = value.cons.cdr;
         }
         std.debug.print("\n", .{});

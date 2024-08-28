@@ -120,6 +120,7 @@ pub fn evaluateList(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var dict = v.Dictionary.init(env.gc) catch return error.AllocError;
+
     while (it) |xs| {
         const key = xs.cons.car.?;
         it = xs.cons.cdr;
@@ -132,6 +133,7 @@ pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Val
             return error.InvalidKeyValue;
         }
     }
+
     return env.gc.create(.{
         .dictionary = dict,
     }) catch {
@@ -188,6 +190,7 @@ pub fn evaluateCond(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
 
 pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it: ?*v.Value = args;
+
     while (it != null) {
         const value = it.?.cons.car;
         if (value != null) {
@@ -200,6 +203,7 @@ pub fn evaluateDo(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
             it = it.?.cons.cdr;
         }
     }
+
     return env.gc.nothing();
 }
 
@@ -253,6 +257,7 @@ pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
     var idx: i32 = 0;
+
     while (it) |c| {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
@@ -268,6 +273,7 @@ pub fn evaluateSub(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
         idx += 1;
     }
+
     const n = v.Value.num(env.gc, total) catch {
         return error.AllocError;
     };
@@ -278,6 +284,7 @@ pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     var it = args;
     var total: f64 = undefined;
     var idx: i32 = 0;
+
     while (it) |c| {
         if (c.cons.car) |value| {
             const other = try evaluate(env, value);
@@ -290,9 +297,11 @@ pub fn evaluateDiv(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
         idx += 1;
     }
+
     const n = v.Value.num(env.gc, total) catch {
         return error.AllocError;
     };
+
     return n;
 }
 

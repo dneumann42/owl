@@ -10,20 +10,14 @@ fun repl()
   done := false
 
   cond
-    line eq ":q" do
-      done = true
-    end
-    line eq "?" do
-      echo("Help is work in progress.")
-    end
-    true do
-      echo(eval(line))
-    end
+    line eq ":q"  do done = true end
+    line eq "?"   do echo("Help is work in progress.") end
+    true          do echo(eval(line)) end
   end
 
-  if done then
+  if done then 
     echo("bye.")
-  else
+  else 
     repl()
   end
 end

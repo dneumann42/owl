@@ -68,8 +68,10 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
             },
             Value.function => |f| {
-                const n = f.name.?.symbol;
-                return std.fmt.allocPrint(allocator, "[fn: {s}]", .{n});
+                if (f.name) |s| {
+                    return std.fmt.allocPrint(allocator, "[fn:{s}]", .{s.symbol});
+                }
+                return std.fmt.allocPrint(allocator, "[fn]", .{});
             },
             Value.nativeFunction => {
                 return std.fmt.allocPrint(allocator, "[native-fn]", .{});
