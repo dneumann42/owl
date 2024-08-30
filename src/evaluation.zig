@@ -71,6 +71,13 @@ const specialForms = [_]FormTable{
     .{ .sym = "set", .func = evaluateSet },
     .{ .sym = "dict", .func = evaluateDictionary },
     .{ .sym = "list", .func = evaluateList },
+
+    .{ .sym = "cons", .func = evaluateCons },
+    .{ .sym = "car", .func = evaluateCar },
+    .{ .sym = "cdr", .func = evaluateCdr },
+
+    .{ .sym = "head", .func = evaluateCar },
+    .{ .sym = "tail", .func = evaluateCdr },
 };
 
 pub fn evaluateSpecialForm(env: *v.Environment, sym: []const u8, args: ?*v.Value) !*v.Value {
@@ -115,6 +122,24 @@ pub fn evaluateList(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
     }
 
     return list;
+}
+
+pub fn evaluateCons(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    const a = try evaluate(env, v.car(args.?).?);
+    const b = try evaluate(env, v.car(v.cdr(args.?).?).?);
+    return v.cons(env.gc, a, b);
+}
+
+pub fn evaluateCar(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    if (args == null) return env.gc.nothing();
+    const a = try evaluate(env, v.car(args.?) orelse env.gc.nothing());
+    return v.car(a) orelse env.gc.nothing();
+}
+
+pub fn evaluateCdr(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {
+    if (args == null) return env.gc.nothing();
+    const a = try evaluate(env, v.car(args.?) orelse env.gc.nothing());
+    return v.cdr(a) orelse env.gc.nothing();
 }
 
 pub fn evaluateDictionary(env: *v.Environment, args: ?*v.Value) EvalError!*v.Value {

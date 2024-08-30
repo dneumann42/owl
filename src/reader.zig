@@ -63,13 +63,13 @@ pub const Reader = struct {
 
     pub fn skipComment(self: *Reader) void {
         self.skipWhitespace();
-        defer self.skipWhitespace();
         if (self.chr() != ';') {
             return;
         }
         while (!self.atEof() and self.chr() != '\n') {
             self.next();
         }
+        self.skipComment();
     }
 
     pub fn next(self: *Reader) void {
@@ -491,7 +491,7 @@ pub const Reader = struct {
         const start = self.it;
 
         while (!self.atEof() and it != null) {
-            self.skipWhitespace();
+            self.skipComment();
 
             if (self.atEof()) {
                 std.debug.print("Missing closing 'end'.\n", .{});

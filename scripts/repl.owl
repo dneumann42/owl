@@ -1,16 +1,28 @@
-history := list()
-
 archimedes := " ~___~  Owl (0.0.0-dev)
  {O,o}  run with 'help' for list of commands
 /)___)  enter '?' to show help for repl
   ' '"
 
-fun repl()
+fun repl(history)
   line := read-line("> ")
   done := false
 
   cond
     line eq ":q"  do done = true end
+    line eq ":h" do echo(history) end
+    line eq ":up" do
+      line = car(history)
+
+      echo(line)
+      if confirm() then 
+        do
+          echo(eval(line))
+          repl(cdr(history))
+        end
+      end
+
+    end
+
     line eq "?"   do echo("Help is work in progress.") end
     true          do echo(eval(line)) end
   end
@@ -18,9 +30,13 @@ fun repl()
   if done then 
     echo("bye.")
   else 
-    repl()
+    repl(cons(line, history))
   end
 end
 
+fun confirm()
+  read-line("eval? (y/n)") not-eq "n"
+end
+
 echo(archimedes)
-repl()
+repl([])
