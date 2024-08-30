@@ -128,21 +128,86 @@ test "reading function definitions" {
 
 test "reading if expressions" {
     defer G.destroyAll();
-    var reader = r.Reader.initLoad(&G, "if true then 1 else 2 end");
-    const exp = try reader.readExpression();
-    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
-    try expect(exp.cons.cdr.?.cons.car.?.boolean == true);
-    try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
-    try expect(exp.cons.cdr.?.cons.cdr.?.cons.cdr.?.cons.car.?.cons.cdr.?.cons.car.?.number == 2.0);
-}
-
-test "reading if expressions without else" {
-    defer G.destroyAll();
     var reader = r.Reader.initLoad(&G, "if true then 1 end");
     const exp = try reader.readExpression();
-    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "if"));
-    try expect(exp.cons.cdr.?.cons.car.?.boolean == true);
-    try expect(exp.cons.cdr.?.cons.cdr.?.cons.car.?.number == 1.0);
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
+
+    const pair = v.car(exp.cons.cdr.?).?;
+    const a = v.car(pair).?;
+    const b = v.cdr(pair).?;
+
+    try expect(a.boolean == true);
+    try expect(b.number == 1.0);
+}
+
+test "reading if expressions with else" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "if false then 1 else 2 end");
+    const exp = try reader.readExpression();
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
+
+    const pair1 = v.car(exp.cons.cdr.?).?;
+    const a1 = v.car(pair1).?;
+    const b1 = v.cdr(pair1).?;
+
+    const pair2 = v.car(v.cdr(exp.cons.cdr.?).?).?;
+    const a2 = v.car(pair2).?;
+    const b2 = v.cdr(pair2).?;
+
+    try expect(a1.boolean == false);
+    try expect(b1.number == 1.0);
+
+    try expect(a2.boolean == true);
+    try expect(b2.number == 2.0);
+}
+
+test "reading if expressions with elif" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "if true then 1 elif false then 2 end");
+    const exp = try reader.readExpression();
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
+
+    const pair1 = v.car(exp.cons.cdr.?).?;
+    const a1 = v.car(pair1).?;
+    const b1 = v.cdr(pair1).?;
+
+    const pair2 = v.car(v.cdr(exp.cons.cdr.?).?).?;
+    const a2 = v.car(pair2).?;
+    const b2 = v.cdr(pair2).?;
+
+    try expect(a1.boolean == true);
+    try expect(b1.number == 1.0);
+
+    try expect(a2.boolean == false);
+    try expect(b2.number == 2.0);
+}
+
+test "reading if expressions with elif & else" {
+    defer G.destroyAll();
+    var reader = r.Reader.initLoad(&G, "if false then 1 elif false then 2 else 3 end");
+    const exp = try reader.readExpression();
+    try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
+
+    const pair1 = v.car(exp.cons.cdr.?).?;
+    const a1 = v.car(pair1).?;
+    const b1 = v.cdr(pair1).?;
+
+    const pair2 = v.car(v.cdr(exp.cons.cdr.?).?).?;
+    const a2 = v.car(pair2).?;
+    const b2 = v.cdr(pair2).?;
+
+    const pair3 = v.car(v.cdr(v.cdr(exp.cons.cdr.?).?).?).?;
+    const a3 = v.car(pair3).?;
+    const b3 = v.cdr(pair3).?;
+
+    try expect(a1.boolean == false);
+    try expect(b1.number == 1.0);
+
+    try expect(a2.boolean == false);
+    try expect(b2.number == 2.0);
+
+    try expect(a3.boolean == true);
+    try expect(b3.number == 3.0);
 }
 
 test "reading dictionaries" {
@@ -217,8 +282,8 @@ test "evaluating function definitions and lambdas" {
     const env = try v.Environment.init(&G);
     const value = try e.eval(env,
         \\fun x1(y) y + 1 end
-        \\def x2 fun(y) y + 1 end
-        \\def x3 fn(y) y + 1
+        \\x2 := fun(y) y + 1 end
+        \\x3 := fn(y) y + 1
         \\x1(1) + x2(1) + x3(1)
     );
     try expect(value.number == 6.0);
