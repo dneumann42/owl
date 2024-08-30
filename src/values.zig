@@ -7,6 +7,8 @@ pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, fun
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
+pub const NativeFunction = *const fn (*gc.Gc, ?*Value) *Value;
+
 pub const Value = union(ValueType) {
     nothing: void,
     number: f64,
@@ -16,7 +18,7 @@ pub const Value = union(ValueType) {
     cons: Cons,
     function: Function,
     dictionary: Dictionary,
-    nativeFunction: *const fn (*Environment, ?*Value) *Value,
+    nativeFunction: NativeFunction,
 
     pub fn num(g: *gc.Gc, n: f64) !*Value {
         return g.create(.{ .number = n });
@@ -30,7 +32,7 @@ pub const Value = union(ValueType) {
         return g.create(.{ .string = s });
     }
 
-    pub fn nativeFun(g: *gc.Gc, f: *const fn (*Environment, ?*Value) *Value) !*Value {
+    pub fn nativeFun(g: *gc.Gc, f: NativeFunction) !*Value {
         return g.create(.{ .nativeFunction = f });
     }
 
@@ -325,25 +327,27 @@ pub const Dictionary = struct {
 
 // Environment does not own the values and will not free them
 pub const Environment = struct {
-    gc: *gc.Gc,
+    allocator: std.mem.Allocator,
     next: ?*Environment,
     values: std.StringHashMap(*Value),
 
-    pub fn init(g: *gc.Gc) !*Environment {
-        const env = try g.listAllocator.create(Environment);
-        env.* = .{ .gc = g, .next = null, .values = std.StringHashMap(*Value).init(g.listAllocator) };
+    pub fn init(allocator: std.mem.Allocator) !*Environment {
+        const env = try allocator.create(Environment);
+        env.* = .{ //
+            .allocator = allocator,
+            .next = null,
+            .values = std.StringHashMap(*Value).init(allocator),
+        };
         return env;
     }
 
     pub fn deinit(self: *Environment) void {
-        self.values.deinit();
-        self.gc.listAllocator.destroy(self);
-    }
+        if (self.next) |nextEnv| {
+            nextEnv.deinit();
+        }
 
-    pub fn push(self: *Environment) !*Environment {
-        var new_environment = try Environment.init(self.gc);
-        new_environment.next = self;
-        return new_environment;
+        self.values.deinit();
+        self.allocator.destroy(self);
     }
 
     pub fn find(self: *Environment, key: []const u8) ?*Value {

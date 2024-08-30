@@ -24,11 +24,9 @@ const NewProject = struct {
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
+
     const args = try Args.init(allocator);
     defer args.deinit();
-
-    var g = gc.Gc.init(allocator, allocator);
-    defer g.deinit();
 
     var cli = Cli{ .run_script = null, .new_project = null };
 
@@ -62,14 +60,10 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     const file_content = try file.readToEndAlloc(allocator, comptime std.math.maxInt(usize));
     defer allocator.free(file_content);
 
-    var g = gc.Gc.init(allocator, allocator);
+    var g = gc.Gc.init(allocator);
     defer g.deinit();
-
-    const env = try v.Environment.init(&g);
-    owlStd.installBase(env, &g);
-    defer env.deinit();
-
-    _ = try e.eval(env, file_content);
+    owlStd.installBase(&g);
+    _ = try e.eval(&g, file_content);
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {

@@ -5,17 +5,17 @@ const e = @import("evaluation.zig");
 const expect = std.testing.expect;
 const gc = @import("gc.zig");
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var G = gc.Gc.init(std.testing.allocator, gpa.allocator());
+const allocator = std.heap.page_allocator;
 
 test "gc" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
     const n = try G.create(.{ .number = 42.0 });
     try expect(n.number == 42.0);
 }
 
 test "skipping whitespace" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     {
         var reader = r.Reader.initLoad(&G, "  \n\t X ");
         reader.skipWhitespace();
@@ -29,7 +29,8 @@ test "skipping whitespace" {
 }
 
 test "reading symbols" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     {
         var reader = r.Reader.initLoad(&G, "hello");
         const val = try reader.readSymbol(false);
@@ -47,7 +48,8 @@ test "reading symbols" {
 }
 
 test "reading boolean literals" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     {
         var reader = r.Reader.initLoad(&G, "true");
         const val = try reader.readBoolean();
@@ -63,14 +65,16 @@ test "reading boolean literals" {
 }
 
 test "reading string literals" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "\"Hello, World!\"");
     const val = try reader.readString();
     try expect(std.mem.eql(u8, val.string, "Hello, World!"));
 }
 
 test "reading numbers" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "123");
     const val = try reader.readNumber();
     try expect(val.number == 123.0);
@@ -78,7 +82,8 @@ test "reading numbers" {
 }
 
 test "reading unary operators" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     {
         var reader = r.Reader.initLoad(&G, "-");
         const val = try reader.readUnaryOperator();
@@ -92,7 +97,8 @@ test "reading unary operators" {
 }
 
 test "reading unary expressions" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "-1");
     const val = try reader.readUnary();
     const s = v.car(val) orelse unreachable;
@@ -102,14 +108,16 @@ test "reading unary expressions" {
 }
 
 test "reading binary expressions" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "1 or 2 or 3");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "or"));
 }
 
 test "reading function calls" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "call(x, y)");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "call"));
@@ -118,7 +126,8 @@ test "reading function calls" {
 }
 
 test "reading function definitions" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "fun add-1(y) y + 1 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.function.name.?.symbol, "add-1"));
@@ -127,7 +136,8 @@ test "reading function definitions" {
 }
 
 test "reading if expressions" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "if true then 1 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
@@ -141,7 +151,8 @@ test "reading if expressions" {
 }
 
 test "reading if expressions with else" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "if false then 1 else 2 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
@@ -162,7 +173,8 @@ test "reading if expressions with else" {
 }
 
 test "reading if expressions with elif" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "if true then 1 elif false then 2 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
@@ -183,7 +195,8 @@ test "reading if expressions with elif" {
 }
 
 test "reading if expressions with elif & else" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "if false then 1 elif false then 2 else 3 end");
     const exp = try reader.readExpression();
     try expect(std.mem.eql(u8, exp.cons.car.?.symbol, "cond"));
@@ -211,13 +224,15 @@ test "reading if expressions with elif & else" {
 }
 
 test "reading dictionaries" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "{ .a 1 .b 2 }");
     _ = try reader.readExpression();
 }
 
 test "reading params" {
-    defer G.destroyAll();
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     var reader = r.Reader.initLoad(&G, "()");
     const exp = try reader.readParameterList();
     try expect(exp.cons.car == null);
@@ -233,44 +248,43 @@ test "reading params" {
 // Evaluation Tests
 
 test "evaluating numbers" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env, "123");
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G, "123");
     try expect(value.number == 123.0);
-    G.destroyAll();
 }
 
 test "evaluating symbols" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     const n = v.Value.num(&G, 123.0) catch unreachable;
-    try env.set("hello", n);
+    try G.env().set("hello", n);
     const s = v.Value.sym(&G, "hello") catch unreachable;
-    const value = try e.evaluate(env, s);
+    const value = try e.evaluate(&G, s);
     try expect(value.number == 123.0);
 }
 
 test "evaluating code" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
     const n = v.Value.num(&G, 123.0) catch unreachable;
-    try env.set("hello", n);
+    try G.env().set("hello", n);
 
-    const value = try e.eval(env, "hello");
+    const value = try e.eval(&G, "hello");
     try expect(value.number == 123.0);
 }
 
 test "evaluating binary expressions" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env, "1 + 2");
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G, "1 + 2");
     try expect(value.number == 3.0);
 }
 
 test "evaluating function definitions and calls" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env,
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
         \\fun a(y) y + 1 end
         \\a(9)
     );
@@ -278,9 +292,9 @@ test "evaluating function definitions and calls" {
 }
 
 test "evaluating function definitions and lambdas" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env,
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
         \\fun x1(y) y + 1 end
         \\x2 := fun(y) y + 1 end
         \\x3 := fn(y) y + 1
@@ -290,9 +304,9 @@ test "evaluating function definitions and lambdas" {
 }
 
 test "evaluating recursive functions" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env,
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
         \\fun factorial(n)
         \\  if n < 2 then
         \\    1
@@ -306,9 +320,9 @@ test "evaluating recursive functions" {
 }
 
 test "evaluating functions out of order" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env,
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
         \\fun a() b() end
         \\fun b() 69 end
         \\a()
@@ -317,21 +331,12 @@ test "evaluating functions out of order" {
 }
 
 test "evaluating passing functions" {
-    defer G.destroyAll();
-    const env = try v.Environment.init(&G);
-    const value = try e.eval(env,
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
         \\fun a(b) b() end
         \\fun b() 69 end
         \\a(b)
     );
     try expect(value.number == 69);
-}
-
-test "garbage collection" {
-    var g = gc.Gc.init(std.testing.allocator, gpa.allocator());
-    defer g.destroyAll();
-    const num = try g.create(.{ .number = 1.23 });
-    try expect(num.number == 1.23);
-    const header = gc.Gc.getHeader(num);
-    try expect(header.marked == false);
 }

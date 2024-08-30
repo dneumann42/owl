@@ -10,22 +10,62 @@ pub const Gc = struct {
         marked: bool,
         // this could store meta information
     };
+
+    const GcRoot = struct {
+        environment: *v.Environment,
+    };
+
     const AlignedPair = struct {
         value: v.Value,
         header: GcHeader,
     };
+
     allocator: std.mem.Allocator,
-    listAllocator: std.mem.Allocator,
+    topEnv: *v.Environment,
+
     values: std.ArrayList(*v.Value),
+
+    root: GcRoot,
+
     nothingValue: ?*v.Value,
 
-    pub fn init(allocator: std.mem.Allocator, listAllocator: std.mem.Allocator) Gc {
-        return .{ .allocator = allocator, .listAllocator = listAllocator, .values = std.ArrayList(*v.Value).init(listAllocator), .nothingValue = null };
+    pub fn init(allocator: std.mem.Allocator) Gc {
+        const environment = v.Environment.init(allocator) catch unreachable;
+        return .{
+            .allocator = allocator,
+            .values = std.ArrayList(*v.Value).init(allocator),
+            .nothingValue = null,
+            .root = .{
+                // TODO: return a memory error
+                .environment = environment,
+            },
+            .topEnv = environment,
+        };
+    }
+
+    pub fn env(self: *Gc) *v.Environment {
+        return self.topEnv;
+    }
+
+    pub fn push(self: *Gc) Gc {
+        var new_environment = v.Environment.init(self.allocator) catch unreachable;
+        new_environment.next = self.topEnv;
+
+        const g = Gc{
+            .allocator = self.allocator,
+            .values = self.values,
+            .nothingValue = self.nothingValue,
+            .root = self.root,
+            .topEnv = new_environment,
+        };
+
+        return g;
     }
 
     pub fn deinit(self: *Gc) void {
         self.destroyAll();
         self.values.deinit();
+        self.root.environment.deinit();
     }
 
     fn destroy(self: *Gc, value: *v.Value) void {
