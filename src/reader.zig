@@ -8,6 +8,14 @@ const print = std.debug.print;
 
 const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma };
 
+const ExpressionBlockPair = struct {
+    expression: *v.Value,
+    block: *v.Value,
+    // used to check if we continue reading the chain
+    // example: 'elif' keeps reading, 'end' will not
+    terminalKeyboard: []const u8,
+};
+
 pub const Reader = struct {
     gc: *gc.Gc,
     code: []const u8,
@@ -565,24 +573,15 @@ pub const Reader = struct {
     // if_expression = "if", expression, "then", expression, (["elif", expression, "then", expression] | ["else", expression]), "end";
     pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const ifsym = try self.expectKeyword("if");
-        const condition = try self.readExpression();
-        _ = self.expectKeyword("then") catch {
-            self.it = start;
-            return error.NoMatch;
-        };
-        const consequent = try self.readExpression();
-        const start2 = self.it;
+        const condsym = v.Value.sym(self.gc, "cond");
+        _ = try self.expectKeyword("if");
 
-        _ = self.expectKeyword("else") catch {
-            self.it = start2;
-            _ = try self.expectKeyword("end");
-            return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, null)));
-        };
+        var list = v.cons(self.gc, condsym, null);
 
-        const alternative = try self.readBlockTillEnd();
+        // const pair = readExpressionBlockPair("elif", .{ "elif", "else", "end" })
 
-        return v.cons(self.gc, ifsym, v.cons(self.gc, condition, v.cons(self.gc, consequent, v.cons(self.gc, alternative, null))));
+        _ = start;
+        return list.reverse();
     }
 
     pub fn readCondExpression(self: *Reader) ParseError!*v.Value {

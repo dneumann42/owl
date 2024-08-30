@@ -41,13 +41,13 @@ pub fn main() !void {
             }
             cli.run_script = it.get_value();
         } else if (it.is_arg("new")) {
-            std.debug.print("TODO!", .{});
+            std.debug.print("New is a work in progress, this command will generate projects, librarys and scripts", .{});
             return;
         }
     }
 
     if (cli.should_run_repl()) {
-        try repl(allocator);
+        try runScript(allocator, "scripts/repl.owl");
     }
 
     if (cli.run_script) |path| {
@@ -70,40 +70,6 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     defer env.deinit();
 
     _ = try e.eval(env, file_content);
-}
-
-pub fn repl(allocator: std.mem.Allocator) !void {
-    var g = gc.Gc.init(allocator, allocator);
-    defer g.deinit();
-    term.Terminal.clear();
-
-    const outw = std.io.getStdOut().writer();
-    try outw.print(
-        \\ ~___~  Owl (0.0.0-dev)
-        \\ {{O,o}}  run with 'help' for list of commands
-        \\/)___)  enter '?' to show help for repl
-        \\  ' '
-    , .{});
-
-    const running = true;
-
-    try outw.print("\n", .{});
-    while (running) {
-        try outw.print("> ", .{});
-
-        var stdin = std.io.getStdIn().reader();
-        const line = try stdin.readUntilDelimiterOrEofAlloc(allocator, '\n', 1024);
-        if (line) |l| {
-            const inp_line = std.mem.trimRight(u8, l, "\r\n");
-
-            const env = try v.Environment.init(&g);
-            try env.set("read-value", try v.Value.nativeFun(env.gc, readValue));
-            const val = try e.eval(env, inp_line);
-            const s = try val.toString(allocator);
-            defer allocator.free(s);
-            std.debug.print("{s}\n", .{s});
-        }
-    }
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {
