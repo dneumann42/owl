@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma, MissingEnd, MissingElif };
 
 const ExpressionBlockPair = struct {
     expression: *v.Value,
@@ -346,6 +346,17 @@ pub const Reader = struct {
         return symbol;
     }
 
+    pub fn nextKeyword(self: *Reader, sym: []const u8) bool {
+        const start = self.it;
+        self.skipWhitespace();
+        const symbol = self.readSymbol(true) catch {
+            self.it = start;
+            return false;
+        };
+        self.it = start;
+        return std.mem.eql(u8, symbol.symbol, sym);
+    }
+
     // function_definition = "fun", identifier, parameter_list, ["->" type], block;
     pub fn readFunctionDefinition(self: *Reader) ParseError!*v.Value {
         const start = self.it;
@@ -573,14 +584,57 @@ pub const Reader = struct {
     // if_expression = "if", expression, "then", expression, (["elif", expression, "then", expression] | ["else", expression]), "end";
     pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const condsym = v.Value.sym(self.gc, "cond");
-        _ = try self.expectKeyword("if");
+        const condsym = v.Value.sym(self.gc, "cond") catch {
+            return error.MemoryError;
+        };
 
         var list = v.cons(self.gc, condsym, null);
 
-        // const pair = readExpressionBlockPair("elif", .{ "elif", "else", "end" })
+        _ = self.expectKeyword("if") catch |e| {
+            self.it = start;
+            return e;
+        };
 
-        _ = start;
+        const if_cond = try self.readExpression();
+        _ = try self.expectKeyword("then");
+        const if_exp = try self.readExpression();
+
+        list = v.cons(self.gc, v.cons(self.gc, if_cond, if_exp), list);
+
+        while (!self.atEof()) {
+            if (self.nextKeyword("else")) {
+                _ = try self.readSymbol(true);
+                const exp = try self.readExpression();
+                _ = self.expectKeyword("end") catch |e| {
+                    if (e == error.NoMatch) {
+                        return error.MissingEnd;
+                    }
+                    return e;
+                };
+                const b = v.Value.boole(self.gc, true) catch {
+                    return error.MemoryError;
+                };
+                list = v.cons(self.gc, v.cons(self.gc, b, exp), list);
+                return list.reverse();
+            }
+
+            if (self.nextKeyword("end")) {
+                _ = try self.readSymbol(true);
+                return list.reverse();
+            }
+
+            _ = self.expectKeyword("elif") catch |e| {
+                if (e == error.NoMatch) {
+                    return error.MissingElif;
+                }
+                return e;
+            };
+
+            const cond = try self.readExpression();
+            _ = try self.expectKeyword("then");
+            const exp = try self.readExpression();
+            list = v.cons(self.gc, v.cons(self.gc, cond, exp), list);
+        }
         return list.reverse();
     }
 
