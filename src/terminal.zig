@@ -1,6 +1,7 @@
 // simple ansii terminal
 
 const std = @import("std");
+const posix = std.posix;
 
 pub const Terminal = struct {
     // ANSI escape codes

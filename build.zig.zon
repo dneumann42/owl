@@ -23,6 +23,8 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
+        .string = .{ .url = "https://github.com/JakubSzark/zig-string/archive/refs/heads/master.tar.gz", .hash = "12208fa7e4afc8a9c2b267f034d4d7b69952ac5bf39e48449e0a54dcbaae2309f54e" },
+
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
         //    // When updating this field to a new URL, be sure to delete the corresponding
@@ -51,6 +53,10 @@
         //    // actually used.
         //    .lazy = false,
         //},
+        .mibu = .{
+            .url = "https://github.com/xyaman/mibu/archive/refs/heads/master.tar.gz",
+            .hash = "1220fe59d9b8067e263cb276dc59a2a53900f15b873e78b7e0e41d74d18c6bb1f02c",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

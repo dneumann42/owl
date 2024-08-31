@@ -3,7 +3,7 @@ const r = @import("reader.zig");
 const gc = @import("gc.zig");
 const std = @import("std");
 
-const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
+pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
 
 pub fn eval(g: *gc.Gc, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.initLoad(g, code);

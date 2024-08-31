@@ -220,6 +220,13 @@ pub fn joinWithSpaces(allocator: std.mem.Allocator, list: std.ArrayList([]const 
     return std.mem.join(allocator, " ", list.items);
 }
 
+pub fn arrayListToString(allocator: std.mem.Allocator, list: std.ArrayList(u8)) ![]u8 {
+    const string = try allocator.alloc(u8, list.items.len);
+    errdefer allocator.free(string);
+    @memcpy(string, list.items);
+    return string;
+}
+
 pub const Function = struct {
     name: ?*Value,
     body: *Value,

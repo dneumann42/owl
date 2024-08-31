@@ -15,12 +15,9 @@ fun repl(history)
 
       echo(line)
       if confirm() then 
-        do
-          echo(eval(line))
-          repl(cdr(history))
-        end
+        echo(eval(line))
+        repl(cdr(history))
       end
-
     end
 
     line eq "?"   do echo("Help is work in progress.") end

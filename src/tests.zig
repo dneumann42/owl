@@ -169,7 +169,7 @@ test "reading if expressions with else" {
     try expect(b1.number == 1.0);
 
     try expect(a2.boolean == true);
-    try expect(b2.number == 2.0);
+    try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);
 }
 
 test "reading if expressions with elif" {
@@ -191,7 +191,7 @@ test "reading if expressions with elif" {
     try expect(b1.number == 1.0);
 
     try expect(a2.boolean == false);
-    try expect(b2.number == 2.0);
+    try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);
 }
 
 test "reading if expressions with elif & else" {
@@ -217,10 +217,10 @@ test "reading if expressions with elif & else" {
     try expect(b1.number == 1.0);
 
     try expect(a2.boolean == false);
-    try expect(b2.number == 2.0);
+    try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);
 
     try expect(a3.boolean == true);
-    try expect(b3.number == 3.0);
+    try expect(b3.cons.cdr.?.cons.car.?.number == 3.0);
 }
 
 test "reading dictionaries" {

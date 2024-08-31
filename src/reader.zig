@@ -594,22 +594,41 @@ pub const Reader = struct {
         };
 
         const if_cond = try self.readExpression();
-        _ = try self.expectKeyword("then");
-        const if_exp = try self.readExpression();
 
-        list = v.cons(self.gc, v.cons(self.gc, if_cond, if_exp), list);
+        _ = try self.expectKeyword("then");
+
+        var if_exp_do = v.cons(self.gc, self.gc.sym("do"), null);
+        while (!self.atEof()) {
+            const exp = try self.readExpression();
+            if_exp_do = v.cons(self.gc, exp, if_exp_do);
+            if (self.nextKeyword("elif") or self.nextKeyword("else") or self.nextKeyword("end")) {
+                break;
+            }
+        }
+
+        list = v.cons(self.gc, v.cons(self.gc, if_cond, if_exp_do.reverse()), list);
 
         while (!self.atEof()) {
             if (self.nextKeyword("else")) {
                 _ = try self.readSymbol(true);
-                const exp = try self.readExpression();
+
+                var xs = v.cons(self.gc, self.gc.sym("do"), null);
+                while (!self.atEof()) {
+                    const exp = try self.readExpression();
+                    xs = v.cons(self.gc, exp, xs);
+                    if (self.nextKeyword("end")) {
+                        break;
+                    }
+                }
+
                 _ = self.expectKeyword("end") catch |e| {
                     if (e == error.NoMatch) {
                         return error.MissingEnd;
                     }
                     return e;
                 };
-                list = v.cons(self.gc, v.cons(self.gc, self.gc.T(), exp), list);
+
+                list = v.cons(self.gc, v.cons(self.gc, self.gc.T(), xs.reverse()), list);
                 return list.reverse();
             }
 
@@ -627,9 +646,18 @@ pub const Reader = struct {
 
             const cond = try self.readExpression();
             _ = try self.expectKeyword("then");
-            const exp = try self.readExpression();
-            list = v.cons(self.gc, v.cons(self.gc, cond, exp), list);
+
+            var xs = v.cons(self.gc, self.gc.sym("do"), null);
+            while (!self.atEof()) {
+                const exp = try self.readExpression();
+                xs = v.cons(self.gc, exp, xs);
+                if (self.nextKeyword("elif") or self.nextKeyword("else") or self.nextKeyword("end")) {
+                    break;
+                }
+            }
+            list = v.cons(self.gc, v.cons(self.gc, cond, xs.reverse()), list);
         }
+
         return list.reverse();
     }
 

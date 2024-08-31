@@ -3,9 +3,9 @@
 Note: this project is very very early in development and doesn't do a whole lot
 
 <pre>
- ~___~
- {O,o}
-/)___)
+ ~___~  Owl (0.0.0-dev)
+ {O,o}  run with 'help' for list of commands
+/)___)  enter '?' to show help for repl
   ' '
 </pre>
 
