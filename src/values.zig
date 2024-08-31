@@ -20,37 +20,6 @@ pub const Value = union(ValueType) {
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
 
-    pub fn num(g: *gc.Gc, n: f64) !*Value {
-        return g.create(.{ .number = n });
-    }
-
-    pub fn sym(g: *gc.Gc, s: []const u8) !*Value {
-        return g.create(.{ .symbol = s });
-    }
-
-    pub fn str(g: *gc.Gc, s: []const u8) !*Value {
-        return g.create(.{ .string = s });
-    }
-
-    pub fn nativeFun(g: *gc.Gc, f: NativeFunction) !*Value {
-        return g.create(.{ .nativeFunction = f });
-    }
-
-    pub fn boole(g: *gc.Gc, b: bool) !*Value {
-        if (b) {
-            return Value.owlTrue(g);
-        }
-        return Value.owlFalse(g);
-    }
-
-    pub fn owlTrue(g: *gc.Gc) !*Value {
-        return g.create(.{ .boolean = true });
-    }
-
-    pub fn owlFalse(g: *gc.Gc) !*Value {
-        return g.create(.{ .boolean = false });
-    }
-
     pub fn toString(self: *Value, allocator: std.mem.Allocator) ![]const u8 {
         switch (self.*) {
             Value.nothing => {

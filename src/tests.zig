@@ -257,9 +257,9 @@ test "evaluating numbers" {
 test "evaluating symbols" {
     var G = gc.Gc.init(allocator);
     defer G.deinit();
-    const n = v.Value.num(&G, 123.0) catch unreachable;
+    const n = G.num(123.0);
     try G.env().set("hello", n);
-    const s = v.Value.sym(&G, "hello") catch unreachable;
+    const s = G.sym("hello");
     const value = try e.evaluate(&G, s);
     try expect(value.number == 123.0);
 }
@@ -267,7 +267,7 @@ test "evaluating symbols" {
 test "evaluating code" {
     var G = gc.Gc.init(allocator);
     defer G.deinit();
-    const n = v.Value.num(&G, 123.0) catch unreachable;
+    const n = G.num(123.0);
     try G.env().set("hello", n);
 
     const value = try e.eval(&G, "hello");

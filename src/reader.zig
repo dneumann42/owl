@@ -558,7 +558,7 @@ pub const Reader = struct {
             return error.DefMissingValue;
         };
 
-        return v.cons(self.gc, v.Value.sym(self.gc, "def") catch unreachable, v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
+        return v.cons(self.gc, self.gc.sym("def"), v.cons(self.gc, symbol, v.cons(self.gc, expression, null)));
     }
 
     // assignment = expression, "=", expression
@@ -578,15 +578,13 @@ pub const Reader = struct {
             return error.DefMissingValue;
         };
 
-        return v.cons(self.gc, v.Value.sym(self.gc, "set") catch unreachable, v.cons(self.gc, left, v.cons(self.gc, expression, null)));
+        return v.cons(self.gc, self.gc.sym("set"), v.cons(self.gc, left, v.cons(self.gc, expression, null)));
     }
 
     // if_expression = "if", expression, "then", expression, (["elif", expression, "then", expression] | ["else", expression]), "end";
     pub fn readIfExpression(self: *Reader) ParseError!*v.Value {
         const start = self.it;
-        const condsym = v.Value.sym(self.gc, "cond") catch {
-            return error.MemoryError;
-        };
+        const condsym = self.gc.sym("cond");
 
         var list = v.cons(self.gc, condsym, null);
 
@@ -611,10 +609,7 @@ pub const Reader = struct {
                     }
                     return e;
                 };
-                const b = v.Value.boole(self.gc, true) catch {
-                    return error.MemoryError;
-                };
-                list = v.cons(self.gc, v.cons(self.gc, b, exp), list);
+                list = v.cons(self.gc, v.cons(self.gc, self.gc.T(), exp), list);
                 return list.reverse();
             }
 
@@ -808,7 +803,7 @@ pub const Reader = struct {
 
         if (self.chr() == ']') {
             self.next();
-            return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, null);
+            return v.cons(self.gc, self.gc.sym("list"), null);
         }
 
         var it: ?*v.Value = null;
@@ -830,10 +825,10 @@ pub const Reader = struct {
         }
 
         if (it) |xs| {
-            return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, xs);
+            return v.cons(self.gc, self.gc.sym("list"), xs);
         }
 
-        return v.cons(self.gc, v.Value.sym(self.gc, "list") catch unreachable, null);
+        return v.cons(self.gc, self.gc.sym("list"), null);
     }
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
@@ -843,7 +838,7 @@ pub const Reader = struct {
         }
         self.next();
 
-        var it: ?*v.Value = v.cons(self.gc, self.gc.create(.{ .symbol = "dict" }) catch unreachable, null);
+        var it: ?*v.Value = v.cons(self.gc, self.gc.sym("dict"), null);
         while (!self.atEof()) {
             const kv = self.readKeyValuePair() catch |err| {
                 switch (err) {

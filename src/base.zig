@@ -4,10 +4,10 @@ const std = @import("std");
 const e = @import("evaluation.zig");
 
 pub fn installBase(g: *gc.Gc) void {
-    g.env().set("read-line", v.Value.nativeFun(g, baseReadLine) catch unreachable) catch unreachable;
-    g.env().set("echo", v.Value.nativeFun(g, baseEcho) catch unreachable) catch unreachable;
-    g.env().set("write", v.Value.nativeFun(g, baseWrite) catch unreachable) catch unreachable;
-    g.env().set("eval", v.Value.nativeFun(g, baseEval) catch unreachable) catch unreachable;
+    g.env().set("read-line", g.nfun(baseReadLine)) catch unreachable;
+    g.env().set("echo", g.nfun(baseEcho)) catch unreachable;
+    g.env().set("write", g.nfun(baseWrite)) catch unreachable;
+    g.env().set("eval", g.nfun(baseEval)) catch unreachable;
 }
 
 fn baseEcho(g: *gc.Gc, args: ?*v.Value) *v.Value {
@@ -22,7 +22,7 @@ fn baseEcho(g: *gc.Gc, args: ?*v.Value) *v.Value {
         }
         std.debug.print("\n", .{});
     }
-    return v.Value.owlTrue(g) catch unreachable;
+    return g.T();
 }
 
 fn baseWrite(g: *gc.Gc, args: ?*v.Value) *v.Value {
@@ -37,7 +37,7 @@ fn baseWrite(g: *gc.Gc, args: ?*v.Value) *v.Value {
         }
         std.debug.print("\n", .{});
     }
-    return v.Value.owlTrue(g) catch unreachable;
+    return g.T();
 }
 
 pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
@@ -50,7 +50,7 @@ pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
     }
     const stdin = std.io.getStdIn().reader();
     const line = stdin.readUntilDelimiterAlloc(g.allocator, '\n', 1024 * 8) catch unreachable;
-    return v.Value.str(g, line) catch unreachable;
+    return g.str(line);
 }
 
 fn baseEval(g: *gc.Gc, args: ?*v.Value) *v.Value {

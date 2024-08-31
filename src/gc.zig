@@ -89,6 +89,34 @@ pub const Gc = struct {
         return ptr;
     }
 
+    pub fn num(self: *Gc, n: f64) *v.Value {
+        return self.create(.{ .number = n }) catch unreachable;
+    }
+
+    pub fn sym(self: *Gc, s: []const u8) *v.Value {
+        return self.create(.{ .symbol = s }) catch unreachable;
+    }
+
+    pub fn str(self: *Gc, s: []const u8) *v.Value {
+        return self.create(.{ .string = s }) catch unreachable;
+    }
+
+    pub fn boolean(self: *Gc, b: bool) *v.Value {
+        return self.create(.{ .boolean = b }) catch unreachable;
+    }
+
+    pub fn nfun(self: *Gc, f: v.NativeFunction) *v.Value {
+        return self.create(.{ .nativeFunction = f }) catch unreachable;
+    }
+
+    pub fn T(self: *Gc) *v.Value {
+        return self.boolean(true);
+    }
+
+    pub fn F(self: *Gc) *v.Value {
+        return self.boolean(false);
+    }
+
     pub fn getHeader(value: *v.Value) *GcHeader {
         const pair: *AlignedPair = @fieldParentPtr("value", value);
         return &pair.header;

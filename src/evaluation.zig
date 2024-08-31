@@ -235,14 +235,14 @@ pub fn evaluateLessThan(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
     const a = try evaluate(g, arg.cons.car orelse return error.ExpectedNumber);
     const b = try evaluate(g, arg.cons.cdr.?.cons.car orelse return error.ExpectedNumber);
-    return g.create(.{ .boolean = a.number < b.number }) catch error.AllocError;
+    return g.boolean(a.number < b.number);
 }
 
 pub fn evaluateGreaterThan(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
     const a = try evaluate(g, arg.cons.car orelse return error.ExpectedNumber);
     const b = try evaluate(g, arg.cons.cdr.?.cons.car orelse return error.ExpectedNumber);
-    return g.create(.{ .boolean = a.number > b.number }) catch error.AllocError;
+    return g.boolean(a.number > b.number);
 }
 
 pub fn evaluateAdd(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
@@ -255,10 +255,7 @@ pub fn evaluateAdd(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         }
         it = c.cons.cdr;
     }
-    const n = v.Value.num(g, total) catch {
-        return error.AllocError;
-    };
-    return n;
+    return g.num(total);
 }
 
 pub fn evaluateMul(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
@@ -271,10 +268,7 @@ pub fn evaluateMul(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         }
         it = c.cons.cdr;
     }
-    const n = v.Value.num(g, total) catch {
-        return error.AllocError;
-    };
-    return n;
+    return g.num(total);
 }
 
 pub fn evaluateSub(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
@@ -287,7 +281,7 @@ pub fn evaluateSub(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
             const other = try evaluate(g, value);
             if (idx == 0) {
                 if (c.cons.cdr == null) {
-                    return v.Value.num(g, -other.toNumber()) catch error.AllocError;
+                    return g.num(-other.toNumber());
                 }
                 total = other.toNumber();
             } else {
@@ -297,12 +291,7 @@ pub fn evaluateSub(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         it = c.cons.cdr;
         idx += 1;
     }
-
-    const n = v.Value.num(g, total) catch {
-        return error.AllocError;
-    };
-
-    return n;
+    return g.num(total);
 }
 
 pub fn evaluateDiv(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
@@ -323,25 +312,21 @@ pub fn evaluateDiv(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         idx += 1;
     }
 
-    const n = v.Value.num(g, total) catch {
-        return error.AllocError;
-    };
-
-    return n;
+    return g.num(total);
 }
 
 pub fn evaluateEql(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
     const a = try evaluate(g, arg.cons.car orelse return error.ExpectedValue);
     const b = try evaluate(g, arg.cons.cdr.?.cons.car orelse return error.ExpectedValue);
-    return v.Value.boole(g, a.isEql(b)) catch error.AllocError;
+    return g.boolean(a.isEql(b));
 }
 
 pub fn evaluateNotEql(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     const arg = args orelse return error.InvalidValue;
     const a = try evaluate(g, arg.cons.car orelse return error.ExpectedValue);
     const b = try evaluate(g, arg.cons.cdr.?.cons.car orelse return error.ExpectedValue);
-    return v.Value.boole(g, !a.isEql(b)) catch error.AllocError;
+    return g.boolean(!a.isEql(b));
 }
 
 pub fn evaluateCall(g: *gc.Gc, call: *v.Value, args: ?*v.Value) !*v.Value {
