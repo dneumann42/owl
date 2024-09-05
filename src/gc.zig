@@ -48,8 +48,12 @@ pub const Gc = struct {
     }
 
     pub fn push(self: *Gc) Gc {
+        return self.pushEnv(self.topEnv);
+    }
+
+    pub fn pushEnv(self: *Gc, en: *v.Environment) Gc {
         var new_environment = v.Environment.init(self.allocator) catch unreachable;
-        new_environment.next = self.topEnv;
+        new_environment.next = en;
 
         const g = Gc{
             .allocator = self.allocator,

@@ -382,7 +382,7 @@ pub const Reader = struct {
             return error.NoMatch;
         };
 
-        return self.gc.create(.{ .function = .{ .name = literal, .body = body, .params = params } }) catch {
+        return self.gc.create(.{ .function = .{ .name = literal, .body = body, .params = params, .env = self.gc.env() } }) catch {
             return error.NoMatch;
         };
     }
@@ -403,7 +403,12 @@ pub const Reader = struct {
             return error.NoMatch;
         };
 
-        return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params } }) catch {
+        return self.gc.create(.{ .function = .{
+            .name = null,
+            .body = body,
+            .params = params,
+            .env = self.gc.env(),
+        } }) catch {
             return error.NoMatch;
         };
     }
@@ -426,7 +431,7 @@ pub const Reader = struct {
             self.it = start;
             return error.NoMatch;
         };
-        return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params } }) catch {
+        return self.gc.create(.{ .function = .{ .name = null, .body = body, .params = params, .env = self.gc.env() } }) catch {
             self.it = start;
             return error.NoMatch;
         };

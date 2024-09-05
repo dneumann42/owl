@@ -40,6 +40,7 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (f.name) |sym| {
                 g.env().set(sym.symbol, value) catch return error.AllocError;
             }
+            value.function.env = g.env();
             return value;
         },
         v.Value.cons => |list| {
@@ -236,12 +237,13 @@ pub fn evaluateCond(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluateDo(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
+    var next = g.push();
     var it: ?*v.Value = args;
 
     while (it != null) {
         const value = it.?.cons.car;
         if (value != null) {
-            const evaluated = try evaluate(g, value.?);
+            const evaluated = try evaluate(&next, value.?);
             it = it.?.cons.cdr;
             if (it == null) {
                 return evaluated;
@@ -367,7 +369,7 @@ pub fn evaluateCall(g: *gc.Gc, call: *v.Value, args: ?*v.Value) !*v.Value {
 }
 
 pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v.Value {
-    var next = g.push();
+    var next = g.pushEnv(call.env);
 
     if (args) |arguments| {
         var it: ?*v.Value = arguments;
@@ -376,7 +378,7 @@ pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v
             defer ps = ps.?.cons.cdr;
             const param = ps.?.cons.car orelse break;
             const value = it.?.cons.car orelse return error.InvalidValue;
-            next.env().set(param.symbol, try evaluate(&next, value)) catch return error.InvalidValue;
+            call.env.set(param.symbol, try evaluate(&next, value)) catch return error.InvalidValue;
         }
     }
 

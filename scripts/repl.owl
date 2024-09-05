@@ -1,7 +1,12 @@
 archimedes := " ~___~  Owl (0.0.0-dev)
- {O,o}  run with 'help' for list of commands
-/)___)  enter '?' to show help for repl
+ {O,o}  enter ',h' for help screen
+/)___)  or '?' for list of repl commands
   ' '"
+
+commands := [
+  { .key ",q", .call fun() echo("QUIT") end },
+  { .key ",h", .call fun() echo("HELP") end }
+]
 
 fun repl(history)
   line := read-line("> ")

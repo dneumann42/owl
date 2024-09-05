@@ -231,6 +231,7 @@ pub const Function = struct {
     name: ?*Value,
     body: *Value,
     params: *Value,
+    env: *Environment,
 };
 
 pub const Dictionary = struct {
