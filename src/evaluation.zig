@@ -3,7 +3,7 @@ const r = @import("reader.zig");
 const gc = @import("gc.zig");
 const std = @import("std");
 
-pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue };
+pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue, MissingArguments };
 
 pub fn eval(g: *gc.Gc, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.initLoad(g, code);
@@ -46,7 +46,14 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (list.car) |car| {
                 return switch (car.*) {
                     .symbol => evaluateSpecialForm(g, car.symbol, list.cdr),
-                    else => error.ExpectedSymbol,
+                    else => {
+                        const evaluated = try evaluate(g, car);
+                        return switch (evaluated.*) {
+                            .symbol => evaluateSpecialForm(g, evaluated.symbol, list.cdr),
+                            .function => evaluateFunction(g, &evaluated.function, list.cdr),
+                            else => error.ExpectedSymbol,
+                        };
+                    },
                 };
             }
             return error.InvalidCall;
@@ -72,6 +79,7 @@ const specialForms = [_]FormTable{
     .{ .sym = "set", .func = evaluateSet },
     .{ .sym = "dict", .func = evaluateDictionary },
     .{ .sym = "list", .func = evaluateList },
+    .{ .sym = ".", .func = evaluateDot },
 
     .{ .sym = "cons", .func = evaluateCons },
     .{ .sym = "car", .func = evaluateCar },
@@ -110,6 +118,21 @@ pub fn evaluateSpecialForm(g: *gc.Gc, sym: []const u8, args: ?*v.Value) !*v.Valu
         };
         return evaluateCall(g, call, args);
     }
+}
+
+pub fn evaluateDot(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
+    if (args) |xs| {
+        const a = try evaluate(g, xs.cons.car orelse g.nothing());
+        const b = xs.cons.cdr.?.cons.car orelse g.nothing();
+        const value = a.dictionary.get(b);
+        if (value) |val| {
+            return val;
+        }
+        return g.nothing();
+    } else {
+        return error.MissingArguments;
+    }
+    return g.nothing();
 }
 
 pub fn evaluateList(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
@@ -351,7 +374,7 @@ pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v
         var ps: ?*v.Value = call.params;
         while (it != null and ps != null) : (it = it.?.cons.cdr) {
             defer ps = ps.?.cons.cdr;
-            const param = ps.?.cons.car orelse return error.InvalidValue;
+            const param = ps.?.cons.car orelse break;
             const value = it.?.cons.car orelse return error.InvalidValue;
             next.env().set(param.symbol, try evaluate(&next, value)) catch return error.InvalidValue;
         }

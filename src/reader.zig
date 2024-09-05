@@ -6,7 +6,7 @@ const gc = @import("gc.zig");
 const ascii = std.ascii;
 const print = std.debug.print;
 
-const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma, MissingEnd, MissingElif };
+const ParseError = error{ NoMatch, DefMissingIdentifier, DefMissingValue, Invalid, MemoryError, InvalidRecord, InvalidKeyValue, MissingClosingBrace, MissingClosingBracket, MissingComma, MissingEnd, MissingElif, DotMissingIdentifer, CallMissingParameters };
 
 const ExpressionBlockPair = struct {
     expression: *v.Value,
@@ -176,12 +176,12 @@ pub const Reader = struct {
 
     // logical_or = logical_and, {"or", logical_or};
     pub fn readBinaryLogicalOr(self: *Reader) ParseError!*v.Value {
-        return self.readBinaryExpression("or", Reader.readBinaryLogicalAnd, Reader.readBinaryLogicalOr);
+        return self.readBinaryExpression2(&[_][]const u8{"or"}, Reader.readBinaryLogicalAnd, Reader.readBinaryLogicalOr);
     }
 
     // logical_and = equality, {"and", logical_and};
     pub fn readBinaryLogicalAnd(self: *Reader) ParseError!*v.Value {
-        return self.readBinaryExpression("and", Reader.readEquality, Reader.readBinaryLogicalAnd);
+        return self.readBinaryExpression2(&[_][]const u8{"and"}, Reader.readEquality, Reader.readBinaryLogicalAnd);
     }
 
     // equality = comparison, {("==" | "!="), equality};
@@ -189,6 +189,7 @@ pub const Reader = struct {
         if (self.readBinaryExpression2(&[_][]const u8{ "eq", "not-eq" }, Reader.readComparison, Reader.readEquality)) |n| {
             return n;
         } else |_| {}
+
         return error.NoMatch;
     }
 
@@ -197,6 +198,7 @@ pub const Reader = struct {
         if (self.readBinaryExpression2(&[_][]const u8{ "<", ">", "<=", ">=" }, Reader.readAdditive, Reader.readComparison)) |n| {
             return n;
         } else |_| {}
+
         return error.NoMatch;
     }
 
@@ -205,6 +207,7 @@ pub const Reader = struct {
         if (self.readBinaryExpression2(&[_][]const u8{ "+", "-" }, Reader.readMultiplicative, Reader.readAdditive)) |n| {
             return n;
         } else |_| {}
+
         return error.NoMatch;
     }
 
@@ -213,6 +216,7 @@ pub const Reader = struct {
         if (self.readBinaryExpression2(&[_][]const u8{ "*", "/" }, Reader.readUnary, Reader.readMultiplicative)) |n| {
             return n;
         } else |_| {}
+
         return error.NoMatch;
     }
 
@@ -271,13 +275,13 @@ pub const Reader = struct {
     //         | return_expression
     //         | function_definition;
     pub fn readPrimary(self: *Reader) ParseError!*v.Value {
-        if (self.readLiteral()) |value| {
-            return value;
-        } else |_| {}
+        // if (self.readLiteral()) |value| {
+        //     return value;
+        // } else |_| {}
 
-        if (self.readFunctionCall()) |value| {
-            return value;
-        } else |_| {}
+        // if (self.readFunctionCall()) |value| {
+        //     return value;
+        // } else |_| {}
 
         if (self.readDefinition()) |value| {
             return value;
@@ -287,7 +291,7 @@ pub const Reader = struct {
             return value;
         } else |_| {}
 
-        if (self.readSymbol(false)) |value| {
+        if (self.readDotCall()) |value| {
             return value;
         } else |_| {}
 
@@ -438,8 +442,6 @@ pub const Reader = struct {
         self.next(); // skips the '('
 
         while (!self.atEof()) {
-            defer first = false;
-
             self.skipWhitespace();
 
             if (self.chr() == ')') {
@@ -451,17 +453,17 @@ pub const Reader = struct {
                 self.next();
             } else if (!first) {
                 std.log.err("Expected ',' but got '{c}'\n", .{self.chr()});
-                return error.NoMatch;
+                return error.MissingComma;
             }
 
             const start = self.it;
             const expr = self.readExpression() catch {
-                // error path:
                 self.it = start;
                 return error.Invalid;
             };
 
             it = v.cons(self.gc, expr, it);
+            first = false;
         }
 
         if (it) |list| {
@@ -692,7 +694,7 @@ pub const Reader = struct {
     // return_expression = "return", expression;
     pub fn readReturnExpression() v.Value {}
 
-    // function_call = symbol, "(", [expression, {",", expression}], ")";
+    // function_call = symbol, parameter_list;
     pub fn readFunctionCall(self: *Reader) ParseError!*v.Value {
         self.skipWhitespace();
         const start = self.it;
@@ -707,32 +709,56 @@ pub const Reader = struct {
             return error.NoMatch;
         }
 
-        var it = v.cons(self.gc, symbol, null);
-        var first = true;
+        const args = self.readParameterList() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
 
-        self.next();
-        while (!self.atEof()) {
-            defer first = false;
-            self.skipWhitespace();
-            if (self.chr() == ')') {
-                self.next();
-                break;
-            }
-            if (self.chr() == ',' and !first) {
-                self.next();
-            } else if (!first) {
-                std.debug.print("Missing comma got: {c}\n", .{self.chr()});
-                return error.NoMatch;
-            }
-            const start2 = self.it;
-            const expr = self.readExpression() catch {
-                self.it = start2;
-                break;
-            };
-            it = v.cons(self.gc, expr, it);
+        return v.cons(self.gc, symbol, args);
+    }
+
+    // dot_call_chain = callable, []
+    pub fn readDotCall(self: *Reader) ParseError!*v.Value {
+        // starting node
+        const start = self.it;
+        var callable = self.readCallable() catch {
+            self.it = start;
+            return error.NoMatch;
+        };
+
+        self.skipWhitespace();
+        if (self.chr() != '.' and self.chr() != '(') {
+            return callable;
         }
 
-        return it.reverse();
+        while (self.chr() == '.' or self.chr() == '(') {
+            if (self.chr() == '.') {
+                self.next();
+                const sym = self.readSymbol(false) catch {
+                    return error.DotMissingIdentifer;
+                };
+                callable = v.cons(self.gc, self.gc.sym("."), v.cons(self.gc, callable, v.cons(self.gc, sym, null)));
+            } else if (self.chr() == '(') {
+                const args = self.readParameterList() catch {
+                    return error.CallMissingParameters;
+                };
+                callable = v.cons(self.gc, callable, args);
+            }
+        }
+
+        return callable;
+    }
+
+    // callable = symbol | literal, {"(", expression, ")"};
+    pub fn readCallable(self: *Reader) ParseError!*v.Value {
+        if (self.readLiteral()) |value| {
+            return value;
+        } else |_| {}
+        if (self.readSymbol(false)) |value| {
+            return value;
+        } else |_| {}
+        // TODO: handle paren wrapped expression
+        return error.NoMatch;
     }
 
     // literal = number | string | boolean | list | dictionary;

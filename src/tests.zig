@@ -147,7 +147,7 @@ test "reading if expressions" {
     const b = v.cdr(pair).?;
 
     try expect(a.boolean == true);
-    try expect(b.number == 1.0);
+    try expect(b.cons.cdr.?.cons.car.?.number == 1.0);
 }
 
 test "reading if expressions with else" {
@@ -166,7 +166,7 @@ test "reading if expressions with else" {
     const b2 = v.cdr(pair2).?;
 
     try expect(a1.boolean == false);
-    try expect(b1.number == 1.0);
+    try expect(b1.cons.cdr.?.cons.car.?.number == 1.0);
 
     try expect(a2.boolean == true);
     try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);
@@ -188,7 +188,7 @@ test "reading if expressions with elif" {
     const b2 = v.cdr(pair2).?;
 
     try expect(a1.boolean == true);
-    try expect(b1.number == 1.0);
+    try expect(b1.cons.cdr.?.cons.car.?.number == 1.0);
 
     try expect(a2.boolean == false);
     try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);
@@ -214,7 +214,7 @@ test "reading if expressions with elif & else" {
     const b3 = v.cdr(pair3).?;
 
     try expect(a1.boolean == false);
-    try expect(b1.number == 1.0);
+    try expect(b1.cons.cdr.?.cons.car.?.number == 1.0);
 
     try expect(a2.boolean == false);
     try expect(b2.cons.cdr.?.cons.car.?.number == 2.0);

@@ -8,18 +8,8 @@ fun repl(history)
   done := false
 
   cond
-    line eq ":q"  do done = true end
-    line eq ":h" do echo(history) end
-    line eq ":up" do
-      line = car(history)
-
-      echo(line)
-      if confirm() then 
-        echo(eval(line))
-        repl(cdr(history))
-      end
-    end
-
+    line eq ",q"  do done = true end
+    line eq ",h"  do echo(history) end
     line eq "?"   do echo("Help is work in progress.") end
     true          do echo(eval(line)) end
   end

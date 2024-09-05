@@ -249,10 +249,10 @@ pub const Dictionary = struct {
         _ = self;
     }
 
-    pub fn get(self: *Dictionary, key: *Value) ?Value {
+    pub fn get(self: *Dictionary, key: *Value) ?*Value {
         var it: ?*Value = self.pairs;
         while (it != null) : (it = it.?.cons.cdr) {
-            const pair = it.?.car;
+            const pair = it.?.cons.car;
             if (pair) |p| {
                 if (p.cons.car) |cr| {
                     if (cr.isEql(key)) {

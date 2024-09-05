@@ -75,7 +75,7 @@ pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
     const stdout = std.io.getStdOut();
 
     var raw_term = term.enableRawMode(stdin.handle, .blocking) catch return errResult(g, "Failed to enable raw mode");
-    defer raw_term.disableRawMode() catch errResult(g, "Failed to disable raw mode");
+    defer raw_term.disableRawMode() catch {};
 
     // To listen mouse events, we need to enable mouse tracking
     stdout.writer().print("{s}", .{utils.enable_mouse_tracking}) catch unreachable;
