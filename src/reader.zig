@@ -933,7 +933,10 @@ pub const Reader = struct {
                 map.put(key, value) catch return error.MemoryError;
             }
 
-            return self.gc.create(.{ .dictionary = map }) catch return error.MemoryError;
+            // TODO: dictionaries have both keys and values that need to be evaluated
+            // I could add a flag marking it as evaluated or have this function
+            // return the `dict` special form instead
+            return v.cons(self.gc, self.gc.sym("dict"), self.gc.create(.{ .dictionary = map }) catch return error.MemoryError);
         }
 
         return error.NoMatch;

@@ -168,15 +168,21 @@ pub fn evaluateCdr(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluateDictionary(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    var it = args;
+    // TODO: this form takes a dictionary value and evaluates its key and value
+    // then yields the raw dictionary
+    var it: ?*v.Value = args.?.dictionary.pairs;
     var dict = v.Dictionary.init(g) catch return error.AllocError;
 
-    while (it) |xs| {
-        const key = xs.cons.car.?;
-        it = xs.cons.cdr;
-        if (it) |vs| {
-            const value = try evaluate(g, vs.cons.car.?);
-            dict.put(key, value) catch {
+    while (it != null) : (it = it.?.cons.cdr) {
+        // this feels like a hack, why does the dictionary end in a `nothing`?
+        if (it.?.cons.car == null and it.?.cons.cdr == null) {
+            continue;
+        }
+        const pair = it.?.cons.car.?;
+        const key = pair.cons.car;
+        const value = pair.cons.cdr;
+        if (key) |k| {
+            dict.put(k, try evaluate(g, value.?)) catch {
                 return error.AllocError;
             };
         } else {
