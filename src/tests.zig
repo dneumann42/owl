@@ -13,8 +13,6 @@ test "gc" {
     try expect(n.number == 42.0);
 }
 
-// Evaluation Tests
-
 test "evaluating numbers" {
     var G = gc.Gc.init(allocator);
     defer G.deinit();

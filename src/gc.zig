@@ -51,16 +51,18 @@ pub const Gc = struct {
         return self.pushEnv(self.topEnv);
     }
 
+    // this is busted, en could be the environment from the function
+    // we need en to be the top and not the next
     pub fn pushEnv(self: *Gc, en: *v.Environment) Gc {
-        var new_environment = v.Environment.init(self.allocator) catch unreachable;
-        new_environment.next = en;
+        const new_environment = v.Environment.init(self.allocator) catch unreachable;
+        en.next = new_environment;
 
         const g = Gc{
             .allocator = self.allocator,
             .values = self.values,
             .nothingValue = self.nothingValue,
             .root = self.root,
-            .topEnv = new_environment,
+            .topEnv = en,
         };
 
         return g;
