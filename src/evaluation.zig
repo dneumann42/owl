@@ -2,6 +2,7 @@ const v = @import("values.zig");
 const r = @import("reader.zig");
 const gc = @import("gc.zig");
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue, MissingArguments };
 
@@ -178,16 +179,14 @@ pub fn evaluateDictionary(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         if (it.?.cons.car == null and it.?.cons.cdr == null) {
             continue;
         }
+
         const pair = it.?.cons.car.?;
         const key = pair.cons.car;
         const value = pair.cons.cdr;
-        if (key) |k| {
-            dict.put(k, try evaluate(g, value.?)) catch {
-                return error.AllocError;
-            };
-        } else {
-            return error.InvalidKeyValue;
-        }
+
+        dict.put(key.?, try evaluate(g, value.?)) catch {
+            return error.AllocError;
+        };
     }
 
     return g.create(.{ .dictionary = dict }) catch {
@@ -248,14 +247,16 @@ pub fn evaluateDo(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
 
     while (it != null) {
         const value = it.?.cons.car;
-        if (value != null) {
-            const evaluated = try evaluate(&next, value.?);
+
+        if (value == null) {
             it = it.?.cons.cdr;
-            if (it == null) {
-                return evaluated;
-            }
-        } else {
-            it = it.?.cons.cdr;
+            continue;
+        }
+
+        const evaluated = try evaluate(&next, value.?);
+        it = it.?.cons.cdr;
+        if (it == null) {
+            return evaluated;
         }
     }
 
@@ -277,72 +278,56 @@ pub fn evaluateGreaterThan(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluateAdd(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    var it = args;
+    if (args == null) return g.num(0);
+    var it = args.?;
     var total: f64 = 0.0;
-    while (it) |c| {
-        if (c.cons.car) |value| {
-            const adder = try evaluate(g, value);
-            total += adder.toNumber();
-        }
-        it = c.cons.cdr;
+    while (it.cons.car) |value| : (it = it.cons.cdr orelse break) {
+        const adder = try evaluate(g, value);
+        total += adder.toNumber();
     }
     return g.num(total);
 }
 
 pub fn evaluateMul(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    var it = args;
+    if (args == null) return g.num(0);
+    var it = args.?;
     var total: f64 = 1.0;
-    while (it) |c| {
-        if (c.cons.car) |value| {
-            const adder = try evaluate(g, value);
-            total *= adder.toNumber();
-        }
-        it = c.cons.cdr;
+    while (it.cons.car) |value| : (it = it.cons.cdr orelse break) {
+        const adder = try evaluate(g, value);
+        total *= adder.toNumber();
     }
     return g.num(total);
 }
 
 pub fn evaluateSub(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    var it = args;
-    var total: f64 = undefined;
-    var idx: i32 = 0;
-
-    while (it) |c| {
-        if (c.cons.car) |value| {
-            const other = try evaluate(g, value);
-            if (idx == 0) {
-                if (c.cons.cdr == null) {
-                    return g.num(-other.toNumber());
-                }
-                total = other.toNumber();
-            } else {
-                total -= other.toNumber();
-            }
-        }
-        it = c.cons.cdr;
-        idx += 1;
+    if (args == null) return g.num(0);
+    var it = args.?;
+    const first_value = (try evaluate(g, it.cons.car.?)).toNumber();
+    if (it.cons.cdr == null) {
+        return g.num(-first_value);
+    }
+    var total = first_value;
+    it = it.cons.cdr.?;
+    while (it.cons.car) |value| : (it = it.cons.cdr orelse break) {
+        const other = (try evaluate(g, value)).toNumber();
+        total -= other;
     }
     return g.num(total);
 }
 
 pub fn evaluateDiv(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    var it = args;
-    var total: f64 = undefined;
-    var idx: i32 = 0;
-
-    while (it) |c| {
-        if (c.cons.car) |value| {
-            const other = try evaluate(g, value);
-            if (idx == 0) {
-                total = other.toNumber();
-            } else {
-                total /= other.toNumber();
-            }
-        }
-        it = c.cons.cdr;
-        idx += 1;
+    if (args == null) return g.num(0);
+    var it = args.?;
+    const first_value = (try evaluate(g, it.cons.car.?)).toNumber();
+    if (it.cons.cdr == null) {
+        return g.num(-first_value);
     }
-
+    var total: f64 = first_value;
+    it = it.cons.cdr.?;
+    while (it.cons.car) |value| : (it = it.cons.cdr orelse break) {
+        const other = (try evaluate(g, value)).toNumber();
+        total /= other;
+    }
     return g.num(total);
 }
 

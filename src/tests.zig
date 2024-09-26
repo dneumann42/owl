@@ -3,6 +3,7 @@ const r = @import("reader.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");
 const expect = std.testing.expect;
+const expectEq = std.testing.expectEqual;
 const gc = @import("gc.zig");
 
 const allocator = std.heap.page_allocator;
@@ -28,6 +29,14 @@ test "evaluating symbols" {
     const s = G.sym("hello");
     const value = try e.evaluate(&G, s);
     try expect(value.number == 123.0);
+}
+
+test "evaluating math functions" {
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    try expectEq(3, (try e.eval(&G, "1 + 3 + -1")).toNumber());
+    try expectEq(12, (try e.eval(&G, "3 * 4")).toNumber());
+    // try expectEq(1.0 / 3.0, (try e.eval(&G, "1 / 3")).toNumber());
 }
 
 test "evaluating code" {
