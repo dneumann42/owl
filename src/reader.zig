@@ -205,6 +205,7 @@ pub const Reader = struct {
     // additive = multiplicative, {("+" | "-"), additive}
     pub fn readAdditive(self: *Reader) ParseError!*v.Value {
         if (self.readBinaryExpression2(&[_][]const u8{ "+", "-" }, Reader.readMultiplicative, Reader.readAdditive)) |n| {
+            std.debug.print("PARSED {?}", .{n});
             return n;
         } else |_| {}
 
@@ -214,6 +215,7 @@ pub const Reader = struct {
     // multiplicative = unary, {("*" | "/"), multiplicative};
     pub fn readMultiplicative(self: *Reader) ParseError!*v.Value {
         if (self.readBinaryExpression2(&[_][]const u8{ "*", "/" }, Reader.readUnary, Reader.readMultiplicative)) |n| {
+            std.debug.print("PARSED {?}", .{n});
             return n;
         } else |_| {}
 
@@ -1012,7 +1014,7 @@ pub const Reader = struct {
 
     pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '*', '%', '$', '-', '>', '<', '=' => true,
+            '+', '/', '*', '%', '$', '-', '>', '<', '=' => true,
             else => ascii.isAlphanumeric(ch),
         };
     }
