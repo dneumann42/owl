@@ -44,18 +44,49 @@ fn baseEcho(g: *gc.Gc, args: ?*v.Value) *v.Value {
 }
 
 fn baseWrite(g: *gc.Gc, args: ?*v.Value) *v.Value {
+    const stdout = std.io.getStdOut().writer();
+
     if (args) |arguments| {
         var it: ?*v.Value = arguments;
         while (it) |value| {
             const val = e.evaluate(g, value.cons.car.?) catch |err| return evalErrResult(g, err);
             const s = val.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
             defer g.allocator.free(s);
-            std.debug.print("{s}", .{s});
+            const buffer = convertEscapeSequences(g.allocator, s) catch unreachable;
+            _ = stdout.print("{s}", .{buffer}) catch unreachable;
             it = value.cons.cdr;
         }
-        std.debug.print("\n", .{});
     }
     return g.T();
+}
+
+pub fn convertEscapeSequences(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    defer result.deinit();
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (i + 3 < input.len and
+            input[i] == '\\' and
+            input[i + 1] == 'x' and
+            input[i + 2] == '1' and
+            input[i + 3] == 'b')
+        {
+            try result.append(0x1B);
+            i += 4;
+        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 'n') {
+            try result.append(0x0A);
+            i += 2;
+        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 't') {
+            try result.append(0x09);
+            i += 2;
+        } else {
+            try result.append(input[i]);
+            i += 1;
+        }
+    }
+
+    return result.toOwnedSlice();
 }
 
 const ReadLine = struct {
