@@ -16,6 +16,7 @@ pub fn installBase(g: *gc.Gc) void {
     g.env().set("echo", g.nfun(baseEcho)) catch unreachable;
     g.env().set("write", g.nfun(baseWrite)) catch unreachable;
     g.env().set("eval", g.nfun(baseEval)) catch unreachable;
+    g.env().set("cat", g.nfun(concat)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -52,43 +53,14 @@ fn baseWrite(g: *gc.Gc, args: ?*v.Value) *v.Value {
             const val = e.evaluate(g, value.cons.car.?) catch |err| return evalErrResult(g, err);
             const s = val.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
             defer g.allocator.free(s);
-            const buffer = convertEscapeSequences(g.allocator, s) catch unreachable;
-            _ = stdout.print("{s}", .{buffer}) catch unreachable;
+            _ = stdout.write(s) catch unreachable;
             it = value.cons.cdr;
         }
     }
     return g.T();
 }
 
-pub fn convertEscapeSequences(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result = std.ArrayList(u8).init(allocator);
-    defer result.deinit();
-
-    var i: usize = 0;
-    while (i < input.len) {
-        if (i + 3 < input.len and
-            input[i] == '\\' and
-            input[i + 1] == 'x' and
-            input[i + 2] == '1' and
-            input[i + 3] == 'b')
-        {
-            try result.append(0x1B);
-            i += 4;
-        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 'n') {
-            try result.append(0x0A);
-            i += 2;
-        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 't') {
-            try result.append(0x09);
-            i += 2;
-        } else {
-            try result.append(input[i]);
-            i += 1;
-        }
-    }
-
-    return result.toOwnedSlice();
-}
-
+// TODO: all string literals should run through this function on read
 const ReadLine = struct {
     history: std.ArrayList([]const u8),
 };
@@ -177,5 +149,26 @@ fn baseEval(g: *gc.Gc, args: ?*v.Value) *v.Value {
         const value = e.evaluate(g, arguments.cons.car orelse g.nothing()) catch g.nothing();
         return e.eval(g, value.string) catch g.nothing();
     }
+    return g.nothing();
+}
+
+fn concat(g: *gc.Gc, args: ?*v.Value) *v.Value {
+    if (args) |arguments| {
+        var buffer = std.ArrayList(u8).init(g.allocator);
+        defer buffer.deinit();
+        var it: ?*v.Value = arguments;
+        while (it != null) : (it = it.?.cons.cdr) {
+            if (it.?.cons.car) |str| {
+                const value = e.evaluate(g, str) catch unreachable;
+                const s = value.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
+                defer g.allocator.free(s);
+                for (s) |c| {
+                    buffer.append(c) catch unreachable;
+                }
+            }
+        }
+        return g.create(.{ .string = buffer.toOwnedSlice() catch unreachable }) catch unreachable;
+    }
+
     return g.nothing();
 }

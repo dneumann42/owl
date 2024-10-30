@@ -1,0 +1,7 @@
+define-location := fn (name, desc, actions) { 
+  .name name, 
+  .desc desc, 
+  .actions actions 
+}
+
+write(define-location("X", "Y", []))

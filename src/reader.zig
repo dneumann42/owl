@@ -815,7 +815,9 @@ pub const Reader = struct {
                 break;
             }
         }
-        return self.gc.create(.{ .string = self.code[start .. self.it - 1] }) catch |err| {
+        const s = self.code[start .. self.it - 1];
+        const buffer = convertEscapeSequences(self.gc.allocator, s) catch unreachable;
+        return self.gc.create(.{ .string = buffer }) catch |err| {
             std.debug.panic("Panicked at Error: {any}", .{err});
         };
     }
@@ -1020,4 +1022,33 @@ pub const Reader = struct {
 
 pub fn read(allocator: std.mem.Allocator, code: []const u8) v.Value {
     return Reader.initLoad(allocator, code).readProgram();
+}
+
+pub fn convertEscapeSequences(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8).init(allocator);
+    defer result.deinit();
+
+    var i: usize = 0;
+    while (i < input.len) {
+        if (i + 3 < input.len and
+            input[i] == '\\' and
+            input[i + 1] == 'x' and
+            input[i + 2] == '1' and
+            input[i + 3] == 'b')
+        {
+            try result.append(0x1B);
+            i += 4;
+        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 'n') {
+            try result.append(0x0A);
+            i += 2;
+        } else if (i + 1 < input.len and input[i] == '\\' and input[i + 1] == 't') {
+            try result.append(0x09);
+            i += 2;
+        } else {
+            try result.append(input[i]);
+            i += 1;
+        }
+    }
+
+    return result.toOwnedSlice();
 }

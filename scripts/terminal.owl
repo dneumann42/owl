@@ -1,3 +1,5 @@
+ESC := "\x1b["
+
 BLACK   := "0"
 RED     := "1"
 GREEN   := "2"
@@ -6,19 +8,44 @@ BLUE    := "4"
 MAGENTA := "5"
 CYAN    := "6"
 WHITE   := "7"
+DEFAULT := "9"
 
-BOLD      := "1"
+RESET := "0"
+BOLD := "1"
+DIM := "2"
+ITALIC := "3"
 UNDERLINE := "4"
-BLINK     := "5"
-REVERSE   := "7"
+BLINKING := "5"
+INVERT := "7"
+HIDDEN := "8"
+STRIKETHROUGH := "9"
 
-ESC := "\x1b["
-
-fun set-color(color)
-  write(ESC, "3", color, "m")
+fun cmd(code)
+  write(ESC, code, "m")
 end
 
-set-color(RED)
-write("Hello\tWorld\n")
-set-color(WHITE)
-write("Hello\tWorld")
+fun fg(col)
+  cat("3", col)
+end
+
+fun bg(col)
+  cat("4", col)
+end
+
+fun bright-fg(col)
+  cat("9", col)
+end
+
+fun bright-bg(col)
+  cat("10", col)
+end
+
+fun fg-rgb(r, g, b)
+  cat(ESC, "38;2;", r, ";", g, ";", b, "m")
+end
+
+fun bg-rgb(r, g, b)
+  cat(ESC, "48;2;", r, ";", g, ";", b, "m")
+end
+
+write(bg-rgb(100, 0, 200), "Hello, World")
