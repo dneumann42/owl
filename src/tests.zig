@@ -36,6 +36,7 @@ test "evaluating math functions" {
     defer G.deinit();
     try expectEq(3, (try e.eval(&G, "1 + 3 + -1")).toNumber());
     try expectEq(12, (try e.eval(&G, "3 * 4")).toNumber());
+    try expectEq(8 - 5, (try e.eval(&G, "8 - 5")).toNumber());
     try expectEq(1.0 / 3.0, (try e.eval(&G, "1 / 3")).toNumber());
 }
 
@@ -114,4 +115,15 @@ test "evaluating passing functions" {
         \\a(b)
     );
     try expect(value.number == 69);
+}
+
+test "closures and scoping" {
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = e.eval(&G,
+        \\ add := fn(a) fn(b) a + b
+        \\ add(2)(3)
+        \\ a + b
+    );
+    try expectEq(value, error.UndefinedSymbol);
 }

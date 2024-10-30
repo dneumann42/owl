@@ -55,8 +55,20 @@ pub const Gc = struct {
     // we need en to be the top and not the next
     pub fn pushEnv(self: *Gc, en: *v.Environment) Gc {
         const new_environment = v.Environment.init(self.allocator) catch unreachable;
-        en.next = new_environment;
+        new_environment.next = en;
 
+        const g = Gc{
+            .allocator = self.allocator,
+            .values = self.values,
+            .nothingValue = self.nothingValue,
+            .root = self.root,
+            .topEnv = new_environment,
+        };
+
+        return g;
+    }
+
+    pub fn withEnv(self: *Gc, en: *v.Environment) Gc {
         const g = Gc{
             .allocator = self.allocator,
             .values = self.values,
@@ -64,7 +76,6 @@ pub const Gc = struct {
             .root = self.root,
             .topEnv = en,
         };
-
         return g;
     }
 

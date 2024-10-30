@@ -30,7 +30,7 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (g.env().find(s)) |val| {
                 return val;
             } else {
-                std.log.err("Undefined symbol: '{s}'\n", .{s});
+                // std.log.err("Undefined symbol: '{s}'\n", .{s});
                 return error.UndefinedSymbol;
             }
         },
@@ -41,7 +41,9 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (f.name) |sym| {
                 g.env().set(sym.symbol, value) catch return error.AllocError;
             }
-            value.function.env = g.env();
+            const new_environment = v.Environment.init(g.allocator) catch unreachable;
+            new_environment.next = g.env();
+            value.function.env = new_environment;
             return value;
         },
         v.Value.cons => |list| {
@@ -360,8 +362,7 @@ pub fn evaluateCall(g: *gc.Gc, call: *v.Value, args: ?*v.Value) !*v.Value {
 }
 
 pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v.Value {
-    var next = g.pushEnv(call.env);
-
+    var next = g.withEnv(call.env);
     if (args) |arguments| {
         var it: ?*v.Value = arguments;
         var ps: ?*v.Value = call.params;
@@ -372,8 +373,6 @@ pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v
             call.env.set(param.symbol, try evaluate(&next, value)) catch return error.InvalidValue;
         }
     }
-
     const result = evaluate(&next, call.body);
-
     return result;
 }
