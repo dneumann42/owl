@@ -36,7 +36,6 @@ pub const Gc = struct {
             .values = std.ArrayList(*v.Value).init(allocator),
             .nothingValue = null,
             .root = .{
-                // TODO: return a memory error
                 .environment = environment,
             },
             .topEnv = environment,

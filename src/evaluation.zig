@@ -370,7 +370,7 @@ pub fn evaluateFunction(g: *gc.Gc, call: *const v.Function, args: ?*v.Value) !*v
             defer ps = ps.?.cons.cdr;
             const param = ps.?.cons.car orelse break;
             const value = it.?.cons.car orelse return error.InvalidValue;
-            call.env.set(param.symbol, try evaluate(&next, value)) catch return error.InvalidValue;
+            call.env.set(param.symbol, try evaluate(g, value)) catch return error.InvalidValue;
         }
     }
     const result = evaluate(&next, call.body);

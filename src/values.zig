@@ -332,14 +332,23 @@ pub const Environment = struct {
             return v;
         }
 
-        if (self.next != null) {
-            return self.next.?.find(key);
+        if (self.next) |next| {
+            return next.find(key);
         }
 
         return null;
     }
 
     pub fn set(self: *Environment, key: []const u8, val: *Value) !void {
+        if (self.values.get(key) == null) {
+            var it = self.next;
+            while (it != null) : (it = it.?.next) {
+                if (it.?.values.get(key) != null) {
+                    try it.?.values.put(key, val);
+                    return;
+                }
+            }
+        }
         try self.values.put(key, val);
     }
 };
