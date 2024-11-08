@@ -3,6 +3,8 @@ const json = std.json;
 const gc = @import("gc.zig");
 const e = @import("evaluation.zig");
 
+const ValueError = error{KeyNotFound};
+
 pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, dictionary, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
@@ -19,6 +21,17 @@ pub const Value = union(ValueType) {
     function: Function,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
+
+    pub fn isStatic(self: *Value) bool {
+        return self.dictionary.static;
+    }
+
+    pub fn isNothing(self: *Value) bool {
+        return switch (self.*) {
+            Value.nothing => true,
+            else => false,
+        };
+    }
 
     pub fn toString(self: *Value, allocator: std.mem.Allocator) ![]const u8 {
         switch (self.*) {
@@ -237,11 +250,27 @@ pub const Function = struct {
 pub const Dictionary = struct {
     pairs: *Value,
     g: *gc.Gc,
+    static: bool,
 
     pub fn init(g: *gc.Gc) !@This() {
         return .{
             .pairs = try g.create(.{ .cons = .{ .car = null, .cdr = null } }),
             .g = g,
+            .static = false,
+        };
+    }
+
+    pub fn init_record(g: *gc.Gc, fields: std.ArrayList(*Value)) Dictionary {
+        var xs = try g.create(.{ .cons = .{ .car = null, .cdr = null } });
+
+        for (fields) |f| {
+            xs = cons(g, cons(g, f, g.nothing()), xs);
+        }
+
+        return .{
+            .pairs = xs,
+            .g = g,
+            .static = true,
         };
     }
 
@@ -292,6 +321,9 @@ pub const Dictionary = struct {
                     }
                 }
             }
+        }
+        if (self.static) {
+            return error.KeyNotFound;
         }
         self.pairs = cons(self.g, cons(self.g, key, value), self.pairs);
         return;

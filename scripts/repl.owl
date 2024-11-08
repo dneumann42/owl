@@ -3,9 +3,13 @@ archimedes := " ~___~  Owl (0.0.0-dev)
 /)___)  or '?' for list of repl commands
   ' '"
 
+fun command(key, call)
+  record { .key key, .call call }
+end
+
 commands := [
-  { .key ",q", .call fun() echo("QUIT") end },
-  { .key ",h", .call fun() echo("HELP") end }
+  command(",q", fn() echo("QUIT"))
+  command(",h", fn() echo("HELP"))
 ]
 
 fun repl(history)

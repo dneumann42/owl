@@ -8,7 +8,6 @@ pub const GcError = error{
 pub const Gc = struct {
     const GcHeader = struct {
         marked: bool,
-        // this could store meta information
     };
 
     const GcRoot = struct {

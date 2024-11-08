@@ -127,3 +127,13 @@ test "closures and scoping" {
     );
     try expectEq(value, error.UndefinedSymbol);
 }
+
+// test "records" {
+//     var G = gc.Gc.init(allocator);
+//     defer G.deinit();
+//     const value = try e.eval(&G,
+//         \\ record Vec3 x y z end
+//         \\ Vec3(.x 0, .y 0, .z 0)
+//     );
+//     std.debug.print("{?}", .{value});
+// }

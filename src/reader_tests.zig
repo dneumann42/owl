@@ -238,3 +238,11 @@ test "reading params" {
     try expect(std.mem.eql(u8, exp3.cons.car.?.symbol, "a"));
     try expect(std.mem.eql(u8, exp3.cons.cdr.?.cons.car.?.symbol, "b"));
 }
+
+test "reading records" {
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    var reader = r.Reader.initLoad(&G, "record { .a 1 .b 2 }");
+    const exp = try reader.readDictionary();
+    std.debug.print("{?}", .{exp.cons.cdr.?.dictionary.static});
+}

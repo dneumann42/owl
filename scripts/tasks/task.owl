@@ -1,0 +1,33 @@
+module Task
+  record t
+    title 
+    state
+  end
+
+  enum State
+    pending
+    working
+    completed
+  end
+
+  fun init(title)
+    Task.t(
+      .title title,
+      .state Tast.State.pending
+    )
+  end
+
+  fun complete(self)
+    Task.t(
+      ..self,
+      .state = Task.State.completed
+    )
+  end
+end
+
+t := Task.t(
+  .title "Hello",
+  .state Task.State.pending
+)
+
+t2 := Task.init("Hello")

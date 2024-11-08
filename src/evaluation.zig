@@ -82,6 +82,7 @@ const specialForms = [_]FormTable{
     .{ .sym = "def", .func = evaluateDefinition },
     .{ .sym = "set", .func = evaluateSet },
     .{ .sym = "dict", .func = evaluateDictionary },
+    .{ .sym = "record", .func = evaluateRecord },
     .{ .sym = "list", .func = evaluateList },
     .{ .sym = ".", .func = evaluateDot },
 
@@ -177,7 +178,7 @@ pub fn evaluateDictionary(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     var dict = v.Dictionary.init(g) catch return error.AllocError;
 
     while (it != null) : (it = it.?.cons.cdr) {
-        // this feels like a hack, why does the dictionary end in a `nothing`?
+        // why does the dictionary end in a `nothing`?
         if (it.?.cons.car == null and it.?.cons.cdr == null) {
             continue;
         }
@@ -191,6 +192,30 @@ pub fn evaluateDictionary(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
         };
     }
 
+    return g.create(.{ .dictionary = dict }) catch {
+        return error.AllocError;
+    };
+}
+
+pub fn evaluateRecord(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
+    var it: ?*v.Value = args.?.dictionary.pairs;
+    var dict = v.Dictionary.init(g) catch return error.AllocError;
+
+    while (it != null) : (it = it.?.cons.cdr) {
+        // why does the dictionary end in a `nothing`?
+        if (it.?.cons.car == null and it.?.cons.cdr == null) {
+            continue;
+        }
+
+        const pair = it.?.cons.car.?;
+        const key = pair.cons.car;
+        const value = pair.cons.cdr;
+
+        dict.put(key.?, try evaluate(g, value.?)) catch {
+            return error.AllocError;
+        };
+    }
+    dict.static = true;
     return g.create(.{ .dictionary = dict }) catch {
         return error.AllocError;
     };

@@ -318,8 +318,6 @@ pub const Reader = struct {
             return value;
         } else |_| {}
 
-        // NOTE: we need to check if readSymbol returns a language keyword like 'fun',
-        // so we can get to this point
         if (self.readFunctionDefinition()) |value| {
             return value;
         } else |_| {}
@@ -894,6 +892,17 @@ pub const Reader = struct {
 
     // dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
     pub fn readDictionary(self: *Reader) ParseError!*v.Value {
+        var is_record = false;
+        const start = self.it;
+        const sym = self.expectKeyword("record") catch self.gc.nothing();
+
+        if (sym.isNothing()) {
+            self.it = start;
+        } else {
+            is_record = true;
+            self.skipWhitespace();
+        }
+
         if (self.chr() != '{') {
             return error.NoMatch;
         }
@@ -935,9 +944,10 @@ pub const Reader = struct {
                 map.put(key, value) catch return error.MemoryError;
             }
 
-            // TODO: dictionaries have both keys and values that need to be evaluated
-            // I could add a flag marking it as evaluated or have this function
-            // return the `dict` special form instead
+            if (is_record) {
+                map.static = true;
+                return v.cons(self.gc, self.gc.sym("record"), self.gc.create(.{ .dictionary = map }) catch return error.MemoryError);
+            }
             return v.cons(self.gc, self.gc.sym("dict"), self.gc.create(.{ .dictionary = map }) catch return error.MemoryError);
         }
 
