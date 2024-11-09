@@ -8,7 +8,7 @@ fun command(key, call)
 end
 
 commands := [
-  command(",q", fn() echo("QUIT"))
+  command(",q", fn() echo("QUIT")),
   command(",h", fn() echo("HELP"))
 ]
 

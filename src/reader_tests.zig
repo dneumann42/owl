@@ -244,5 +244,5 @@ test "reading records" {
     defer G.deinit();
     var reader = r.Reader.initLoad(&G, "record { .a 1 .b 2 }");
     const exp = try reader.readDictionary();
-    std.debug.print("{?}", .{exp.cons.cdr.?.dictionary.static});
+    _ = exp;
 }
