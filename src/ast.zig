@@ -1,37 +1,31 @@
 const std = @import("std");
 const v = @import("values.zig");
 
-const AstTag = enum { symbol, number, call, binexp, unexp };
+const AstTag = enum { symbol, number, func, binexp, unexp, block };
 
-const Ast = union(AstTag) {
-    symbol: Symbol,
-    number: Number,
-    call: Call,
-    binexp: Binexp,
-    unexp: Unexp,
-};
+pub const Ast = union(AstTag) { symbol: Symbol, number: Number, func: Func, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast) };
 
-const Symbol = struct {
+pub const Symbol = struct {
     lexeme: []const u8,
 };
 
-const Number = struct {
+pub const Number = struct {
     num: f64,
 };
 
-const Call = struct {
+pub const Func = struct {
     sym: ?[]const u8,
     args: std.ArrayList(*Ast),
     body: *Ast,
 
-    pub fn addArg(self: *Call, a: *Ast) !void {
+    pub fn addArg(self: *Func, a: *Ast) !void {
         return self.args.append(a);
     }
 };
 
-const Binexp = struct { a: *Ast, b: *Ast };
+pub const Binexp = struct { a: *Ast, b: *Ast };
 
-const Unexp = struct {
+pub const Unexp = struct {
     op: *Ast,
     value: *Ast,
 };
@@ -46,12 +40,15 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
             deinit(ast.*.unexp.op, allocator);
             deinit(ast.*.unexp.value, allocator);
         },
-        .call => {
-            for (ast.*.call.args.items) |a| {
+        .func => {
+            for (ast.*.func.args.items) |a| {
                 deinit(a, allocator);
             }
-            ast.*.call.args.deinit();
-            deinit(ast.*.call.body, allocator);
+            ast.*.func.args.deinit();
+            deinit(ast.*.func.body, allocator);
+        },
+        .block => {
+            ast.*.block.deinit();
         },
         else => {},
     }
@@ -82,9 +79,15 @@ pub fn unexp(allocator: std.mem.Allocator, op: *Ast, value: *Ast) !*Ast {
     return s;
 }
 
-pub fn call(allocator: std.mem.Allocator, name: []const u8, body: *Ast) !*Ast {
+pub fn block(allocator: std.mem.Allocator, xs: std.ArrayList(*Ast)) !*Ast {
+    const s = try allocator.create(Ast);
+    s.* = .{ .block = xs };
+    return s;
+}
+
+pub fn func(allocator: std.mem.Allocator, name: []const u8, body: *Ast) !*Ast {
     const c = try allocator.create(Ast);
-    c.* = .{ .call = .{
+    c.* = .{ .func = .{
         .sym = name,
         .args = std.ArrayList(*Ast).init(allocator),
         .body = body,

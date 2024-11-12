@@ -31,11 +31,11 @@ test "unary expressions" {
     try testing.expectEqual(s.*.unexp.value.*.number.num, 2.0);
 }
 
-test "call expressions" {
-    var c = try ast.call(allocator, "test", try ast.num(allocator, 1.0));
+test "function definitions" {
+    var c = try ast.func(allocator, "test", try ast.num(allocator, 1.0));
     defer ast.deinit(c, allocator);
-    try c.call.addArg(try ast.sym(allocator, "a"));
-    try c.call.addArg(try ast.sym(allocator, "b"));
-    try testing.expectEqualStrings(c.*.call.sym.?, "test");
-    try testing.expectEqual(c.*.call.body.number.num, 1.0);
+    try c.func.addArg(try ast.sym(allocator, "a"));
+    try c.func.addArg(try ast.sym(allocator, "b"));
+    try testing.expectEqualStrings(c.*.func.sym.?, "test");
+    try testing.expectEqual(c.*.func.body.number.num, 1.0);
 }
