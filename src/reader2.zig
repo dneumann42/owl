@@ -31,6 +31,7 @@ fn Result(comptime T: type) type {
                 .failure = .{ .kind = kind, .start = start, .message = null },
             };
         }
+
         pub fn errMsg(kind: ReaderErrorKind, start: usize, message: []const u8) @This() {
             return .{
                 .failure = .{ .kind = kind, .start = start, .message = message },
@@ -221,12 +222,12 @@ pub const Reader = struct {
         return R.ok(block);
     }
 
-    fn readExpression(self: Reader) R {
+    fn readExpression(self: *Reader) R {
         return self.readBinaryLogicalOr();
     }
 
     fn readBinaryExpression(
-        self: Reader,
+        self: *Reader,
         operators: []const []const u8,
         left_parse: fn (self: *Reader) R,
         right_parse: fn (self: *Reader) R,
@@ -236,11 +237,11 @@ pub const Reader = struct {
             .success => |v| v,
             .failure => |e| {
                 self.index = pin;
-                return e;
+                return R.err(e.kind, e.start);
             },
         };
 
-        pin = self.it;
+        pin = self.index;
         const symbol = self.readSymbol(false) catch {
             self.it = pin;
             return left;
@@ -270,12 +271,12 @@ pub const Reader = struct {
         return ast.binexp(self.allocator, left, right);
     }
 
-    fn readBinaryLogicalOr(self: Reader) R {
-        return self.readBinaryExpression([_][]const u8{"or"}, Reader.readBinaryLogicalAnd, Reader.readBinaryLogicalOr);
+    fn readBinaryLogicalOr(self: *Reader) R {
+        return self.readBinaryExpression(&[_][]const u8{"or"}, Reader.readBinaryLogicalAnd, Reader.readBinaryLogicalOr);
     }
 
     fn readBinaryLogicalAnd(self: *Reader) R {
-        return self.readBinaryExpression([_][]const u8{"and"}, Reader.readEquality, Reader.readBinaryLogicalAnd);
+        return self.readBinaryExpression(&[_][]const u8{"and"}, Reader.readEquality, Reader.readBinaryLogicalAnd);
     }
 
     fn readEquality(self: *Reader) R {
@@ -283,7 +284,7 @@ pub const Reader = struct {
     }
 
     fn readComparison(self: *Reader) R {
-        return self.readBinaryExpression(&[_][]const u8{ "<", ">", "<=", ">=" }, self.readAdd, self.readComparison);
+        return self.readBinaryExpression(&[_][]const u8{ "<", ">", "<=", ">=" }, Reader.readAdd, Reader.readComparison);
     }
 
     fn readAdd(self: *Reader) R {
@@ -306,20 +307,25 @@ pub const Reader = struct {
         const primary = switch (self.readPrimary()) {
             .failure => {
                 self.index = start;
-                return R.err(ReaderErrorKind.NoMatch);
+                return R.err(ReaderErrorKind.NoMatch, start);
             },
             .success => |p| p,
         };
-        return ast.unexp(self.allocator, op, primary);
+
+        const un = ast.unexp(self.allocator, op, primary) catch {
+            return R.errMsg(ReaderErrorKind.Error, self.index, "Failed to allocate unexp");
+        };
+
+        return R.ok(un);
     }
 
     pub fn tokenMatches(self: *Reader, match: []const u8) ?usize {
         if (self.index >= self.tokens.items.len) {
-            return false;
+            return null;
         }
         const token = self.tokens.items[self.index];
         const lexeme = self.tokenizer.getLexeme(token) orelse {
-            return false;
+            return null;
         };
         return switch (std.mem.eql(u8, lexeme, match)) {
             true => token.start,
@@ -351,21 +357,21 @@ pub const Reader = struct {
     pub fn readPrimary(self: *Reader) R {
         switch (self.readDefinition()) {
             .success => |v| {
-                return v;
+                return R.ok(v);
             },
             .failure => {},
         }
 
         switch (self.readAssignment()) {
             .success => |v| {
-                return v;
+                return R.ok(v);
             },
             .failure => {},
         }
 
         switch (self.readDotCall()) {
             .success => |v| {
-                return v;
+                return R.ok(v);
             },
             .failure => {},
         }
@@ -375,15 +381,33 @@ pub const Reader = struct {
         }
 
         // Nested expressions
+
+        if (self.tokenMatches("(")) |_| {
+            self.index += 1;
+
+            const exp = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.err(e.kind, e.start);
+                },
+            };
+
+            if (self.tokenMatches(")")) |_| {} else {
+                return R.errMsg(ReaderErrorKind.MissingClosingParen, self.index, "Missing closing parenthesis");
+            }
+            return R.ok(exp);
+        }
+
         if (self.tokenMatches("(")) |start| {
             self.index += 1;
             const exp = switch (self.readExpression()) {
                 .success => |v| v,
                 .failure => |e| {
-                    return e;
+                    return R.err(e.kind, e.start);
                 },
             };
-            if (!self.tokenMatches(")")) {
+
+            if (self.tokenMatches(")")) |_| {} else {
                 return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
             }
             return R.ok(exp);
@@ -393,18 +417,37 @@ pub const Reader = struct {
     }
 
     pub fn readDefinition(self: *Reader) R {
-        _ = self;
-        std.debug.panic("Not Implemented", .{});
+        return R.err(ReaderErrorKind.NoMatch, self.index);
     }
 
     pub fn readAssignment(self: *Reader) R {
-        _ = self;
-        std.debug.panic("Not Implemented", .{});
+        return R.err(ReaderErrorKind.NoMatch, self.index);
     }
 
     pub fn readDotCall(self: *Reader) R {
-        _ = self;
-        std.debug.panic("Not Implemented", .{});
+        return R.err(ReaderErrorKind.NoMatch, self.index);
+    }
+
+    pub fn readSymbol(self: *Reader, readKeywords: bool) R {
+        if (self.index >= self.tokens.items.len) {
+            return R.err(ReaderErrorKind.NoMatch, self.index);
+        }
+
+        const sym = self.tokens[self.index];
+        
+        if (!readKeywords )
+    }
+
+    pub fn isOwlKeyword(sym: []const u8) bool {
+        if (std.mem.eql(u8, sym, "fun")) return true;
+        if (std.mem.eql(u8, sym, "fn")) return true;
+        if (std.mem.eql(u8, sym, "if")) return true;
+        if (std.mem.eql(u8, sym, "then")) return true;
+        if (std.mem.eql(u8, sym, "else")) return true;
+        if (std.mem.eql(u8, sym, "for")) return true;
+        if (std.mem.eql(u8, sym, "do")) return true;
+        if (std.mem.eql(u8, sym, "cond")) return true;
+        return false;
     }
 };
 
