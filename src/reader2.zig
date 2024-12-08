@@ -26,6 +26,11 @@ fn Result(comptime T: type) type {
     return union(enum) {
         success: T,
         failure: ReaderError,
+
+        pub fn noMatch(msg: []const u8) @This() {
+            return .{ .failure = .{ .kind = ReaderErrorKind.NoMatch, .start = 0, .message = msg } };
+        }
+
         pub fn err(kind: ReaderErrorKind, start: usize) @This() {
             return .{
                 .failure = .{ .kind = kind, .start = start, .message = null },
@@ -37,6 +42,11 @@ fn Result(comptime T: type) type {
                 .failure = .{ .kind = kind, .start = start, .message = message },
             };
         }
+
+        pub fn fromErr(e: ReaderError) @This() {
+            return .{ .failure = e };
+        }
+
         pub fn ok(value: T) @This() {
             return .{ .success = value };
         }
@@ -131,6 +141,23 @@ pub const Tokenizer = struct {
         return self.code[start..index.*];
     }
 
+    pub fn readNumber(self: Tokenizer, index: usize) ?f64 {
+        if (!std.ascii.isDigit(self.code[index])) {
+            return null;
+        }
+        const start = index;
+        var it = index + 1;
+        while (it < self.code.len and std.ascii.isDigit(self.code[it])) {
+            it += 1;
+        }
+        const substr = self.code[start..it];
+        const num = std.fmt.parseFloat(f64, substr) catch |err| {
+            std.debug.print("Error parsing float: {}\n", .{err});
+            return null;
+        };
+        return num;
+    }
+
     pub fn readSpecialCharacter(self: Tokenizer, index: *usize) ?[]const u8 {
         if (index.* >= self.code.len) {
             return null;
@@ -210,15 +237,27 @@ pub const Reader = struct {
         self.tokens.deinit();
     }
 
-    pub fn read(self: Reader) R {
+    pub fn read(self: *Reader) R {
         return self.readProgram();
     }
 
-    fn readProgram(self: Reader) R {
+    fn readProgram(self: *Reader) R {
         const nodes = std.ArrayList(*ast.Ast).init(self.allocator);
         const block = ast.block(self.allocator, nodes) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate block");
         };
+        while (self.index < self.tokens.items.len) {
+            const exp = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    std.log.err("error: {s}\n", .{e.message.?});
+                    break;
+                },
+            };
+            block.block.append(exp) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append expression");
+            };
+        }
         return R.ok(block);
     }
 
@@ -242,33 +281,40 @@ pub const Reader = struct {
         };
 
         pin = self.index;
-        const symbol = self.readSymbol(false) catch {
-            self.it = pin;
-            return left;
+        const symbol = switch (self.readSymbol(false)) {
+            .success => |v| v,
+            .failure => {
+                // handle non no match errors
+                self.index = pin;
+                return R.ok(left);
+            },
         };
 
         var operator_match = false;
         for (operators) |operator| {
-            if (std.mem.eql(u8, symbol.symbol, operator)) {
+            if (std.mem.eql(u8, symbol.symbol.lexeme, operator)) {
                 operator_match = true;
                 break;
             }
         }
 
         if (!operator_match) {
-            self.it = pin;
-            return left;
+            self.index = pin;
+            return R.ok(left);
         }
 
         const right = switch (right_parse(self)) {
             .success => |v| v,
             .failure => |e| {
-                self.it = pin;
-                return e;
+                self.index = pin;
+                return R.fromErr(e);
             },
         };
 
-        return ast.binexp(self.allocator, left, right);
+        const exp = ast.binexp(self.allocator, left, right) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate binexp");
+        };
+        return R.ok(exp);
     }
 
     fn readBinaryLogicalOr(self: *Reader) R {
@@ -307,7 +353,7 @@ pub const Reader = struct {
         const primary = switch (self.readPrimary()) {
             .failure => {
                 self.index = start;
-                return R.err(ReaderErrorKind.NoMatch, start);
+                return R.noMatch("Read unary primary");
             },
             .success => |p| p,
         };
@@ -335,11 +381,11 @@ pub const Reader = struct {
 
     pub fn readUnaryOperator(self: *Reader) R {
         if (self.index >= self.tokens.items.len) {
-            return R.err(ReaderErrorKind.NoMatch, 0);
+            return R.noMatch("Read unary operator");
         }
         const token = self.tokens.items[self.index];
         const lexeme = self.tokenizer.getLexeme(token) orelse {
-            return R.err(ReaderErrorKind.NoMatch, 0);
+            return R.noMatch("Read unary operator lexeme");
         };
         if (std.mem.eql(u8, lexeme, "-") //
         or std.mem.eql(u8, lexeme, "~") //
@@ -351,7 +397,7 @@ pub const Reader = struct {
             };
             return R.ok(new_sym);
         }
-        return R.err(ReaderErrorKind.NoMatch, 0);
+        return R.noMatch("Lexeme is not a unary operator");
     }
 
     pub fn readPrimary(self: *Reader) R {
@@ -376,28 +422,7 @@ pub const Reader = struct {
             .failure => {},
         }
 
-        if (self.index >= self.tokens.items.len) {
-            return R.err(ReaderErrorKind.NoMatch, 0);
-        }
-
         // Nested expressions
-
-        if (self.tokenMatches("(")) |_| {
-            self.index += 1;
-
-            const exp = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
-                    return R.err(e.kind, e.start);
-                },
-            };
-
-            if (self.tokenMatches(")")) |_| {} else {
-                return R.errMsg(ReaderErrorKind.MissingClosingParen, self.index, "Missing closing parenthesis");
-            }
-            return R.ok(exp);
-        }
-
         if (self.tokenMatches("(")) |start| {
             self.index += 1;
             const exp = switch (self.readExpression()) {
@@ -413,41 +438,81 @@ pub const Reader = struct {
             return R.ok(exp);
         }
 
-        return R.err(ReaderErrorKind.NoMatch, 0);
+        return R.noMatch("Primary");
     }
 
     pub fn readDefinition(self: *Reader) R {
-        return R.err(ReaderErrorKind.NoMatch, self.index);
+        _ = self;
+        return R.noMatch("Definition");
     }
 
     pub fn readAssignment(self: *Reader) R {
-        return R.err(ReaderErrorKind.NoMatch, self.index);
+        _ = self;
+        return R.noMatch("Assignment");
     }
 
+    // this is a terminal that can yield a literal
     pub fn readDotCall(self: *Reader) R {
-        return R.err(ReaderErrorKind.NoMatch, self.index);
+        return self.readCallable();
+    }
+
+    pub fn readCallable(self: *Reader) R {
+        switch (self.readLiteral()) {
+            .failure => {},
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
+        return self.readSymbol(false);
+    }
+
+    pub fn readLiteral(self: *Reader) R {
+        switch (self.readNumber()) {
+            .failure => {},
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
+        return R.noMatch("Literal");
+    }
+
+    pub fn readNumber(self: *Reader) R {
+        const tok = self.tokens.items[self.index];
+        if (tok.kind != TokenKind.number) {
+            return R.noMatch("Number");
+        }
+        const num = self.tokenizer.readNumber(tok.start) orelse {
+            return R.noMatch("Number lexeme");
+        };
+        self.index += 1;
+        return R.ok(ast.num(self.allocator, num) catch {
+            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc number node");
+        });
     }
 
     pub fn readSymbol(self: *Reader, readKeywords: bool) R {
         if (self.index >= self.tokens.items.len) {
-            return R.err(ReaderErrorKind.NoMatch, self.index);
+            return R.noMatch("Symbol");
+        }
+        const sym = self.tokens.items[self.index];
+        if (!readKeywords and sym.kind == TokenKind.keyword) {
+            return R.noMatch("Unexpected keyword");
         }
 
-        const sym = self.tokens[self.index];
-        
-        if (!readKeywords )
-    }
+        if (sym.kind != TokenKind.keyword or sym.kind != TokenKind.symbol) {
+            return R.noMatch("Not a symbol or keyword");
+        }
 
-    pub fn isOwlKeyword(sym: []const u8) bool {
-        if (std.mem.eql(u8, sym, "fun")) return true;
-        if (std.mem.eql(u8, sym, "fn")) return true;
-        if (std.mem.eql(u8, sym, "if")) return true;
-        if (std.mem.eql(u8, sym, "then")) return true;
-        if (std.mem.eql(u8, sym, "else")) return true;
-        if (std.mem.eql(u8, sym, "for")) return true;
-        if (std.mem.eql(u8, sym, "do")) return true;
-        if (std.mem.eql(u8, sym, "cond")) return true;
-        return false;
+        const lexeme = self.tokenizer.getLexeme(sym) orelse {
+            return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to allocate lexeme");
+        };
+
+        const symbol = ast.sym(self.allocator, lexeme) catch {
+            return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
+        };
+
+        self.index += 1;
+        return R.ok(symbol);
     }
 };
 

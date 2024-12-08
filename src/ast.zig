@@ -48,6 +48,9 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
             deinit(ast.*.func.body, allocator);
         },
         .block => {
+            for (ast.block.items) |item| {
+                deinit(item, allocator);
+            }
             ast.*.block.deinit();
         },
         else => {},
