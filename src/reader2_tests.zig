@@ -104,3 +104,62 @@ test "reading unary expressions" {
     try testing.expectEqualStrings(aa.unexp.op.symbol.lexeme, "-");
     try testing.expectEqual(aa.unexp.value.number.num, 123);
 }
+
+test "reading binary expressions" {
+    var reader = try r.Reader.init(testing.allocator, "1 or 2 and 3");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqual(exp.binexp.a.number.num, 1);
+    try testing.expectEqualStrings(exp.binexp.op.symbol.lexeme, "or");
+    try testing.expectEqual(exp.binexp.b.binexp.a.number.num, 2);
+    try testing.expectEqualStrings(exp.binexp.b.binexp.op.symbol.lexeme, "and");
+    try testing.expectEqual(exp.binexp.b.binexp.b.number.num, 3);
+}
+
+test "reading function calls" {
+    var reader = try r.Reader.init(testing.allocator, "call(1, 2)");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+
+    const exp = program.block.items[0];
+    try testing.expectEqualStrings(exp.call.callable.symbol.lexeme, "call");
+    try testing.expectEqual(exp.call.args.items[0].number.num, 1);
+    try testing.expectEqual(exp.call.args.items[1].number.num, 2);
+}
+
+test "reading dot & call expressions" {
+    var reader = try r.Reader.init(testing.allocator, "a.b a().b a.b()");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+
+    const exp1 = program.block.items[0];
+    try testing.expectEqualStrings(exp1.dot.a.symbol.lexeme, "a");
+    try testing.expectEqualStrings(exp1.dot.b.symbol.lexeme, "b");
+
+    const exp2 = program.block.items[1];
+    try testing.expectEqualStrings(exp2.dot.a.call.callable.symbol.lexeme, "a");
+    try testing.expectEqualStrings(exp2.dot.b.symbol.lexeme, "b");
+
+    const exp3 = program.block.items[2];
+    try testing.expectEqualStrings(exp3.call.callable.dot.a.symbol.lexeme, "a");
+    try testing.expectEqualStrings(exp3.call.callable.dot.b.symbol.lexeme, "b");
+}
+
+test "reading function definitions" {
+    var reader = try r.Reader.init(testing.allocator, "fun add-1(y) y + 1 end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+
+    const exp = program.block.items[0];
+    try testing.expectEqualStrings(exp.func.sym.?, "add-1");
+    try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
+    const binexp = exp.func.body.block.items[0];
+    try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");
+    try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
+    try testing.expectEqual(binexp.binexp.b.number.num, 1);
+}

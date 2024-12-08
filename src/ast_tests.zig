@@ -18,7 +18,7 @@ test "testing ast values" {
 }
 
 test "binary expressions" {
-    const s = try ast.binexp(allocator, try ast.num(allocator, 1.0), try ast.num(allocator, 2.0));
+    const s = try ast.binexp(allocator, try ast.num(allocator, 1.0), try ast.sym(allocator, "+"), try ast.num(allocator, 2.0));
     defer ast.deinit(s, allocator);
     try testing.expectEqual(s.*.binexp.a.*.number.num, 1.0);
     try testing.expectEqual(s.*.binexp.b.*.number.num, 2.0);

@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace };
+pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace, comma, dot };
 
 pub const Token = struct {
     kind: TokenKind,
@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, Error };
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
     start: usize,
@@ -60,7 +60,7 @@ pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
 
     pub fn getKeywords() []const []const u8 {
-        return comptime &.{ "if", "fun", "fn", "then", "else", "for", "do", "cond", "true", "false" };
+        return comptime &.{ "if", "fun", "fn", "then", "else", "for", "do", "cond", "true", "false", "or", "and" };
     }
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
@@ -112,6 +112,8 @@ pub const Tokenizer = struct {
                     ']' => TokenKind.closeBracket,
                     '{' => TokenKind.openBrace,
                     '}' => TokenKind.closeBrace,
+                    ',' => TokenKind.comma,
+                    '.' => TokenKind.dot,
                     else => {
                         std.debug.panic("Not Implemented", .{});
                     },
@@ -235,7 +237,7 @@ pub const Tokenizer = struct {
 
     pub fn validTokenCharacter(ch: u8) bool {
         return switch (ch) {
-            '(', ')', '{', '}', '[', ']' => true,
+            '(', ')', '{', '}', '[', ']', ',', '.' => true,
             else => false,
         };
     }
@@ -281,7 +283,11 @@ pub const Reader = struct {
             const exp = switch (self.readExpression()) {
                 .success => |v| v,
                 .failure => |e| {
-                    std.log.err("error: {s}\n", .{e.message.?});
+                    if (e.message) |msg| {
+                        std.log.err("error: {s}\n", .{msg});
+                    } else {
+                        std.log.err("{any}\n", .{e});
+                    }
                     break;
                 },
             };
@@ -310,9 +316,8 @@ pub const Reader = struct {
                 return R.err(e.kind, e.start);
             },
         };
-
         pin = self.index;
-        const symbol = switch (self.readSymbol(false)) {
+        const symbol = switch (self.readSymbol(true)) {
             .success => |v| v,
             .failure => {
                 // handle non no match errors
@@ -331,6 +336,7 @@ pub const Reader = struct {
 
         if (!operator_match) {
             self.index = pin;
+            ast.deinit(symbol, self.allocator);
             return R.ok(left);
         }
 
@@ -342,7 +348,7 @@ pub const Reader = struct {
             },
         };
 
-        const exp = ast.binexp(self.allocator, left, right) catch {
+        const exp = ast.binexp(self.allocator, left, symbol, right) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate binexp");
         };
         return R.ok(exp);
@@ -410,6 +416,13 @@ pub const Reader = struct {
         };
     }
 
+    pub fn isTokenKind(self: *Reader, kind: TokenKind) bool {
+        if (self.index >= self.tokens.items.len) {
+            return false;
+        }
+        return self.tokens.items[self.index].kind == kind;
+    }
+
     pub fn readUnaryOperator(self: *Reader) R {
         if (self.index >= self.tokens.items.len) {
             return R.noMatch("Read unary operator");
@@ -418,10 +431,7 @@ pub const Reader = struct {
         const lexeme = self.tokenizer.getLexeme(token) orelse {
             return R.noMatch("Read unary operator lexeme");
         };
-        if (std.mem.eql(u8, lexeme, "-") //
-        or std.mem.eql(u8, lexeme, "~") //
-        or std.mem.eql(u8, lexeme, "'") //
-        or std.mem.eql(u8, lexeme, "not")) {
+        if (std.mem.eql(u8, lexeme, "-") or std.mem.eql(u8, lexeme, "~") or std.mem.eql(u8, lexeme, "'") or std.mem.eql(u8, lexeme, "not")) {
             self.index += 1;
             const new_sym = ast.sym(self.allocator, lexeme) catch {
                 return R.errMsg(ReaderErrorKind.Error, token.start, "Failed to allocate symbol.");
@@ -469,6 +479,13 @@ pub const Reader = struct {
             return R.ok(exp);
         }
 
+        switch (self.readFunctionDefinition()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => {},
+        }
+
         return R.noMatch("Primary");
     }
 
@@ -482,9 +499,76 @@ pub const Reader = struct {
         return R.noMatch("Assignment");
     }
 
+    pub fn readFunctionDefinition(self: *Reader) R {
+        if (self.tokenMatches("fun") == null) {
+            return R.noMatch("Not a function definition");
+        }
+        return R.noMatch("Function Definition");
+    }
+
     // this is a terminal that can yield a literal
     pub fn readDotCall(self: *Reader) R {
-        return self.readCallable();
+        var callable = switch (self.readCallable()) {
+            .success => |v| v,
+            .failure => {
+                return R.noMatch("Not a callable");
+            },
+        };
+        if (!self.isTokenKind(TokenKind.dot) and self.tokenMatches("(") == null) {
+            return R.ok(callable);
+        }
+        while (self.isTokenKind(TokenKind.dot) or self.tokenMatches("(") != null) {
+            if (self.isTokenKind(TokenKind.dot)) {
+                self.index += 1;
+                const sym = switch (self.readSymbol(false)) {
+                    .failure => {
+                        return R.err(ReaderErrorKind.DotMissingParameter, 0);
+                    },
+                    .success => |s| s,
+                };
+                callable = ast.dot(self.allocator, callable, sym) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dot.");
+                };
+            } else if (self.tokenMatches("(")) |_| {
+                self.index += 1;
+                const args = self.readArgList();
+                callable = ast.call(self.allocator, callable, args) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate call.");
+                };
+            }
+        }
+
+        return R.ok(callable);
+    }
+
+    pub fn readArgList(self: *Reader) std.ArrayList(*ast.Ast) {
+        var args = std.ArrayList(*ast.Ast).init(self.allocator);
+        while (self.index < self.tokens.items.len) {
+            if (self.tokenMatches(")")) |_| {
+                self.index += 1;
+                break;
+            }
+            const exp = switch (self.readExpression()) {
+                .success => |s| s,
+                .failure => {
+                    return args;
+                },
+            };
+            args.append(exp) catch {
+                ast.deinit(exp, self.allocator);
+                return args;
+            };
+            if (self.tokenMatches(")")) |_| {
+                self.index += 1;
+                break;
+            }
+            if (self.tokens.items[self.index].kind != TokenKind.comma) {
+                ast.deinit(exp, self.allocator);
+                return args;
+            }
+            self.index += 1;
+        }
+        return args;
     }
 
     pub fn readCallable(self: *Reader) R {
@@ -579,19 +663,15 @@ pub const Reader = struct {
         if (!readKeywords and sym.kind == TokenKind.keyword) {
             return R.noMatch("Unexpected keyword");
         }
-
-        if (sym.kind != TokenKind.keyword or sym.kind != TokenKind.symbol) {
+        if (sym.kind != TokenKind.keyword and sym.kind != TokenKind.symbol) {
             return R.noMatch("Not a symbol or keyword");
         }
-
         const lexeme = self.tokenizer.getLexeme(sym) orelse {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to allocate lexeme");
         };
-
         const symbol = ast.sym(self.allocator, lexeme) catch {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
         };
-
         self.index += 1;
         return R.ok(symbol);
     }
