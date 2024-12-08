@@ -4,7 +4,10 @@ const std = @import("std");
 const testing = std.testing;
 
 test "tokenization" {
-    const reader = r.Tokenizer.init(testing.allocator, "132 2 ()  [] {} if fun");
+    const reader = r.Tokenizer.init(testing.allocator,
+        \\132 2 ()  [] {} if fun
+        \\ "Hello"
+    );
     const tokens = try reader.tokenize();
     defer tokens.deinit();
     try testing.expectEqual(tokens.items[0].kind, r.TokenKind.number);
@@ -21,6 +24,10 @@ test "tokenization" {
     try testing.expectEqualStrings(reader.getLexeme(tokens.items[8]).?, "if");
     try testing.expectEqual(tokens.items[9].kind, r.TokenKind.keyword);
     try testing.expectEqualStrings(reader.getLexeme(tokens.items[9]).?, "fun");
+    try testing.expectEqual(tokens.items[10].kind, r.TokenKind.string);
+    try testing.expectEqualStrings(reader.getLexeme(tokens.items[10]).?,
+        \\"Hello"
+    );
 }
 
 test "comments and whitespace" {
@@ -34,6 +41,14 @@ test "comments and whitespace" {
     try testing.expectEqual(tokens.items[1].kind, r.TokenKind.openParen);
 }
 
+test "reading programs" {
+    var reader = try r.Reader.init(testing.allocator, "1");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    try testing.expectEqual(program.block.items[0].number.num, 1.0);
+}
+
 test "reading number literals" {
     var reader = try r.Reader.init(testing.allocator, "31415926 1 2 3");
     defer reader.deinit();
@@ -45,17 +60,25 @@ test "reading number literals" {
     try testing.expectEqual(program.block.items[3].number.num, 3);
 }
 
-// test "read program" {
-//     const reader = try r.Reader.init(testing.allocator, "1");
-//     switch (reader.read()) {
-//         .success => |s| {
-//             try testing.expectEqual(s.block.items[0].number.num, 1.0);
-//         },
-//         .failure => {
-//             try testing.expect(false);
-//         },
-//     }
-// }
+test "reading boolean literals" {
+    var reader = try r.Reader.init(testing.allocator, "true false");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    try testing.expectEqual(program.block.items[0].boolean, true);
+    try testing.expectEqual(program.block.items[1].boolean, false);
+}
+
+test "reading string literals" {
+    var reader = try r.Reader.init(testing.allocator,
+        \\"Hello, World!" ""
+    );
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    try testing.expectEqualStrings(program.block.items[0].string, "Hello, World!");
+    try testing.expectEqualStrings(program.block.items[1].string, "");
+}
 
 test "reading unary operators" {
     var reader = try r.Reader.init(testing.allocator, "not - x");
@@ -72,13 +95,12 @@ test "reading unary operators" {
     }
 }
 
-// test "reading unary expressions" {
-//     var reader = try r.Reader.init(testing.allocator, "-123");
-//     defer reader.deinit();
-//     const aa_result = reader.readUnary();
-//     std.debug.print("{s}\n", .{aa_result.failure.message.?});
-//     const aa = aa_result.success;
-//     defer a.deinit(aa, testing.allocator);
-//     try testing.expectEqualStrings(aa.unexp.op.symbol.lexeme, "-");
-//     try testing.expectEqual(aa.unexp.value.number.num, 123);
-// }
+test "reading unary expressions" {
+    var reader = try r.Reader.init(testing.allocator, "-123");
+    defer reader.deinit();
+    const aa_result = reader.readUnary();
+    const aa = aa_result.success;
+    defer a.deinit(aa, testing.allocator);
+    try testing.expectEqualStrings(aa.unexp.op.symbol.lexeme, "-");
+    try testing.expectEqual(aa.unexp.value.number.num, 123);
+}

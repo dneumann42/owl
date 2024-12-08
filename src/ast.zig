@@ -1,9 +1,9 @@
 const std = @import("std");
 const v = @import("values.zig");
 
-const AstTag = enum { symbol, number, func, binexp, unexp, block };
+const AstTag = enum { symbol, number, boolean, string, func, binexp, unexp, block };
 
-pub const Ast = union(AstTag) { symbol: Symbol, number: Number, func: Func, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast) };
+pub const Ast = union(AstTag) { symbol: Symbol, number: Number, boolean: bool, string: []const u8, func: Func, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast) };
 
 pub const Symbol = struct {
     lexeme: []const u8,
@@ -68,6 +68,24 @@ pub fn num(allocator: std.mem.Allocator, number: f64) !*Ast {
     const s = try allocator.create(Ast);
     s.* = .{ .number = .{ .num = number } };
     return s;
+}
+
+pub fn str(allocator: std.mem.Allocator, lexeme: []const u8) !*Ast {
+    const s = try allocator.create(Ast);
+    s.* = .{ .string = lexeme };
+    return s;
+}
+
+pub fn T(allocator: std.mem.Allocator) !*Ast {
+    const b = try allocator.create(Ast);
+    b.* = .{ .boolean = true };
+    return b;
+}
+
+pub fn F(allocator: std.mem.Allocator) !*Ast {
+    const b = try allocator.create(Ast);
+    b.* = .{ .boolean = false };
+    return b;
 }
 
 pub fn binexp(allocator: std.mem.Allocator, a: *Ast, b: *Ast) !*Ast {

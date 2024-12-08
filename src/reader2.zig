@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-pub const TokenKind = enum { number, keyword, symbol, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace };
+pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace };
 
 pub const Token = struct {
     kind: TokenKind,
@@ -60,7 +60,7 @@ pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
 
     pub fn getKeywords() []const []const u8 {
-        return comptime &.{ "if", "fun", "fn", "then", "else", "for", "do", "cond" };
+        return comptime &.{ "if", "fun", "fn", "then", "else", "for", "do", "cond", "true", "false" };
     }
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
@@ -121,12 +121,31 @@ pub const Tokenizer = struct {
                 try tokens.append(.{ .kind = TokenKind.keyword, .start = start });
             } else if (self.readSymbolLexeme(&index)) |_| {
                 try tokens.append(.{ .kind = TokenKind.symbol, .start = start });
+            } else if (self.readStringLexeme(&index)) |_| {
+                try tokens.append(.{ .kind = TokenKind.string, .start = start });
             } else {
                 std.debug.panic("Not Implemented", .{});
             }
         }
 
         return tokens;
+    }
+
+    pub fn readStringLexeme(self: Tokenizer, index: *usize) ?[]const u8 {
+        if (self.code[index.*] != '"') {
+            return null;
+        }
+        const start = index.*;
+        index.* += 1;
+        while (index.* < self.code.len and self.code[index.*] != '"') {
+            index.* += 1;
+        }
+        if (index.* >= self.code.len) {
+            std.log.err("Missing closing quote", .{});
+            return null;
+        }
+        index.* += 1;
+        return self.code[start..index.*];
     }
 
     pub fn readNumberLexeme(self: Tokenizer, index: *usize) ?[]const u8 {
@@ -183,6 +202,10 @@ pub const Tokenizer = struct {
             return null;
         }
         const start = index.*;
+        if (isUnaryCharacter(self.code[index.*])) {
+            index.* += 1;
+            return self.code[start..index.*];
+        }
         while (index.* < self.code.len and Tokenizer.validSymbolCharacter(self.code[index.*])) {
             index.* += 1;
         }
@@ -198,7 +221,15 @@ pub const Tokenizer = struct {
             TokenKind.number => self.readNumberLexeme(&index),
             TokenKind.keyword => self.readKeywordLexeme(&index),
             TokenKind.symbol => self.readSymbolLexeme(&index),
+            TokenKind.string => self.readStringLexeme(&index),
             else => self.readSpecialCharacter(&index),
+        };
+    }
+
+    pub fn isUnaryCharacter(ch: u8) bool {
+        return switch (ch) {
+            '-', '+' => true,
+            else => false,
         };
     }
 
@@ -473,6 +504,18 @@ pub const Reader = struct {
                 return R.ok(v);
             },
         }
+        switch (self.readBoolean()) {
+            .failure => {},
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
+        switch (self.readString()) {
+            .failure => {},
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
         return R.noMatch("Literal");
     }
 
@@ -488,6 +531,44 @@ pub const Reader = struct {
         return R.ok(ast.num(self.allocator, num) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc number node");
         });
+    }
+
+    pub fn readString(self: *Reader) R {
+        const tok = self.tokens.items[self.index];
+        if (tok.kind != TokenKind.string) {
+            return R.noMatch("String");
+        }
+        const lexeme = self.tokenizer.getLexeme(tok) orelse {
+            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to get lexeme");
+        };
+        self.index += 1;
+        return R.ok(ast.str(self.allocator, lexeme[1 .. lexeme.len - 1]) catch {
+            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
+        });
+    }
+
+    pub fn readBoolean(self: *Reader) R {
+        const tok = self.tokens.items[self.index];
+        if (tok.kind != TokenKind.keyword) {
+            return R.noMatch("Not a boolean keyword");
+        }
+        var index = tok.start;
+        const lexeme = self.tokenizer.readKeywordLexeme(&index) orelse {
+            return R.noMatch("Not a keyword lexeme");
+        };
+        if (std.mem.eql(u8, lexeme, "true")) {
+            self.index += 1;
+            return R.ok(ast.T(self.allocator) catch {
+                return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc boolean");
+            });
+        }
+        if (std.mem.eql(u8, lexeme, "false")) {
+            self.index += 1;
+            return R.ok(ast.F(self.allocator) catch {
+                return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc boolean");
+            });
+        }
+        return R.noMatch("Not a boolean");
     }
 
     pub fn readSymbol(self: *Reader, readKeywords: bool) R {
