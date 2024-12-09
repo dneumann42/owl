@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, Error };
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
     start: usize,
@@ -60,7 +60,7 @@ pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
 
     pub fn getKeywords() []const []const u8 {
-        return comptime &.{ "if", "fun", "fn", "then", "else", "for", "do", "cond", "true", "false", "or", "and" };
+        return comptime &.{ "if", "fun", "fn", "then", "else", "end", "for", "do", "cond", "true", "false", "or", "and" };
     }
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
@@ -503,7 +503,24 @@ pub const Reader = struct {
         if (self.tokenMatches("fun") == null) {
             return R.noMatch("Not a function definition");
         }
-        return R.noMatch("Function Definition");
+        const start = self.index;
+        self.index += 1;
+
+        const sym: ?*ast.Ast = switch (self.readSymbol(false)) {
+            .failure => null,
+            .success => |s| s,
+        };
+
+        if (!self.isTokenKind(TokenKind.openParen)) {
+            self.index = start;
+            return R.err(ReaderErrorKind.InvalidFunctionDefinition, 0);
+        }
+        self.index += 1;
+        const args = self.readArgList();
+        const body = self.readBlockTillEnd();
+        return R.ok(ast.func(self.allocator, sym, args, body) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allo func");
+        });
     }
 
     // this is a terminal that can yield a literal
@@ -569,6 +586,35 @@ pub const Reader = struct {
             self.index += 1;
         }
         return args;
+    }
+
+    pub fn readBlockTillEnd(self: *Reader) *ast.Ast {
+        var args = std.ArrayList(*ast.Ast).init(self.allocator);
+
+        while (self.index < self.tokens.items.len) {
+            const exp = switch (self.readExpression()) {
+                .failure => |e| {
+                    std.debug.panic("Failed to read expression: {any}", .{e});
+                },
+                .success => |v| v,
+            };
+
+            args.append(exp) catch unreachable;
+
+            if (self.tokenMatches("end")) |_| {
+                self.index += 1;
+                break;
+            }
+
+            if (self.index >= self.tokens.items.len) {
+                std.debug.panic("Missing closing 'end'.\n", .{});
+                break;
+            }
+        }
+
+        return ast.block(self.allocator, args) catch {
+            std.debug.panic("Failed to allocate block", .{});
+        };
     }
 
     pub fn readCallable(self: *Reader) R {

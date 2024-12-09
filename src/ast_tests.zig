@@ -32,10 +32,10 @@ test "unary expressions" {
 }
 
 test "function definitions" {
-    var c = try ast.func(allocator, "test", try ast.num(allocator, 1.0));
+    var c = try ast.func(allocator, try ast.sym(allocator, "test"), std.ArrayList(*ast.Ast).init(allocator), try ast.num(allocator, 1.0));
     defer ast.deinit(c, allocator);
     try c.func.addArg(try ast.sym(allocator, "a"));
     try c.func.addArg(try ast.sym(allocator, "b"));
-    try testing.expectEqualStrings(c.*.func.sym.?, "test");
+    try testing.expectEqualStrings(c.*.func.sym.?.symbol.lexeme, "test");
     try testing.expectEqual(c.*.func.body.number.num, 1.0);
 }

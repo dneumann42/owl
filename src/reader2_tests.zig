@@ -106,7 +106,7 @@ test "reading unary expressions" {
 }
 
 test "reading binary expressions" {
-    var reader = try r.Reader.init(testing.allocator, "1 or 2 and 3");
+    var reader = try r.Reader.init(testing.allocator, "1 or 2 and 3 4 + 5");
     defer reader.deinit();
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
@@ -116,6 +116,10 @@ test "reading binary expressions" {
     try testing.expectEqual(exp.binexp.b.binexp.a.number.num, 2);
     try testing.expectEqualStrings(exp.binexp.b.binexp.op.symbol.lexeme, "and");
     try testing.expectEqual(exp.binexp.b.binexp.b.number.num, 3);
+
+    const exp2 = program.block.items[1];
+    try testing.expectEqual(exp2.binexp.a.number.num, 4);
+    try testing.expectEqual(exp2.binexp.b.number.num, 5);
 }
 
 test "reading function calls" {
@@ -156,7 +160,7 @@ test "reading function definitions" {
     defer a.deinit(program, reader.allocator);
 
     const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.func.sym.?, "add-1");
+    try testing.expectEqualStrings(exp.func.sym.?.symbol.lexeme, "add-1");
     try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
     const binexp = exp.func.body.block.items[0];
     try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");

@@ -21,7 +21,7 @@ pub const Call = struct {
 pub const Dot = struct { a: *Ast, b: *Ast };
 
 pub const Func = struct {
-    sym: ?[]const u8,
+    sym: ?*Ast,
     args: std.ArrayList(*Ast),
     body: *Ast,
 
@@ -54,6 +54,9 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
             }
             ast.*.func.args.deinit();
             deinit(ast.*.func.body, allocator);
+            if (ast.*.func.sym) |s| {
+                deinit(s, allocator);
+            }
         },
         .call => {
             for (ast.*.call.args.items) |a| {
@@ -125,11 +128,11 @@ pub fn block(allocator: std.mem.Allocator, xs: std.ArrayList(*Ast)) !*Ast {
     return s;
 }
 
-pub fn func(allocator: std.mem.Allocator, name: []const u8, body: *Ast) !*Ast {
+pub fn func(allocator: std.mem.Allocator, name: ?*Ast, args: std.ArrayList(*Ast), body: *Ast) !*Ast {
     const c = try allocator.create(Ast);
     c.* = .{ .func = .{
         .sym = name,
-        .args = std.ArrayList(*Ast).init(allocator),
+        .args = args,
         .body = body,
     } };
     return c;
