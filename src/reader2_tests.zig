@@ -167,3 +167,32 @@ test "reading function definitions" {
     try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
     try testing.expectEqual(binexp.binexp.b.number.num, 1);
 }
+
+test "reading definitions" {
+    var reader = try r.Reader.init(testing.allocator, "x := 10");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqualStrings(exp.definition.left.symbol.lexeme, "x");
+    try testing.expectEqual(exp.definition.right.number.num, 10);
+}
+
+test "reading assignment" {
+    var reader = try r.Reader.init(testing.allocator, "x = 10");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqualStrings(exp.assignment.left.symbol.lexeme, "x");
+    try testing.expectEqual(exp.assignment.right.number.num, 10);
+}
+
+test "reading do blocks" {
+    var reader = try r.Reader.init(testing.allocator, "do 1 end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expect(exp.block.items.len == 1);
+}

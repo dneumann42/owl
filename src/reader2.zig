@@ -244,7 +244,7 @@ pub const Tokenizer = struct {
 
     pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '/', '*', '%', '$', '-', '>', '<', '=' => true,
+            '+', '/', '*', '%', '$', '-', '>', '<', '=', ':' => true,
             else => std.ascii.isAlphanumeric(ch),
         };
     }
@@ -479,6 +479,13 @@ pub const Reader = struct {
             return R.ok(exp);
         }
 
+        switch (self.readDoBlock()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => {},
+        }
+
         switch (self.readFunctionDefinition()) {
             .success => |v| {
                 return R.ok(v);
@@ -489,14 +496,67 @@ pub const Reader = struct {
         return R.noMatch("Primary");
     }
 
+    pub fn readDoBlock(self: *Reader) R {
+        if (self.tokenMatches("do") == null) {
+            return R.err(ReaderErrorKind.NoMatch, 0);
+        }
+        self.index += 1;
+        const block = self.readBlockTillEnd();
+        return R.ok(block);
+    }
+
     pub fn readDefinition(self: *Reader) R {
-        _ = self;
-        return R.noMatch("Definition");
+        const start = self.index;
+        const sym = switch (self.readSymbol(false)) {
+            .failure => |e| {
+                return R.fromErr(e);
+            },
+            .success => |v| v,
+        };
+        if (self.tokenMatches(":=") == null) {
+            self.index = start;
+            ast.deinit(sym, self.allocator);
+            return R.noMatch("Not a definition");
+        }
+        self.index += 1;
+        const exp = switch (self.readExpression()) {
+            .failure => |e| {
+                self.index = start;
+                ast.deinit(sym, self.allocator);
+                return R.fromErr(e);
+            },
+            .success => |v| v,
+        };
+        return R.ok(ast.define(self.allocator, sym, exp) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
+        });
     }
 
     pub fn readAssignment(self: *Reader) R {
-        _ = self;
-        return R.noMatch("Assignment");
+        const start = self.index;
+        const sym = switch (self.readSymbol(false)) {
+            .failure => |e| {
+                return R.fromErr(e);
+            },
+            .success => |v| v,
+        };
+        if (self.tokenMatches("=") == null) {
+            self.index = start;
+            ast.deinit(sym, self.allocator);
+            return R.noMatch("Not a definition");
+        }
+        self.index += 1;
+        const exp = switch (self.readExpression()) {
+            .failure => |e| {
+                self.index = start;
+                ast.deinit(sym, self.allocator);
+                return R.fromErr(e);
+            },
+            .success => |v| v,
+        };
+        return R.ok(ast.assign(self.allocator, sym, exp) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
+        });
     }
 
     pub fn readFunctionDefinition(self: *Reader) R {

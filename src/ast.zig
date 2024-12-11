@@ -1,9 +1,9 @@
 const std = @import("std");
 const v = @import("values.zig");
 
-const AstTag = enum { symbol, number, boolean, string, call, func, dot, binexp, unexp, block };
+const AstTag = enum { symbol, number, boolean, string, call, func, ifx, dot, binexp, unexp, block, assignment, definition };
 
-pub const Ast = union(AstTag) { symbol: Symbol, number: Number, boolean: bool, string: []const u8, call: Call, func: Func, dot: Dot, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast) };
+pub const Ast = union(AstTag) { symbol: Symbol, number: Number, boolean: bool, string: []const u8, call: Call, func: Func, ifx: If, dot: Dot, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast), assignment: Assign, definition: Define };
 
 pub const Symbol = struct {
     lexeme: []const u8,
@@ -19,6 +19,8 @@ pub const Call = struct {
 };
 
 pub const Dot = struct { a: *Ast, b: *Ast };
+pub const Assign = struct { left: *Ast, right: *Ast };
+pub const Define = struct { left: *Ast, right: *Ast };
 
 pub const Func = struct {
     sym: ?*Ast,
@@ -29,6 +31,10 @@ pub const Func = struct {
         return self.args.append(a);
     }
 };
+
+pub const If = struct { branches: std.ArrayList(*Branch), elseBranch: ?*Ast };
+
+pub const Branch = struct { check: *Ast, then: *Ast };
 
 pub const Binexp = struct { a: *Ast, op: *Ast, b: *Ast };
 
@@ -74,6 +80,14 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
         .dot => {
             deinit(ast.*.dot.a, allocator);
             deinit(ast.*.dot.b, allocator);
+        },
+        .definition => {
+            deinit(ast.*.definition.left, allocator);
+            deinit(ast.*.definition.right, allocator);
+        },
+        .assignment => {
+            deinit(ast.*.assignment.left, allocator);
+            deinit(ast.*.assignment.right, allocator);
         },
         else => {},
     }
@@ -154,4 +168,31 @@ pub fn dot(allocator: std.mem.Allocator, a: *Ast, b: *Ast) !*Ast {
         .b = b,
     } };
     return c;
+}
+
+pub fn ifx(allocator: std.mem.Allocator, branches: std.ArrayList(Branch), elseBranch: ?*Ast) !*Ast {
+    const f = try allocator.create(Ast);
+    f.* = .{ .ifx = .{
+        .branches = branches,
+        .elseBranch = elseBranch,
+    } };
+    return f;
+}
+
+pub fn define(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast) !*Ast {
+    const d = try allocator.create(Ast);
+    d.* = .{ .definition = .{
+        .left = symbol,
+        .right = value,
+    } };
+    return d;
+}
+
+pub fn assign(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast) !*Ast {
+    const d = try allocator.create(Ast);
+    d.* = .{ .assignment = .{
+        .left = symbol,
+        .right = value,
+    } };
+    return d;
 }
