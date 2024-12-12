@@ -15,7 +15,8 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidIf, Error };
+
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
     start: usize,
@@ -493,6 +494,13 @@ pub const Reader = struct {
             .failure => {},
         }
 
+        switch (self.readIf()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => {},
+        }
+
         return R.noMatch("Primary");
     }
 
@@ -580,6 +588,82 @@ pub const Reader = struct {
         const body = self.readBlockTillEnd();
         return R.ok(ast.func(self.allocator, sym, args, body) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allo func");
+        });
+    }
+
+    pub fn readIf(self: *Reader) R {
+        if (self.tokenMatches("if") == null) {
+            return R.noMatch("Not an if");
+        }
+
+        var elseBranch: ?*ast.Ast = null;
+        var branches = std.ArrayList(ast.Branch).init(self.allocator);
+        var first = true;
+
+        while (self.index < self.tokens.items.len) {
+            if (self.tokenMatches("else")) |_| {
+                self.index += 1;
+                elseBranch = self.readBlockTillEnd();
+                break;
+            }
+
+            if (self.tokenMatches("end")) |_| {
+                self.index += 1;
+                break;
+            }
+
+            if (self.tokenMatches("elif") == null and !first) {
+                return R.errMsg(ReaderErrorKind.InvalidIf, 0, "Missing elif");
+            }
+
+            self.index += 1;
+            first = false;
+
+            const elifCond = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.fromErr(e);
+                },
+            };
+
+            if (self.tokenMatches("then") == null) {
+                return R.errMsg(ReaderErrorKind.InvalidIf, 0, "If missing then");
+            }
+            self.index += 1;
+
+            var blockBody = std.ArrayList(*ast.Ast).init(self.allocator);
+            while (self.index < self.tokens.items.len) {
+                if (self.tokenMatches("elif") != null or //
+                    self.tokenMatches("else") != null or //
+                    self.tokenMatches("end") != null)
+                {
+                    const branch = ast.Branch{
+                        .check = elifCond, //
+                        .then = ast.block(self.allocator, blockBody) catch { //
+                            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate block");
+                        },
+                    };
+                    branches.append(branch) catch {
+                        return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append item");
+                    };
+                    break;
+                }
+
+                switch (self.readExpression()) {
+                    .failure => |e| {
+                        return R.fromErr(e);
+                    },
+                    .success => |v| {
+                        blockBody.append(v) catch {
+                            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append block body");
+                        };
+                    },
+                }
+            }
+        }
+
+        return R.ok(ast.ifx(self.allocator, branches, elseBranch) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
         });
     }
 

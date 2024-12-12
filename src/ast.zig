@@ -32,7 +32,7 @@ pub const Func = struct {
     }
 };
 
-pub const If = struct { branches: std.ArrayList(*Branch), elseBranch: ?*Ast };
+pub const If = struct { branches: std.ArrayList(Branch), elseBranch: ?*Ast };
 
 pub const Branch = struct { check: *Ast, then: *Ast };
 
@@ -88,6 +88,16 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
         .assignment => {
             deinit(ast.*.assignment.left, allocator);
             deinit(ast.*.assignment.right, allocator);
+        },
+        .ifx => {
+            if (ast.ifx.elseBranch) |el| {
+                deinit(el, allocator);
+            }
+            for (ast.ifx.branches.items) |branch| {
+                deinit(branch.check, allocator);
+                deinit(branch.then, allocator);
+            }
+            ast.ifx.branches.deinit();
         },
         else => {},
     }

@@ -196,3 +196,42 @@ test "reading do blocks" {
     const exp = program.block.items[0];
     try testing.expect(exp.block.items.len == 1);
 }
+
+test "reading if" {
+    var reader = try r.Reader.init(testing.allocator, "if true then 1 end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+
+    try testing.expectEqual(exp.ifx.elseBranch, null);
+    try testing.expectEqual(exp.ifx.branches.items.len, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+}
+
+test "reading if with else" {
+    var reader = try r.Reader.init(testing.allocator, "if true then 1 else 2 end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number.num, 2);
+    try testing.expectEqual(exp.ifx.branches.items.len, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+}
+
+test "reading if with elif and else" {
+    var reader = try r.Reader.init(testing.allocator, "if true then 1 elif false then 3 else 2 end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number.num, 2);
+    try testing.expectEqual(exp.ifx.branches.items.len, 2);
+    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+    try testing.expectEqual(exp.ifx.branches.items[1].check.boolean, false);
+    try testing.expectEqual(exp.ifx.branches.items[1].then.block.items[0].number.num, 3);
+}
