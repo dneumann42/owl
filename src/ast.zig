@@ -1,9 +1,9 @@
 const std = @import("std");
 const v = @import("values.zig");
 
-const AstTag = enum { symbol, number, boolean, string, call, func, ifx, dot, binexp, unexp, block, assignment, definition };
+const AstTag = enum { symbol, number, boolean, string, dictionary, call, func, ifx, dot, binexp, unexp, block, assignment, definition };
 
-pub const Ast = union(AstTag) { symbol: Symbol, number: Number, boolean: bool, string: []const u8, call: Call, func: Func, ifx: If, dot: Dot, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast), assignment: Assign, definition: Define };
+pub const Ast = union(AstTag) { symbol: Symbol, number: Number, boolean: bool, string: []const u8, dictionary: Dictionary, call: Call, func: Func, ifx: If, dot: Dot, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast), assignment: Assign, definition: Define };
 
 pub const Symbol = struct {
     lexeme: []const u8,
@@ -21,6 +21,9 @@ pub const Call = struct {
 pub const Dot = struct { a: *Ast, b: *Ast };
 pub const Assign = struct { left: *Ast, right: *Ast };
 pub const Define = struct { left: *Ast, right: *Ast };
+
+pub const KV = struct { key: *Ast, value: *Ast };
+pub const Dictionary = std.ArrayList(KV);
 
 pub const Func = struct {
     sym: ?*Ast,
@@ -98,6 +101,13 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
                 deinit(branch.then, allocator);
             }
             ast.ifx.branches.deinit();
+        },
+        .dictionary => {
+            for (ast.dictionary.items) |kv| {
+                deinit(kv.key, allocator);
+                deinit(kv.value, allocator);
+            }
+            ast.dictionary.deinit();
         },
         else => {},
     }
@@ -204,5 +214,11 @@ pub fn assign(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast) !*Ast {
         .left = symbol,
         .right = value,
     } };
+    return d;
+}
+
+pub fn dict(allocator: std.mem.Allocator, pairs: std.ArrayList(KV)) !*Ast {
+    const d = try allocator.create(Ast);
+    d.* = .{ .dictionary = pairs };
     return d;
 }

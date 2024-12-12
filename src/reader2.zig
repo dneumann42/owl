@@ -1,7 +1,7 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
-pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace, comma, dot };
+pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace, comma, dot, colon };
 
 pub const Token = struct {
     kind: TokenKind,
@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidIf, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidIf, InvalidDictionary, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -115,6 +115,7 @@ pub const Tokenizer = struct {
                     '}' => TokenKind.closeBrace,
                     ',' => TokenKind.comma,
                     '.' => TokenKind.dot,
+                    ':' => TokenKind.colon,
                     else => {
                         std.debug.panic("Not Implemented", .{});
                     },
@@ -238,14 +239,14 @@ pub const Tokenizer = struct {
 
     pub fn validTokenCharacter(ch: u8) bool {
         return switch (ch) {
-            '(', ')', '{', '}', '[', ']', ',', '.' => true,
+            '(', ')', '{', '}', '[', ']', ',', '.', ':' => true,
             else => false,
         };
     }
 
     pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '/', '*', '%', '$', '-', '>', '<', '=', ':' => true,
+            '+', '/', '*', '%', '$', '-', '>', '<', '=' => true,
             else => std.ascii.isAlphanumeric(ch),
         };
     }
@@ -447,21 +448,33 @@ pub const Reader = struct {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         switch (self.readAssignment()) {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         switch (self.readDotCall()) {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         // Nested expressions
@@ -484,21 +497,33 @@ pub const Reader = struct {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         switch (self.readFunctionDefinition()) {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         switch (self.readIf()) {
             .success => |v| {
                 return R.ok(v);
             },
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
         }
 
         return R.noMatch("Primary");
@@ -521,12 +546,21 @@ pub const Reader = struct {
             },
             .success => |v| v,
         };
-        if (self.tokenMatches(":=") == null) {
+
+        if (self.isTokenKind(TokenKind.colon)) {
+            self.index += 1;
+            if (self.tokenMatches("=") == null) {
+                self.index = start;
+                ast.deinit(sym, self.allocator);
+                return R.noMatch("Not a definition");
+            }
+            self.index += 1;
+        } else {
             self.index = start;
             ast.deinit(sym, self.allocator);
             return R.noMatch("Not a definition");
         }
-        self.index += 1;
+
         const exp = switch (self.readExpression()) {
             .failure => |e| {
                 self.index = start;
@@ -671,7 +705,10 @@ pub const Reader = struct {
     pub fn readDotCall(self: *Reader) R {
         var callable = switch (self.readCallable()) {
             .success => |v| v,
-            .failure => {
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
                 return R.noMatch("Not a callable");
             },
         };
@@ -763,7 +800,11 @@ pub const Reader = struct {
 
     pub fn readCallable(self: *Reader) R {
         switch (self.readLiteral()) {
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
             .success => |v| {
                 return R.ok(v);
             },
@@ -773,24 +814,91 @@ pub const Reader = struct {
 
     pub fn readLiteral(self: *Reader) R {
         switch (self.readNumber()) {
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
             .success => |v| {
                 return R.ok(v);
             },
         }
         switch (self.readBoolean()) {
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
             .success => |v| {
                 return R.ok(v);
             },
         }
         switch (self.readString()) {
-            .failure => {},
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
+        switch (self.readDictionary()) {
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
             .success => |v| {
                 return R.ok(v);
             },
         }
         return R.noMatch("Literal");
+    }
+
+    pub fn readDictionary(self: *Reader) R {
+        if (!self.isTokenKind(TokenKind.openBrace)) {
+            return R.noMatch("Not a dictionary literal");
+        }
+        self.index += 1;
+
+        var pairs = std.ArrayList(ast.KV).init(self.allocator);
+
+        while (self.index < self.tokens.items.len) {
+            const sym = switch (self.readSymbol(false)) {
+                .success => |v| v,
+                .failure => {
+                    return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
+                },
+            };
+
+            if (!self.isTokenKind(TokenKind.colon)) {
+                return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected colon after key");
+            }
+            self.index += 1;
+
+            const value = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.fromErr(e);
+                },
+            };
+
+            pairs.append(ast.KV{ .key = sym, .value = value }) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append dictionary key value");
+            };
+
+            if (self.isTokenKind(TokenKind.closeBrace)) {
+                self.index += 1;
+                break;
+            } else if (self.index >= self.tokens.items.len) {
+                return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Missing closing brace '}'");
+            }
+        }
+
+        return R.ok(ast.dict(self.allocator, pairs) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dictionary");
+        });
     }
 
     pub fn readNumber(self: *Reader) R {
