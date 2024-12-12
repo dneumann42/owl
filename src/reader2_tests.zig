@@ -158,11 +158,26 @@ test "reading function definitions" {
     defer reader.deinit();
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
-
     const exp = program.block.items[0];
+
     try testing.expectEqualStrings(exp.func.sym.?.symbol.lexeme, "add-1");
     try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
     const binexp = exp.func.body.block.items[0];
+    try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");
+    try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
+    try testing.expectEqual(binexp.binexp.b.number.num, 1);
+}
+
+test "reading lambdas" {
+    var reader = try r.Reader.init(testing.allocator, "fn(y) y + 1");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+
+    try testing.expectEqual(exp.func.sym, null);
+    try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
+    const binexp = exp.func.body;
     try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");
     try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
     try testing.expectEqual(binexp.binexp.b.number.num, 1);

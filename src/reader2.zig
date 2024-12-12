@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidIf, InvalidDictionary, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidDictionary, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -444,6 +444,21 @@ pub const Reader = struct {
     }
 
     pub fn readPrimary(self: *Reader) R {
+        if (self.tokenMatches("(")) |start| {
+            self.index += 1;
+            const exp = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.err(e.kind, e.start);
+                },
+            };
+
+            if (self.tokenMatches(")")) |_| {} else {
+                return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
+            }
+            return R.ok(exp);
+        }
+
         switch (self.readDefinition()) {
             .success => |v| {
                 return R.ok(v);
@@ -477,22 +492,6 @@ pub const Reader = struct {
             },
         }
 
-        // Nested expressions
-        if (self.tokenMatches("(")) |start| {
-            self.index += 1;
-            const exp = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
-                    return R.err(e.kind, e.start);
-                },
-            };
-
-            if (self.tokenMatches(")")) |_| {} else {
-                return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
-            }
-            return R.ok(exp);
-        }
-
         switch (self.readDoBlock()) {
             .success => |v| {
                 return R.ok(v);
@@ -505,6 +504,17 @@ pub const Reader = struct {
         }
 
         switch (self.readFunctionDefinition()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+        }
+
+        switch (self.readLambda()) {
             .success => |v| {
                 return R.ok(v);
             },
@@ -621,7 +631,30 @@ pub const Reader = struct {
         const args = self.readArgList();
         const body = self.readBlockTillEnd();
         return R.ok(ast.func(self.allocator, sym, args, body) catch {
-            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allo func");
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate func");
+        });
+    }
+
+    pub fn readLambda(self: *Reader) R {
+        const start = self.index;
+        if (self.tokenMatches("fn") == null) {
+            return R.noMatch("Not a lambda");
+        }
+        self.index += 1;
+        if (!self.isTokenKind(TokenKind.openParen)) {
+            self.index = start;
+            return R.err(ReaderErrorKind.InvalidLambda, 0);
+        }
+        self.index += 1;
+        const args = self.readArgList();
+        const exp = switch (self.readExpression()) {
+            .success => |v| v,
+            .failure => |e| {
+                return R.fromErr(e);
+            },
+        };
+        return R.ok(ast.func(self.allocator, null, args, exp) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate func");
         });
     }
 
