@@ -251,6 +251,24 @@ test "reading if with elif and else" {
     try testing.expectEqual(exp.ifx.branches.items[1].then.block.items[0].number.num, 3);
 }
 
+test "reading conditions" {
+    var reader = try r.Reader.init(testing.allocator,
+        \\cond
+        \\  1 + 1 do 2 end
+        \\  2     do 3 end
+        \\end
+    );
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+
+    try testing.expectEqual(exp.ifx.elseBranch, null);
+    try testing.expectEqual(exp.ifx.branches.items.len, 2);
+    try testing.expectEqual(exp.ifx.branches.items[0].check.binexp.a.number.num, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 2);
+}
+
 test "reading dictionary literals" {
     var reader = try r.Reader.init(testing.allocator, "{ a: 1 b: 2 }");
     defer reader.deinit();

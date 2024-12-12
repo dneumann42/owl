@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidDictionary, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -536,6 +536,17 @@ pub const Reader = struct {
             },
         }
 
+        switch (self.readCond()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+        }
+
         return R.noMatch("Primary");
     }
 
@@ -730,6 +741,46 @@ pub const Reader = struct {
         }
 
         return R.ok(ast.ifx(self.allocator, branches, elseBranch) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
+        });
+    }
+
+    pub fn readCond(self: *Reader) R {
+        if (self.tokenMatches("cond") == null) {
+            return R.noMatch("Not a condition");
+        }
+
+        var branches = std.ArrayList(ast.Branch).init(self.allocator);
+
+        self.index += 1;
+        while (self.index < self.tokens.items.len) {
+            const cond = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.fromErr(e);
+                },
+            };
+
+            if (self.tokenMatches("do") == null) {
+                return R.errMsg(ReaderErrorKind.InvalidCond, 0, "Condition is missing do");
+            }
+            self.index += 1;
+            const block = self.readBlockTillEnd();
+
+            branches.append(ast.Branch{ .check = cond, .then = block }) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append branch");
+            };
+
+            if (self.tokenMatches("end")) |_| {
+                self.index += 1;
+                break;
+            }
+            if (self.index >= self.tokens.items.len) {
+                return R.errMsg(ReaderErrorKind.InvalidCond, 0, "Condition is missing end");
+            }
+        }
+
+        return R.ok(ast.ifx(self.allocator, branches, null) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
         });
     }
