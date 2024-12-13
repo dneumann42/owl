@@ -406,3 +406,13 @@ pub fn cdr(v: ?*Value) ?*Value {
         else => null,
     };
 }
+
+pub fn nothing(g: *gc.Gc) *Value {
+    const memo = struct {
+        var value: ?*Value = null;
+    };
+    if (memo.value == null) {
+        memo.value = g.create(Value.nothing) catch unreachable;
+    }
+    return memo.value orelse unreachable;
+}

@@ -128,12 +128,25 @@ test "closures and scoping" {
     try expectEq(value, error.UndefinedSymbol);
 }
 
-// test "records" {
-//     var G = gc.Gc.init(allocator);
-//     defer G.deinit();
-//     const value = try e.eval(&G,
-//         \\ record Vec3 x y z end
-//         \\ Vec3(.x 0, .y 0, .z 0)
-//     );
-//     std.debug.print("{?}", .{value});
-// }
+test "else branch" {
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
+        \\ if false then
+        \\   1
+        \\ else
+        \\   2
+        \\ end
+    );
+    try expectEq(value.number, 2);
+}
+
+test "list literals" {
+    var G = gc.Gc.init(allocator);
+    defer G.deinit();
+    const value = try e.eval(&G,
+        \\ x := [123]
+        \\ x
+    );
+    try expectEq(value.cons.car.?.number, 123);
+}

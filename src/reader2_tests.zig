@@ -1,5 +1,6 @@
 const r = @import("reader2.zig");
 const a = @import("ast.zig");
+const g = @import("gc.zig");
 const std = @import("std");
 const testing = std.testing;
 
@@ -46,7 +47,7 @@ test "reading programs" {
     defer reader.deinit();
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].number.num, 1.0);
+    try testing.expectEqual(program.block.items[0].number, 1.0);
 }
 
 test "reading number literals" {
@@ -54,10 +55,10 @@ test "reading number literals" {
     defer reader.deinit();
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].number.num, 31415926);
-    try testing.expectEqual(program.block.items[1].number.num, 1);
-    try testing.expectEqual(program.block.items[2].number.num, 2);
-    try testing.expectEqual(program.block.items[3].number.num, 3);
+    try testing.expectEqual(program.block.items[0].number, 31415926);
+    try testing.expectEqual(program.block.items[1].number, 1);
+    try testing.expectEqual(program.block.items[2].number, 2);
+    try testing.expectEqual(program.block.items[3].number, 3);
 }
 
 test "reading boolean literals" {
@@ -101,8 +102,8 @@ test "reading unary expressions" {
     const aa_result = reader.readUnary();
     const aa = aa_result.success;
     defer a.deinit(aa, testing.allocator);
-    try testing.expectEqualStrings(aa.unexp.op.symbol.lexeme, "-");
-    try testing.expectEqual(aa.unexp.value.number.num, 123);
+    try testing.expectEqualStrings(aa.unexp.op.symbol, "-");
+    try testing.expectEqual(aa.unexp.value.number, 123);
 }
 
 test "reading binary expressions" {
@@ -111,15 +112,15 @@ test "reading binary expressions" {
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
-    try testing.expectEqual(exp.binexp.a.number.num, 1);
-    try testing.expectEqualStrings(exp.binexp.op.symbol.lexeme, "or");
-    try testing.expectEqual(exp.binexp.b.binexp.a.number.num, 2);
-    try testing.expectEqualStrings(exp.binexp.b.binexp.op.symbol.lexeme, "and");
-    try testing.expectEqual(exp.binexp.b.binexp.b.number.num, 3);
+    try testing.expectEqual(exp.binexp.a.number, 1);
+    try testing.expectEqualStrings(exp.binexp.op.symbol, "or");
+    try testing.expectEqual(exp.binexp.b.binexp.a.number, 2);
+    try testing.expectEqualStrings(exp.binexp.b.binexp.op.symbol, "and");
+    try testing.expectEqual(exp.binexp.b.binexp.b.number, 3);
 
     const exp2 = program.block.items[1];
-    try testing.expectEqual(exp2.binexp.a.number.num, 4);
-    try testing.expectEqual(exp2.binexp.b.number.num, 5);
+    try testing.expectEqual(exp2.binexp.a.number, 4);
+    try testing.expectEqual(exp2.binexp.b.number, 5);
 }
 
 test "reading function calls" {
@@ -129,9 +130,9 @@ test "reading function calls" {
     defer a.deinit(program, reader.allocator);
 
     const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.call.callable.symbol.lexeme, "call");
-    try testing.expectEqual(exp.call.args.items[0].number.num, 1);
-    try testing.expectEqual(exp.call.args.items[1].number.num, 2);
+    try testing.expectEqualStrings(exp.call.callable.symbol, "call");
+    try testing.expectEqual(exp.call.args.items[0].number, 1);
+    try testing.expectEqual(exp.call.args.items[1].number, 2);
 }
 
 test "reading dot & call expressions" {
@@ -141,16 +142,16 @@ test "reading dot & call expressions" {
     defer a.deinit(program, reader.allocator);
 
     const exp1 = program.block.items[0];
-    try testing.expectEqualStrings(exp1.dot.a.symbol.lexeme, "a");
-    try testing.expectEqualStrings(exp1.dot.b.symbol.lexeme, "b");
+    try testing.expectEqualStrings(exp1.dot.a.symbol, "a");
+    try testing.expectEqualStrings(exp1.dot.b.symbol, "b");
 
     const exp2 = program.block.items[1];
-    try testing.expectEqualStrings(exp2.dot.a.call.callable.symbol.lexeme, "a");
-    try testing.expectEqualStrings(exp2.dot.b.symbol.lexeme, "b");
+    try testing.expectEqualStrings(exp2.dot.a.call.callable.symbol, "a");
+    try testing.expectEqualStrings(exp2.dot.b.symbol, "b");
 
     const exp3 = program.block.items[2];
-    try testing.expectEqualStrings(exp3.call.callable.dot.a.symbol.lexeme, "a");
-    try testing.expectEqualStrings(exp3.call.callable.dot.b.symbol.lexeme, "b");
+    try testing.expectEqualStrings(exp3.call.callable.dot.a.symbol, "a");
+    try testing.expectEqualStrings(exp3.call.callable.dot.b.symbol, "b");
 }
 
 test "reading function definitions" {
@@ -160,12 +161,12 @@ test "reading function definitions" {
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
-    try testing.expectEqualStrings(exp.func.sym.?.symbol.lexeme, "add-1");
-    try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
+    try testing.expectEqualStrings(exp.func.sym.?.symbol, "add-1");
+    try testing.expectEqualStrings(exp.func.args.items[0].symbol, "y");
     const binexp = exp.func.body.block.items[0];
-    try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");
-    try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
-    try testing.expectEqual(binexp.binexp.b.number.num, 1);
+    try testing.expectEqualStrings(binexp.binexp.a.symbol, "y");
+    try testing.expectEqualStrings(binexp.binexp.op.symbol, "+");
+    try testing.expectEqual(binexp.binexp.b.number, 1);
 }
 
 test "reading lambdas" {
@@ -176,11 +177,11 @@ test "reading lambdas" {
     const exp = program.block.items[0];
 
     try testing.expectEqual(exp.func.sym, null);
-    try testing.expectEqualStrings(exp.func.args.items[0].symbol.lexeme, "y");
+    try testing.expectEqualStrings(exp.func.args.items[0].symbol, "y");
     const binexp = exp.func.body;
-    try testing.expectEqualStrings(binexp.binexp.a.symbol.lexeme, "y");
-    try testing.expectEqualStrings(binexp.binexp.op.symbol.lexeme, "+");
-    try testing.expectEqual(binexp.binexp.b.number.num, 1);
+    try testing.expectEqualStrings(binexp.binexp.a.symbol, "y");
+    try testing.expectEqualStrings(binexp.binexp.op.symbol, "+");
+    try testing.expectEqual(binexp.binexp.b.number, 1);
 }
 
 test "reading definitions" {
@@ -189,8 +190,8 @@ test "reading definitions" {
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.definition.left.symbol.lexeme, "x");
-    try testing.expectEqual(exp.definition.right.number.num, 10);
+    try testing.expectEqualStrings(exp.definition.left.symbol, "x");
+    try testing.expectEqual(exp.definition.right.number, 10);
 }
 
 test "reading assignment" {
@@ -199,8 +200,8 @@ test "reading assignment" {
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.assignment.left.symbol.lexeme, "x");
-    try testing.expectEqual(exp.assignment.right.number.num, 10);
+    try testing.expectEqualStrings(exp.assignment.left.symbol, "x");
+    try testing.expectEqual(exp.assignment.right.number, 10);
 }
 
 test "reading do blocks" {
@@ -222,7 +223,7 @@ test "reading if" {
     try testing.expectEqual(exp.ifx.elseBranch, null);
     try testing.expectEqual(exp.ifx.branches.items.len, 1);
     try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
 }
 
 test "reading if with else" {
@@ -231,10 +232,10 @@ test "reading if with else" {
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
-    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number.num, 2);
+    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
     try testing.expectEqual(exp.ifx.branches.items.len, 1);
     try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
 }
 
 test "reading if with elif and else" {
@@ -243,12 +244,12 @@ test "reading if with elif and else" {
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
-    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number.num, 2);
+    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
     try testing.expectEqual(exp.ifx.branches.items.len, 2);
     try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
     try testing.expectEqual(exp.ifx.branches.items[1].check.boolean, false);
-    try testing.expectEqual(exp.ifx.branches.items[1].then.block.items[0].number.num, 3);
+    try testing.expectEqual(exp.ifx.branches.items[1].then.block.items[0].number, 3);
 }
 
 test "reading conditions" {
@@ -265,8 +266,8 @@ test "reading conditions" {
 
     try testing.expectEqual(exp.ifx.elseBranch, null);
     try testing.expectEqual(exp.ifx.branches.items.len, 2);
-    try testing.expectEqual(exp.ifx.branches.items[0].check.binexp.a.number.num, 1);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number.num, 2);
+    try testing.expectEqual(exp.ifx.branches.items[0].check.binexp.a.number, 1);
+    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 2);
 }
 
 test "reading dictionary literals" {
@@ -277,8 +278,54 @@ test "reading dictionary literals" {
     const exp = program.block.items[0];
 
     try testing.expectEqual(exp.dictionary.items.len, 2);
-    try testing.expectEqualStrings(exp.dictionary.items[0].key.symbol.lexeme, "a");
-    try testing.expectEqual(exp.dictionary.items[0].value.number.num, 1);
-    try testing.expectEqualStrings(exp.dictionary.items[1].key.symbol.lexeme, "b");
-    try testing.expectEqual(exp.dictionary.items[1].value.number.num, 2);
+    try testing.expectEqualStrings(exp.dictionary.items[0].key.symbol, "a");
+    try testing.expectEqual(exp.dictionary.items[0].value.number, 1);
+    try testing.expectEqualStrings(exp.dictionary.items[1].key.symbol, "b");
+    try testing.expectEqual(exp.dictionary.items[1].value.number, 2);
+}
+
+test "reading list literals" {
+    var reader = try r.Reader.init(testing.allocator, "[1 2 3]");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+
+    try testing.expectEqual(exp.list.items[0].number, 1);
+    try testing.expectEqual(exp.list.items[1].number, 2);
+    try testing.expectEqual(exp.list.items[2].number, 3);
+}
+
+test "reading empty list literals" {
+    var reader = try r.Reader.init(testing.allocator, "[]");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+
+    try testing.expectEqual(exp.list.items.len, 0);
+}
+
+test "blocks" {
+    var reader = try r.Reader.init(testing.allocator, "1 2 3");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    try testing.expectEqual(program.block.items[0].number, 1);
+    try testing.expectEqual(program.block.items[1].number, 2);
+    try testing.expectEqual(program.block.items[2].number, 3);
+}
+
+test "building function value from ast" {
+    var reader = try r.Reader.init(testing.allocator, "fun id(a) a end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    var G = g.Gc.init(testing.allocator);
+    defer G.deinit();
+    const value = try a.buildValueFromAst(&G, exp);
+    try testing.expectEqualStrings("fun", value.cons.car.?.symbol);
+    try testing.expectEqualStrings("id", value.cons.cdr.?.cons.car.?.symbol);
+    try testing.expectEqualStrings("a", value.cons.cdr.?.cons.cdr.?.cons.car.?.cons.car.?.symbol);
 }

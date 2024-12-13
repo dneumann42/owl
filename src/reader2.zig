@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -66,7 +66,7 @@ pub const Tokenizer = struct {
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
         for (Tokenizer.getKeywords()) |key| {
-            if (std.mem.startsWith(u8, slice, key)) {
+            if (std.mem.eql(u8, slice, key)) {
                 return key;
             }
         }
@@ -103,6 +103,9 @@ pub const Tokenizer = struct {
         while (index < self.code.len) {
             T.skipWS(&index, self.code);
             const start = index;
+            if (index >= self.code.len) {
+                break;
+            }
             if (self.readNumberLexeme(&index)) |_| {
                 try tokens.append(.{ .kind = TokenKind.number, .start = start });
             } else if (self.readSpecialCharacter(&index)) |c| {
@@ -193,7 +196,15 @@ pub const Tokenizer = struct {
     }
 
     pub fn readKeywordLexeme(self: Tokenizer, index: *usize) ?[]const u8 {
-        if (Tokenizer.getKeyword(self.code[index.*..])) |key| {
+        var space_idx = index.*;
+        while (space_idx < self.code.len) {
+            const chr = self.code[space_idx];
+            if (std.ascii.isWhitespace(chr) or !Tokenizer.validSymbolCharacter(chr)) {
+                break;
+            }
+            space_idx += 1;
+        }
+        if (Tokenizer.getKeyword(self.code[index.*..space_idx])) |key| {
             const s = self.code[index.* .. index.* + key.len];
             index.* += s.len;
             return s;
@@ -223,8 +234,8 @@ pub const Tokenizer = struct {
         var index = t.start;
         return switch (t.kind) {
             TokenKind.number => self.readNumberLexeme(&index),
-            TokenKind.keyword => self.readKeywordLexeme(&index),
             TokenKind.symbol => self.readSymbolLexeme(&index),
+            TokenKind.keyword => self.readKeywordLexeme(&index),
             TokenKind.string => self.readStringLexeme(&index),
             else => self.readSpecialCharacter(&index),
         };
@@ -286,9 +297,9 @@ pub const Reader = struct {
                 .success => |v| v,
                 .failure => |e| {
                     if (e.message) |msg| {
-                        std.log.err("error: {s}\n", .{msg});
+                        std.log.err("{s}\n", .{msg});
                     } else {
-                        std.log.err("{any}\n", .{e});
+                        std.log.err("no match, {any}\n", .{e});
                     }
                     break;
                 },
@@ -330,7 +341,7 @@ pub const Reader = struct {
 
         var operator_match = false;
         for (operators) |operator| {
-            if (std.mem.eql(u8, symbol.symbol.lexeme, operator)) {
+            if (std.mem.eql(u8, symbol.symbol, operator)) {
                 operator_match = true;
                 break;
             }
@@ -365,7 +376,7 @@ pub const Reader = struct {
     }
 
     fn readEquality(self: *Reader) R {
-        return self.readBinaryExpression(&[_][]const u8{ "eql", "noteql" }, Reader.readComparison, Reader.readEquality);
+        return self.readBinaryExpression(&[_][]const u8{ "eq", "noteq" }, Reader.readComparison, Reader.readEquality);
     }
 
     fn readComparison(self: *Reader) R {
@@ -927,6 +938,16 @@ pub const Reader = struct {
                 return R.ok(v);
             },
         }
+        switch (self.readList()) {
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+            .success => |v| {
+                return R.ok(v);
+            },
+        }
         switch (self.readDictionary()) {
             .failure => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
@@ -972,6 +993,10 @@ pub const Reader = struct {
                 return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append dictionary key value");
             };
 
+            if (self.isTokenKind(TokenKind.comma)) {
+                self.index += 1;
+            }
+
             if (self.isTokenKind(TokenKind.closeBrace)) {
                 self.index += 1;
                 break;
@@ -982,6 +1007,43 @@ pub const Reader = struct {
 
         return R.ok(ast.dict(self.allocator, pairs) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dictionary");
+        });
+    }
+
+    pub fn readList(self: *Reader) R {
+        if (!self.isTokenKind(TokenKind.openBracket)) {
+            return R.noMatch("Not a list");
+        }
+        self.index += 1;
+        var xs = std.ArrayList(*ast.Ast).init(self.allocator);
+        if (self.isTokenKind(TokenKind.closeBracket)) {
+            self.index += 1;
+            return R.ok(ast.list(self.allocator, xs) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to alloc list");
+            });
+        }
+        while (self.index < self.tokens.items.len) {
+            const exp = switch (self.readExpression()) {
+                .success => |v| v,
+                .failure => |e| {
+                    return R.fromErr(e);
+                },
+            };
+            xs.append(exp) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append");
+            };
+            if (self.isTokenKind(TokenKind.comma)) {
+                self.index += 1;
+            }
+            if (self.isTokenKind(TokenKind.closeBracket)) {
+                self.index += 1;
+                break;
+            } else if (self.index >= self.tokens.items.len) {
+                return R.err(ReaderErrorKind.MissingClosingBracket, 0);
+            }
+        }
+        return R.ok(ast.list(self.allocator, xs) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to alloc list");
         });
     }
 

@@ -1,26 +1,28 @@
 const v = @import("values.zig");
-const r = @import("reader.zig");
+const r = @import("reader2.zig");
 const gc = @import("gc.zig");
+const ast = @import("ast.zig");
 const std = @import("std");
 const assert = std.debug.assert;
+const nothing = v.nothing;
 
 pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue, MissingArguments };
 
 pub fn eval(g: *gc.Gc, code: []const u8) EvalError!*v.Value {
-    var reader = r.Reader.initLoad(g, code);
-    return evaluate(g, reader.readProgram() catch {
+    var reader = r.Reader.init(g.allocator, code) catch {
         return error.ParseError;
-    });
-}
-
-pub fn nothing(env: *v.Environment) *v.Value {
-    const memo = struct {
-        var value: ?*v.Value = null;
     };
-    if (memo.value == null) {
-        memo.value = env.gc.create(v.Value.nothing) catch unreachable;
-    }
-    return memo.value orelse unreachable;
+    const node = switch (reader.read()) {
+        .success => |val| val,
+        .failure => {
+            return error.ParseError;
+        },
+    };
+    defer ast.deinit(node, g.allocator);
+    const value = ast.buildValueFromAst(g, node) catch {
+        return error.ParseError;
+    };
+    return evaluate(g, value);
 }
 
 pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
@@ -30,7 +32,6 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (g.env().find(s)) |val| {
                 return val;
             } else {
-                // std.log.err("Undefined symbol: '{s}'\n", .{s});
                 return error.UndefinedSymbol;
             }
         },
@@ -76,6 +77,7 @@ const specialForms = [_]FormTable{
     .{ .sym = "not-eq", .func = evaluateNotEql },
     .{ .sym = "<", .func = evaluateLessThan },
     .{ .sym = ">", .func = evaluateGreaterThan },
+    .{ .sym = "fun", .func = evaluateFunctionDefinition },
     .{ .sym = "do", .func = evaluateDo },
     .{ .sym = "if", .func = evaluateIf },
     .{ .sym = "cond", .func = evaluateCond },
@@ -172,9 +174,7 @@ pub fn evaluateCdr(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
 }
 
 pub fn evaluateDictionary(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    // TODO: this form takes a dictionary value and evaluates its key and value
-    // then yields the raw dictionary
-    var it: ?*v.Value = args.?.dictionary.pairs;
+    var it: ?*v.Value = args.?;
     var dict = v.Dictionary.init(g) catch return error.AllocError;
 
     while (it != null) : (it = it.?.cons.cdr) {
@@ -266,6 +266,35 @@ pub fn evaluateCond(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     }
 
     return g.nothing();
+}
+
+pub fn evaluateFunctionDefinition(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
+    const fs = args orelse {
+        return g.nothing();
+    };
+
+    const params = fs.cons.cdr.?.cons.car orelse unreachable;
+    const body = fs.cons.cdr.?.cons.cdr.?.cons.car orelse unreachable;
+
+    const fun = v.Function{
+        .name = null,
+        .body = body,
+        .params = params,
+        .env = g.env(),
+    };
+
+    var fun_value = g.create(.{ .function = fun }) catch unreachable;
+
+    if (fs.cons.car) |name| {
+        fun_value.function.name = name;
+        g.env().set(name.symbol, fun_value) catch unreachable;
+    }
+
+    const new_environment = v.Environment.init(g.allocator) catch unreachable;
+    new_environment.next = g.env();
+    fun_value.function.env = new_environment;
+
+    return fun_value;
 }
 
 pub fn evaluateDo(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {

@@ -45,7 +45,7 @@ pub fn main() !void {
     }
 
     if (cli.should_run_repl()) {
-        try runScript(allocator, "scripts/repl.owl");
+        try runScript(allocator, "scripts/repl2.owl");
     }
 
     if (cli.run_script) |path| {
@@ -63,7 +63,8 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     var g = gc.Gc.init(allocator);
     defer g.deinit();
     owlStd.installBase(&g);
-    _ = try e.eval(&g, file_content);
+    const val = try e.eval(&g, file_content);
+    std.debug.print("{s}\n", .{val.toStr()});
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {
