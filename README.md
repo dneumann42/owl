@@ -1,6 +1,6 @@
 # Owl
 
-Note: this project is very very early in development and doesn't do a whole lot
+This project is very very early in development.
 
 <pre>
  ~___~  Owl (0.0.0-dev)
@@ -32,9 +32,9 @@ my-add := fn(a) fn(b) a + b
 c := my-add(1)(2) ;; 3
 
 my-dict := {
-    .hello {
-        .world fn() "HI"
+    hello: {
+        world: fn() "HI"
     }
 }
-my-dict.hello.world() ; "HI"
+echo(my-dict.hello.world()) ; "HI"
 ```

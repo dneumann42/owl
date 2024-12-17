@@ -79,12 +79,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const lib_reader_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/reader_tests.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     const lib_reader2_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/reader2_tests.zig"),
         .target = target,
@@ -98,7 +92,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-    const run_lib_reader_unit_tests = b.addRunArtifact(lib_reader_unit_tests);
     const run_lib_reader2_unit_tests = b.addRunArtifact(lib_reader2_unit_tests);
     const run_lib_ast_unit_tests = b.addRunArtifact(lib_ast_unit_tests);
 
@@ -112,7 +105,6 @@ pub fn build(b: *std.Build) void {
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_lib_reader_unit_tests.step);
     test_step.dependOn(&run_lib_reader2_unit_tests.step);
     test_step.dependOn(&run_lib_ast_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);

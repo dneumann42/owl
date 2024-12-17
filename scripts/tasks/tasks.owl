@@ -1,0 +1,31 @@
+fun create-task(name, state)
+  { 
+    type: "task",
+    name: name, 
+    state: state,
+  }
+end
+
+fun Tasks()
+  {
+  }
+end
+
+fun run()
+  line := read-line("? for help > ") 
+  done := false
+
+  cond
+    line eq ",q" do done = true end
+  end
+
+  if not done then
+    run()
+  end
+end
+
+task := create-task("test", "pending")
+
+test := { x: 123 }
+test.x = 321
+test

@@ -61,7 +61,7 @@ pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
 
     pub fn getKeywords() []const []const u8 {
-        return comptime &.{ "if", "fun", "fn", "then", "else", "end", "for", "do", "cond", "true", "false", "or", "and" };
+        return comptime &.{ "if", "fun", "fn", "then", "else", "end", "for", "do", "cond", "true", "false", "or", "and", "not" };
     }
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
@@ -257,7 +257,7 @@ pub const Tokenizer = struct {
 
     pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '/', '*', '%', '$', '-', '>', '<', '=' => true,
+            '+', '/', '*', '%', '$', '-', '>', '<', '=', '_' => true,
             else => std.ascii.isAlphanumeric(ch),
         };
     }
@@ -966,8 +966,14 @@ pub const Reader = struct {
             return R.noMatch("Not a dictionary literal");
         }
         self.index += 1;
-
         var pairs = std.ArrayList(ast.KV).init(self.allocator);
+
+        if (self.isTokenKind(TokenKind.closeBrace)) {
+            self.index += 1;
+            return R.ok(ast.dict(self.allocator, pairs) catch {
+                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dictionary");
+            });
+        }
 
         while (self.index < self.tokens.items.len) {
             const sym = switch (self.readSymbol(false)) {

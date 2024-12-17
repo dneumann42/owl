@@ -1,5 +1,9 @@
-done := false
-fun x(y)
-  y
+fun compute-factorial(n)
+  if n < 2 then
+    1
+  else
+    n * compute-factorial(n - 1)
+  end
 end
-x(123)
+
+compute-factorial(5) ; 120

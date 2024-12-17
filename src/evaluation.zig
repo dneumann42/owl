@@ -32,6 +32,7 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
             if (g.env().find(s)) |val| {
                 return val;
             } else {
+                std.log.err("'{s}'", .{s});
                 return error.UndefinedSymbol;
             }
         },
@@ -75,6 +76,7 @@ const specialForms = [_]FormTable{
     .{ .sym = "/", .func = evaluateDiv },
     .{ .sym = "eq", .func = evaluateEql },
     .{ .sym = "not-eq", .func = evaluateNotEql },
+    .{ .sym = "not", .func = evaluateNot },
     .{ .sym = "<", .func = evaluateLessThan },
     .{ .sym = ">", .func = evaluateGreaterThan },
     .{ .sym = "fun", .func = evaluateFunctionDefinition },
@@ -392,6 +394,28 @@ pub fn evaluateEql(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     const a = try evaluate(g, arg.cons.car orelse return error.ExpectedValue);
     const b = try evaluate(g, arg.cons.cdr.?.cons.car orelse return error.ExpectedValue);
     return g.boolean(a.isEql(b));
+}
+
+pub fn evaluateNot(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
+    const arg = args.?.cons.car orelse {
+        return g.F();
+    };
+    const value = try evaluate(g, arg);
+    switch (value.*) {
+        .number => |n| {
+            if (n == 0) {
+                return g.num(1);
+            } else {
+                return g.num(0);
+            }
+        },
+        .boolean => |b| {
+            return g.boolean(!b);
+        },
+        else => {
+            return error.InvalidValue;
+        },
+    }
 }
 
 pub fn evaluateNotEql(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {

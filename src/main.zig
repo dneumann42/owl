@@ -1,5 +1,5 @@
 const std = @import("std");
-const reader = @import("reader.zig");
+const reader = @import("reader2.zig");
 const term = @import("terminal.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");

@@ -1,5 +1,5 @@
 const std = @import("std");
-const r = @import("reader.zig");
+const r = @import("reader2.zig");
 const v = @import("values.zig");
 const e = @import("evaluation.zig");
 const expect = std.testing.expect;
