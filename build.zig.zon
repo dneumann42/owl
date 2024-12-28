@@ -57,6 +57,10 @@
             .url = "https://github.com/xyaman/mibu/archive/refs/heads/master.tar.gz",
             .hash = "12202556266b6db35cff093d9e0a6c012810758a282b285068309dd9662c67fce84e",
         },
+        .pretty = .{
+            .url = "https://github.com/timfayz/pretty/archive/refs/heads/main.tar.gz",
+            .hash = "12209290db27d058b481801cf9a79c706fb0c482e7f6378d50495750aae19524d4b7",
+        },
     },
 
     // Specifies the set of files and directories that are included in this package.

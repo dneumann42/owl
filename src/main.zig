@@ -5,10 +5,13 @@ const v = @import("values.zig");
 const e = @import("evaluation.zig");
 const gc = @import("gc.zig");
 const owlStd = @import("base.zig");
+const dot = @import("ast_dot.zig");
+const ast = @import("ast.zig");
 
 const Cli = struct {
     run_script: ?[]const u8,
     new_project: ?NewProject,
+    output_ast: bool,
 
     fn should_run_repl(self: @This()) bool {
         return self.run_script == null;
@@ -28,7 +31,7 @@ pub fn main() !void {
     const args = try Args.init(allocator);
     defer args.deinit();
 
-    var cli = Cli{ .run_script = null, .new_project = null };
+    var cli = Cli{ .run_script = null, .new_project = null, .output_ast = false };
 
     var it = args.iterator();
     while (it.has_next()) : (it.next()) {
@@ -41,19 +44,21 @@ pub fn main() !void {
         } else if (it.is_arg("new")) {
             std.debug.print("New is a work in progress, this command will generate projects, librarys and scripts", .{});
             return;
+        } else if (it.is_arg("output-ast")) {
+            cli.output_ast = true;
         }
     }
 
     if (cli.should_run_repl()) {
-        try runScript(allocator, "scripts/repl2.owl");
+        try runScript(allocator, "scripts/repl2.owl", cli.output_ast);
     }
 
     if (cli.run_script) |path| {
-        try runScript(allocator, path);
+        try runScript(allocator, path, cli.output_ast);
     }
 }
 
-pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
+pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: bool) !void {
     var file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
     defer file.close();
 
@@ -63,6 +68,21 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     var g = gc.Gc.init(allocator);
     defer g.deinit();
     owlStd.installBase(&g);
+
+    if (output_ast) {
+        var r = reader.Reader.init(g.allocator, file_content) catch {
+            return error.ParseError;
+        };
+        const node = switch (r.read()) {
+            .success => |val| val,
+            .failure => {
+                return error.ParseError;
+            },
+        };
+        try dot.buildAndWriteGraphvizFromAst(g.allocator, node);
+        defer ast.deinit(node, g.allocator);
+    }
+
     const val = try e.eval(&g, file_content);
     std.debug.print("{s}\n", .{val.toStr()});
 }

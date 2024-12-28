@@ -207,7 +207,7 @@ pub fn buildValueFromAst(gc: *Gc, node: *Ast) !*Value {
         .dot => |d| {
             const a = try buildValueFromAst(gc, d.a);
             const b = try buildValueFromAst(gc, d.b);
-            return v.cons(gc, gc.sym("."), v.cons(gc, a, v.cons(gc, b, null)));
+            return v.cons(gc, gc.sym("."), v.cons(gc, a, b));
         },
         .ifx => |i| {
             var it = v.cons(gc, gc.sym("cond"), null);

@@ -136,7 +136,7 @@ test "reading function calls" {
 }
 
 test "reading dot & call expressions" {
-    var reader = try r.Reader.init(testing.allocator, "a.b a().b a.b()");
+    var reader = try r.Reader.init(testing.allocator, "a.b a().b a.b() a.b().c");
     defer reader.deinit();
     const program = reader.read().success;
     defer a.deinit(program, reader.allocator);
@@ -152,6 +152,11 @@ test "reading dot & call expressions" {
     const exp3 = program.block.items[2];
     try testing.expectEqualStrings(exp3.call.callable.dot.a.symbol, "a");
     try testing.expectEqualStrings(exp3.call.callable.dot.b.symbol, "b");
+
+    const exp4 = program.block.items[3];
+    // try testing.expectEqualStrings(exp4.dot.a.symbol, "a");
+    // try testing.expectEqualStrings(exp4.call.callable.dot.b.symbol, "b");
+    try testing.expectEqualStrings(exp4.dot.b.symbol, "c");
 }
 
 test "reading function definitions" {

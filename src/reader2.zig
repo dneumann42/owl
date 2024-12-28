@@ -454,6 +454,11 @@ pub const Reader = struct {
         return R.noMatch("Lexeme is not a unary operator");
     }
 
+    // values that can be to the left of a '='
+    // pub fn readLValue(self: *Reader) R {
+    //     _ = self;
+    // }
+
     pub fn readPrimary(self: *Reader) R {
         if (self.tokenMatches("(")) |start| {
             self.index += 1;
@@ -608,7 +613,7 @@ pub const Reader = struct {
 
     pub fn readAssignment(self: *Reader) R {
         const start = self.index;
-        const sym = switch (self.readSymbol(false)) {
+        const sym = switch (self.readDotCall()) {
             .failure => |e| {
                 return R.fromErr(e);
             },

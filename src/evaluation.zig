@@ -3,10 +3,11 @@ const r = @import("reader2.zig");
 const gc = @import("gc.zig");
 const ast = @import("ast.zig");
 const std = @import("std");
+// const pretty = @import("pretty");
 const assert = std.debug.assert;
 const nothing = v.nothing;
 
-pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue, MissingArguments };
+pub const EvalError = error{ AllocError, InvalidValue, InvalidCall, UndefinedSymbol, ExpectedValue, ExpectedSymbol, ExpectedNumber, ExpectedCallable, ParseError, InvalidIf, InvalidKeyValue, MissingArguments, InvalidLValue };
 
 pub fn eval(g: *gc.Gc, code: []const u8) EvalError!*v.Value {
     var reader = r.Reader.init(g.allocator, code) catch {
@@ -131,13 +132,9 @@ pub fn evaluateSpecialForm(g: *gc.Gc, sym: []const u8, args: ?*v.Value) !*v.Valu
 
 pub fn evaluateDot(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     if (args) |xs| {
-        const a = try evaluate(g, xs.cons.car orelse g.nothing());
-        const b = xs.cons.cdr.?.cons.car orelse g.nothing();
-        const value = a.dictionary.get(b);
-        if (value) |val| {
-            return val;
-        }
-        return g.nothing();
+        const dic = try evaluate(g, xs.cons.car orelse g.nothing());
+        const key = xs.cons.cdr.?.cons.car orelse g.nothing();
+        return dic.dictionary.get(key) orelse g.nothing();
     } else {
         return error.MissingArguments;
     }
@@ -233,14 +230,52 @@ pub fn evaluateDefinition(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
     return value;
 }
 
+pub fn isDotExp(lvalue: ?*v.Value) bool {
+    const lval = lvalue orelse return false;
+    switch (lval.*) {
+        .symbol => {
+            return false;
+        },
+        .cons => |cs| {
+            const lv = cs.car orelse {
+                return false;
+            };
+            return switch (lv.*) {
+                .symbol => |s2| std.mem.eql(u8, s2, "."),
+                else => false,
+            };
+        },
+        else => {
+            return false;
+        },
+    }
+
+    return false;
+}
+
+pub fn evaluateLDot(g: *gc.Gc, dot: *v.Value) EvalError!*v.Value {
+    _ = g;
+    _ = dot;
+    return error.InvalidLValue;
+}
+
 pub fn evaluateSet(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {
-    const sym = args.?.cons.car.?;
-    const exp = args.?.cons.cdr.?.cons.car.?;
-    const value = try evaluate(g, exp);
-    g.env().set(sym.symbol, value) catch {
-        return error.AllocError;
-    };
-    return value;
+    const lvalue = args.?.cons.car.?;
+    switch (lvalue.*) {
+        .symbol => |s| {
+            const exp = args.?.cons.cdr.?.cons.car.?;
+            const value = try evaluate(g, exp);
+            g.env().set(s, value) catch {
+                return error.AllocError;
+            };
+            return value;
+        },
+        else => {
+            // pretty.print(g.allocator, lvalue, .{ .max_depth = 100 }) catch unreachable;
+
+            return g.nothing();
+        },
+    }
 }
 
 pub fn evaluateIf(g: *gc.Gc, args: ?*v.Value) EvalError!*v.Value {

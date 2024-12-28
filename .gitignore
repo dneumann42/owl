@@ -56,3 +56,6 @@ zig-out/
 
 node_modules
 raylib/
+
+*.dot
+*.svg
