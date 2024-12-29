@@ -3,9 +3,10 @@ const json = std.json;
 const gc = @import("gc.zig");
 const ValueError = error{KeyNotFound};
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, dictionary, nativeFunction };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, list, function, dictionary, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
+pub const List = std.ArrayList(*Value);
 
 pub const NativeFunction = *const fn (*gc.Gc, std.ArrayList(*Value)) *Value;
 
@@ -16,6 +17,7 @@ pub const Value = union(ValueType) {
     symbol: []const u8, // TODO intern
     boolean: bool,
     cons: Cons,
+    list: List,
     function: Function,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
@@ -50,10 +52,10 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
             },
             Value.function => |f| {
-                return std.fmt.allocPrint(allocator, "[fn:{d}]", .{f.address});
+                return std.fmt.allocPrint(allocator, "<fn {d}>", .{f.address});
             },
             Value.nativeFunction => {
-                return std.fmt.allocPrint(allocator, "[native-fn]", .{});
+                return std.fmt.allocPrint(allocator, "<native>", .{});
             },
             Value.cons => {
                 var it: ?*Value = self;
@@ -82,10 +84,18 @@ pub const Value = union(ValueType) {
                 const finalStr = try joinWithSpaces(allocator, strings);
                 return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
             },
+            Value.list => |xs| {
+                var strings = std.ArrayList([]const u8).init(allocator);
+                for (xs.items) |item| {
+                    const str = try item.toString(allocator);
+                    try strings.append(str);
+                }
+                const list_string = try std.mem.join(allocator, ", ", strings.items);
+                return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
+            },
             Value.dictionary => |dict| {
                 var it: ?*Value = dict.pairs;
                 var strings = std.ArrayList([]const u8).init(allocator);
-
                 while (it != null) {
                     if (it) |xs| {
                         if (xs.cons.car) |pair| {
@@ -94,9 +104,8 @@ pub const Value = union(ValueType) {
                         it = xs.cons.cdr;
                     }
                 }
-
-                const finalStr = try joinWithSpaces(allocator, strings);
-                return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
+                const final_str = try joinWithSpaces(allocator, strings);
+                return std.fmt.allocPrint(allocator, "({s})", .{final_str});
             },
         }
     }
@@ -126,6 +135,7 @@ pub const Value = union(ValueType) {
             .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
             .function => |f| f.address == b.function.address,
             .dictionary => false, // TODO
+            .list => false, // TODO
             .nativeFunction => a.nativeFunction == b.nativeFunction,
         };
     }

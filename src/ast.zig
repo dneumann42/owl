@@ -6,7 +6,23 @@ const Value = v.Value;
 
 const AstTag = enum { symbol, number, boolean, string, list, dictionary, call, func, ifx, dot, binexp, unexp, block, assignment, definition };
 
-pub const Ast = union(AstTag) { symbol: []const u8, number: f64, boolean: bool, string: []const u8, list: std.ArrayList(*Ast), dictionary: Dictionary, call: Call, func: Func, ifx: If, dot: Dot, binexp: Binexp, unexp: Unexp, block: std.ArrayList(*Ast), assignment: Assign, definition: Define };
+pub const Ast = union(AstTag) {
+    symbol: []const u8, //
+    number: f64,
+    boolean: bool,
+    string: []const u8,
+    list: std.ArrayList(*Ast),
+    dictionary: Dictionary,
+    call: Call,
+    func: Func,
+    ifx: If,
+    dot: Dot,
+    binexp: Binexp,
+    unexp: Unexp,
+    block: std.ArrayList(*Ast),
+    assignment: Assign,
+    definition: Define,
+};
 
 pub const Call = struct {
     callable: *Ast,

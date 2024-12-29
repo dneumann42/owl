@@ -16,11 +16,14 @@ pub const Eval = struct {
     error_log: std.ArrayList([]const u8),
     function_bodies: std.ArrayList(*ast.Ast),
 
+    eval_gc: g.Gc,
+
     pub fn init(allocator: std.mem.Allocator) Eval {
         return Eval{
             .allocator = allocator,
             .error_log = std.ArrayList([]const u8).init(allocator), //
             .function_bodies = std.ArrayList(*ast.Ast).init(allocator),
+            .eval_gc = g.Gc.init(allocator),
         };
     }
 
@@ -40,6 +43,10 @@ pub const Eval = struct {
 
     pub fn getErrorLog(self: *Eval) []const u8 {
         return std.mem.join(self.allocator, "\n", self.error_log.items) catch "Failed to allocate log";
+    }
+
+    pub fn clearErrorLog(self: *Eval) void {
+        self.error_log.clearAndFree();
     }
 
     pub fn eval(self: *Eval, gc: *g.Gc, code: []const u8) EvalError!*v.Value {
@@ -234,11 +241,12 @@ pub const Eval = struct {
     }
 
     pub fn evalList(self: *Eval, gc: *g.Gc, xs: std.ArrayList(*ast.Ast)) EvalError!*v.Value {
-        var cons: ?*v.Value = null;
+        var list = std.ArrayList(*v.Value).init(gc.allocator);
         for (xs.items) |item| {
-            cons = v.cons(gc, try self.evalNode(gc, item), cons);
+            const value = try self.evalNode(gc, item);
+            try list.append(value);
         }
-        return cons orelse gc.nothing();
+        return gc.create(.{ .list = list });
     }
 
     pub fn evalCall(self: *Eval, gc: *g.Gc, call: ast.Call) EvalError!*v.Value {
@@ -252,7 +260,12 @@ pub const Eval = struct {
                             return error.InvalidCallable;
                         },
                     }
-                    return self.eval(gc, str.string);
+                    return self.eval(&self.eval_gc, str.string) catch |e| {
+                        const log = self.getErrorLog();
+                        self.clearErrorLog();
+                        std.log.err("{any} {s}", .{ e, log });
+                        return gc.nothing();
+                    };
                 } else if (std.mem.eql(u8, s, "cons")) {
                     const a = try self.evalNode(gc, call.args.items[0]);
                     const b = try self.evalNode(gc, call.args.items[1]);
