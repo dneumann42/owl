@@ -9,7 +9,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const nothing = v.nothing;
 
-pub const EvalError = error{ OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp };
+pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr };
 
 pub const Eval = struct {
     gc: *g.Gc,
@@ -59,10 +59,19 @@ pub const Eval = struct {
 
     pub fn evalNode(self: *Eval, node: *ast.Ast) EvalError!*v.Value {
         switch (node.*) {
-            .number, .boolean, .dictionary, .list => {
+            .number, .boolean => {
                 return ast.buildValueFromAst(self.gc, node) catch {
                     return error.ValueError;
                 };
+            },
+            .dictionary => |d| {
+                var dict = try v.Dictionary.init(self.gc);
+                for (d.items) |kv| {
+                    const key = self.gc.sym(kv.key.symbol);
+                    const value = try self.evalNode(kv.value);
+                    try dict.putOrReplace(key, value);
+                }
+                return self.gc.create(.{ .dictionary = dict });
             },
             .symbol => |s| {
                 if (self.gc.env().find(s)) |value| {
@@ -73,6 +82,9 @@ pub const Eval = struct {
             },
             .definition => |define| {
                 return self.evalDefinition(define);
+            },
+            .assignment => |assign| {
+                return self.evalAssignment(assign);
             },
             .block => |xs| {
                 return self.evalBlock(xs);
@@ -89,8 +101,14 @@ pub const Eval = struct {
             .call => |call| {
                 return self.evalCall(call);
             },
+            .dot => |dot| {
+                return self.evalDot(dot);
+            },
             .ifx => |ifx| {
                 return self.evalIf(ifx);
+            },
+            .list => |xs| {
+                return self.evalList(xs);
             },
             else => {},
         }
@@ -154,6 +172,39 @@ pub const Eval = struct {
         return value;
     }
 
+    pub fn reduceLExpr(self: *Eval, dot: ast.Dot) EvalError!*v.Value {
+        switch (dot.a.*) {
+            .symbol => |s| {
+                return self.gc.env().find(s) orelse self.gc.nothing();
+            },
+            .dot => |d| {
+                const dict = try self.reduceLExpr(d);
+                const key = self.gc.sym(d.b.symbol);
+                return dict.dictionary.get(key) orelse self.gc.nothing();
+            },
+            .call => |c| {
+                return self.evalCall(c);
+            },
+            else => {
+                return self.gc.nothing();
+            },
+        }
+    }
+
+    pub fn evalAssignment(self: *Eval, assign: ast.Assign) EvalError!*v.Value {
+        switch (assign.left.*) {
+            .dot => |dot| {
+                var dict = try self.reduceLExpr(dot);
+                const key = self.gc.sym(dot.b.symbol);
+                const value = try self.evalNode(assign.right);
+                try dict.dictionary.putOrReplace(key, value);
+            },
+            else => {},
+        }
+
+        return self.gc.nothing();
+    }
+
     pub fn evalFunc(self: *Eval, fun: ast.Func) EvalError!*v.Value {
         var fs = std.ArrayList([]const u8).init(self.gc.allocator);
         for (fun.args.items) |arg| {
@@ -176,6 +227,14 @@ pub const Eval = struct {
         return func;
     }
 
+    pub fn evalList(self: *Eval, xs: std.ArrayList(*ast.Ast)) EvalError!*v.Value {
+        var cons: ?*v.Value = null;
+        for (xs.items) |item| {
+            cons = v.cons(self.gc, try self.evalNode(item), cons);
+        }
+        return cons orelse self.gc.nothing();
+    }
+
     pub fn evalCall(self: *Eval, call: ast.Call) EvalError!*v.Value {
         const fun = switch ((try self.evalNode(call.callable)).*) {
             .function2 => |fun| fun,
@@ -195,6 +254,20 @@ pub const Eval = struct {
         const result = try self.evalNode(body);
         self.gc = old_gc;
         return result;
+    }
+
+    pub fn evalDot(self: *Eval, dot: ast.Dot) EvalError!*v.Value {
+        const a = try self.evalNode(dot.a);
+        const b = self.gc.sym(dot.b.symbol);
+
+        switch (a.*) {
+            .dictionary => |d| {
+                return d.get(b) orelse self.gc.nothing();
+            },
+            else => {
+                return error.NotImplemented;
+            },
+        }
     }
 
     pub fn evalIf(self: *Eval, ifx: ast.If) EvalError!*v.Value {

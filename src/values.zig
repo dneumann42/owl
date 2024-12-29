@@ -134,6 +134,7 @@ pub const Value = union(ValueType) {
             .boolean => |bol| bol == b.boolean,
             .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
             .function => |f| f.name == b.function.name and f.body == b.function.body and f.params == b.function.params,
+            .function2 => |f| f.address == b.function2.address,
             .dictionary => false, // TODO
             .nativeFunction => a.nativeFunction == b.nativeFunction,
         };
@@ -295,7 +296,7 @@ pub const Dictionary = struct {
         _ = self;
     }
 
-    pub fn get(self: *Dictionary, key: *Value) ?*Value {
+    pub fn get(self: Dictionary, key: *Value) ?*Value {
         var it: ?*Value = self.pairs;
         while (it != null) : (it = it.?.cons.cdr) {
             const pair = it.?.cons.car;

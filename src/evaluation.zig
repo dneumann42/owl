@@ -63,7 +63,10 @@ pub fn evaluate(g: *gc.Gc, value: *v.Value) EvalError!*v.Value {
                     },
                 };
             }
-            return error.InvalidCall;
+            return error.AllocError;
+        },
+        else => {
+            return error.AllocError;
         },
     };
 }

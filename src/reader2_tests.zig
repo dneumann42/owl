@@ -159,6 +159,17 @@ test "reading dot & call expressions" {
     try testing.expectEqualStrings(exp4.dot.b.symbol, "c");
 }
 
+test "reading nested dot expressions" {
+    var reader = try r.Reader.init(testing.allocator, "a.b.c");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp1 = program.block.items[0];
+    try testing.expectEqualStrings(exp1.dot.a.dot.a.symbol, "a");
+    try testing.expectEqualStrings(exp1.dot.a.dot.b.symbol, "b");
+    try testing.expectEqualStrings(exp1.dot.b.symbol, "c");
+}
+
 test "reading function definitions" {
     var reader = try r.Reader.init(testing.allocator, "fun add-1(y) y + 1 end");
     defer reader.deinit();

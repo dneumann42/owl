@@ -2,7 +2,7 @@ const std = @import("std");
 const reader = @import("reader2.zig");
 const term = @import("terminal.zig");
 const v = @import("values.zig");
-const e = @import("evaluation.zig");
+const e = @import("evaluation2.zig");
 const gc = @import("gc.zig");
 const owlStd = @import("base.zig");
 const dot = @import("ast_dot.zig");
@@ -83,7 +83,11 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: boo
         defer ast.deinit(node, g.allocator);
     }
 
-    const val = try e.eval(&g, file_content);
+    var ev = e.Eval.init(&g);
+    const val = ev.eval(file_content) catch |err| {
+        std.debug.print("{any}", .{err});
+        return err;
+    };
     std.debug.print("{s}\n", .{val.toStr()});
 }
 

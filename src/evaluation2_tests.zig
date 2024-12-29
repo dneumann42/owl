@@ -114,7 +114,65 @@ test "evaluating recursive functions" {
     try expectEq(120, value.number);
 }
 
-// test "evaluating functions out of order" {
-//     var g = gc.Gc.init(allocator);
-//     var ev = e.Eval.init(&g);
-// }
+test "evaluating functions out of order" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = try ev.eval(
+        \\fun a() b() end
+        \\fun b() 69 end
+        \\a()
+    );
+    try expectEq(69, value.number);
+}
+
+test "evaluating passing functions" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = try ev.eval(
+        \\fun a(b) b() end
+        \\fun b() 69 end
+        \\a(b)
+    );
+    try expectEq(69, value.number);
+}
+
+test "closures and scoping" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = ev.eval(
+        \\ add := fn(a) fn(b) a + b
+        \\ add(2)(3)
+        \\ a + b
+    );
+    try std.testing.expectError(error.UndefinedSymbol, value);
+    const value2 = try ev.eval(
+        \\ add := fn(a) fn(b) a + b
+        \\ add(2)(3)
+    );
+    try expectEq(5, value2.number);
+}
+
+test "records and dot syntax" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = try ev.eval(
+        \\ x := { y: { z: 123 } }
+        \\ x.y.z
+    );
+    try expectEq(123, value.number);
+    const value2 = try ev.eval(
+        \\ x := { y: fn() { z: 123 } }
+        \\ x.y().z
+    );
+    try expectEq(123, value2.number);
+}
+
+test "assignment" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = try ev.eval(
+        \\ x := { y: 0 }
+        \\ x.y = 6
+    );
+    try expectEq(6, value.number);
+}
