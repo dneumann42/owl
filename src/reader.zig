@@ -152,7 +152,11 @@ pub const Tokenizer = struct {
             return null;
         }
         index.* += 1;
-        return self.code[start..index.*];
+        const str = convertEscapeSequences(self.allocator, self.code[start..index.*]) catch {
+            std.log.err("Failed to convert escape sequences", .{});
+            return null;
+        };
+        return str;
     }
 
     pub fn readNumberLexeme(self: Tokenizer, index: *usize) ?[]const u8 {

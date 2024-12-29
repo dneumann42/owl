@@ -33,7 +33,7 @@ pub const Value = union(ValueType) {
         };
     }
 
-    pub fn toString(self: *Value, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![]const u8 {
         switch (self.*) {
             Value.nothing => {
                 return std.fmt.allocPrint(allocator, "Nothing", .{});
@@ -42,7 +42,11 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
             },
             Value.string => |s| {
-                return std.fmt.allocPrint(allocator, "{s}", .{s});
+                if (literal) {
+                    return std.fmt.allocPrint(allocator, "\"{s}\"", .{s});
+                } else {
+                    return std.fmt.allocPrint(allocator, "{s}", .{s});
+                }
             },
             Value.number => {
                 return std.fmt.allocPrint(allocator, "{d}", .{self.number});
@@ -64,7 +68,7 @@ pub const Value = union(ValueType) {
                 while (it != null) : (it = it.?.cons.cdr) {
                     const cr = it.?.cons.car;
                     if (cr) |value| {
-                        try strings.append(try value.toString(allocator));
+                        try strings.append(try value.toStringRaw(allocator, literal));
 
                         if (it.?.cons.cdr == null) {
                             break;
@@ -74,7 +78,7 @@ pub const Value = union(ValueType) {
                             .cons => {},
                             else => {
                                 try strings.append(" . ");
-                                try strings.append(try it.?.cons.cdr.?.toString(allocator));
+                                try strings.append(try it.?.cons.cdr.?.toStringRaw(allocator, literal));
                                 break;
                             },
                         }
@@ -87,7 +91,7 @@ pub const Value = union(ValueType) {
             Value.list => |xs| {
                 var strings = std.ArrayList([]const u8).init(allocator);
                 for (xs.items) |item| {
-                    const str = try item.toString(allocator);
+                    const str = try item.toStringRaw(allocator, literal);
                     try strings.append(str);
                 }
                 const list_string = try std.mem.join(allocator, ", ", strings.items);
@@ -98,7 +102,7 @@ pub const Value = union(ValueType) {
                 var key_iterator = dict.keyIterator();
                 while (key_iterator.next()) |key| {
                     const value = dict.get(key.*) orelse continue;
-                    const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try key.*.toString(allocator), try value.toString(allocator) });
+                    const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try key.*.toString(allocator), try value.toStringRaw(allocator, literal) });
                     try strings.append(s);
                 }
 
@@ -106,6 +110,10 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{{ {s} }}", .{list_string});
             },
         }
+    }
+
+    pub fn toString(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
+        return self.toStringRaw(allocator, true);
     }
 
     pub fn toStr(self: *Value) []const u8 {
@@ -344,7 +352,9 @@ pub const Environment = struct {
                 }
             }
         }
-        try self.values.put(key, val);
+
+        // throw an error if value doesn't exist in environment
+        return error.KeyNotFound;
     }
 };
 

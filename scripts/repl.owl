@@ -3,6 +3,16 @@ archimedes := " ~___~  Owl (0.0.0-dev)
 /)___)  or '?' for list of repl commands
   ' '"
 
+fun range(min, max)
+  fn() if min > max then
+    false
+  else
+    idx := min
+    min = min + 1
+    idx
+  end
+end
+
 fun command(key, description, call)
   { 
     key: key, 
@@ -14,7 +24,15 @@ end
 done := false
 history := []
 
+fun help()
+  for i in range(0, len(commands) - 1) do
+    cmd := nth(commands, i)
+    write(cmd.key, "\t", cmd.description, "\n")
+  end
+end
+
 commands := [
+  command("?", "Displays the help menu", help),
   command(
     ",q", 
     "Quits the read eval print loop",
@@ -43,26 +61,27 @@ commands := [
 ]
 
 fun repl()
-  line := read-line("> ")
+  while not done do
+    line := read-line("> ")
 
-  cond
-    line eq ",q"  do done = true end
-    line eq ",h"  do echo(history) end
-    line eq "?"   do echo("Help is work in progress.") end
-    true          do echo(eval(line)) end
-  end
+    is-command := false
+    for i in range(0, len(commands) - 1) do
+      cmd := nth(commands, i)
+      if cmd.key eq line then
+        cmd.call()
+        is-command = true
+      end
+    end
 
-  if done then 
-    echo("bye.")
-  else 
+    if not is-command then 
+      write(eval(line), "\n")
+    end
+
     list-add(history, line)
-    repl()
   end
+
+  write("bye.\n")
 end
 
-fun confirm()
-  read-line("eval? (y/n)") noteq "n"
-end
-
-echo(archimedes)
+write(archimedes, "\n")
 repl()

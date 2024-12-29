@@ -12,14 +12,14 @@ const cursor = mibu.cursor;
 const clear = mibu.clear;
 
 pub fn installBase(g: *gc.Gc) void {
-    g.env().set("read-line", g.nfun(baseReadLine)) catch unreachable;
-    g.env().set("echo", g.nfun(baseEcho)) catch unreachable;
-    g.env().set("write", g.nfun(baseWrite)) catch unreachable;
-    g.env().set("cat", g.nfun(concat)) catch unreachable;
-    g.env().set("list-add", g.nfun(baseListAdd)) catch unreachable;
-    g.env().set("list-remove", g.nfun(baseListAdd)) catch unreachable;
-    g.env().set("nth", g.nfun(baseNth)) catch unreachable;
-    g.env().set("len", g.nfun(baseLen)) catch unreachable;
+    g.env().define("read-line", g.nfun(baseReadLine)) catch unreachable;
+    g.env().define("echo", g.nfun(baseEcho)) catch unreachable;
+    g.env().define("write", g.nfun(baseWrite)) catch unreachable;
+    g.env().define("cat", g.nfun(concat)) catch unreachable;
+    g.env().define("list-add", g.nfun(baseListAdd)) catch unreachable;
+    g.env().define("list-remove", g.nfun(baseListAdd)) catch unreachable;
+    g.env().define("nth", g.nfun(baseNth)) catch unreachable;
+    g.env().define("len", g.nfun(baseLen)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -73,7 +73,7 @@ fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     const outw = std.io.getStdOut().writer();
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
-        const s = args.items[i].toString(g.allocator) catch return errResult(g, "Failed to allocate string");
+        const s = args.items[i].toStringRaw(g.allocator, true) catch return errResult(g, "Failed to allocate string");
         outw.print("{s}", .{s}) catch unreachable;
         if (i < args.items.len - 1) {
             _ = outw.write(" ") catch unreachable;
@@ -87,7 +87,7 @@ fn baseWrite(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     const outw = std.io.getStdOut().writer();
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
-        const s = args.items[i].toString(g.allocator) catch return errResult(g, "Failed to allocate string");
+        const s = args.items[i].toStringRaw(g.allocator, false) catch return errResult(g, "Failed to allocate string");
         outw.print("{s}", .{s}) catch unreachable;
     }
     return g.T();
@@ -137,6 +137,15 @@ pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
                 },
                 .ctrl => |c| switch (c) {
                     'c' => break,
+                    'l' => {
+                        line.clearRetainingCapacity();
+                        clear.screenToCursor(stdout.writer()) catch {};
+                        cursor.goTo(stdout.writer(), 0, 0) catch unreachable;
+                        if (args.items.len > 0) {
+                            const prompt = args.items[0];
+                            stdout.writer().print("{s}", .{prompt.string}) catch unreachable;
+                        }
+                    },
                     else => {},
                 },
                 .enter => {
@@ -169,7 +178,7 @@ pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
 
     stdout.writer().print("\n", .{}) catch unreachable;
     const str = v.arrayListToString(g.allocator, line) catch unreachable;
-    cursor.goLeft(stdout.writer(), str.len) catch unreachable;
+    cursor.goLeft(stdout.writer(), str.len + 2) catch unreachable;
     readLine.?.history.append(str) catch unreachable;
 
     return g.str(str);

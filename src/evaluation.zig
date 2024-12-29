@@ -113,12 +113,12 @@ pub const Eval = struct {
     }
 
     pub fn evalUnexp(self: *Eval, gc: *g.Gc, un: ast.Unexp) EvalError!*v.Value {
-        _ = self;
         if (std.mem.eql(u8, un.op.symbol, "-")) {
             return gc.num(-un.value.number);
         }
         if (std.mem.eql(u8, un.op.symbol, "not")) {
-            switch (un.value.*) {
+            const value = try self.evalNode(gc, un.value);
+            switch (value.*) {
                 .number => |n| {
                     return if (n == 0) gc.num(1) else gc.num(0);
                 },
@@ -130,6 +130,7 @@ pub const Eval = struct {
                 },
             }
         }
+        self.logErr("Invalid unary operator '{s}'", .{un.op.symbol});
         return error.InvalidUnexp;
     }
 
@@ -201,7 +202,13 @@ pub const Eval = struct {
             },
             .symbol => |key| {
                 const value = try self.evalNode(gc, assign.right);
-                try gc.env().set(key, value);
+                gc.env().set(key, value) catch |e| switch (e) {
+                    error.KeyNotFound => {
+                        self.logErr("Variable is undefined '{s}'", .{key});
+                        return e;
+                    },
+                    else => return e,
+                };
                 return value;
             },
             else => {
@@ -226,7 +233,7 @@ pub const Eval = struct {
         };
 
         if (fun.sym) |symbol| {
-            try gc.env().set(symbol.symbol, func);
+            try gc.env().define(symbol.symbol, func);
         }
 
         return func;
@@ -281,7 +288,7 @@ pub const Eval = struct {
         for (0..fun.params.items.len) |i| {
             const param = fun.params.items[i];
             const value = try self.evalNode(gc, call.args.items[i]);
-            try next.env().set(param, value);
+            try next.env().define(param, value);
         }
         return self.evalNode(&next, body);
     }
