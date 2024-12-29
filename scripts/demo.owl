@@ -1,14 +1,7 @@
-tbl := {
-  z: 0,
-  q: {
-    r: 5
-  }
-}
+x := 1
 
-x := {
-  y: fn() tbl,
-  w: 3
-}
+do
+  x = 7
+end
 
-x.y().z = 12
-x.y().z
+echo(x)

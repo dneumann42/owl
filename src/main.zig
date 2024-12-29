@@ -85,9 +85,11 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: boo
 
     var ev = e.Eval.init(&g);
     const val = ev.eval(file_content) catch |err| {
-        std.debug.print("{any}", .{err});
+        const log = ev.getErrorLog();
+        std.log.err("{s}\n", .{log});
         return err;
     };
+
     std.debug.print("{s}\n", .{val.toStr()});
 }
 

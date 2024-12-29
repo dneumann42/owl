@@ -1,7 +1,7 @@
 const v = @import("values.zig");
 const gc = @import("gc.zig");
 const std = @import("std");
-const e = @import("evaluation.zig");
+const e = @import("evaluation2.zig");
 const os = std.os;
 
 const mibu = @import("mibu");
@@ -15,7 +15,6 @@ pub fn installBase(g: *gc.Gc) void {
     g.env().set("read-line", g.nfun(baseReadLine)) catch unreachable;
     g.env().set("echo", g.nfun(baseEcho)) catch unreachable;
     g.env().set("write", g.nfun(baseWrite)) catch unreachable;
-    g.env().set("eval", g.nfun(baseEval)) catch unreachable;
     g.env().set("cat", g.nfun(concat)) catch unreachable;
 }
 
@@ -29,33 +28,26 @@ pub fn evalErrResult(g: *gc.Gc, err: e.EvalError) *v.Value {
     return errResult(g, "Evaluation error");
 }
 
-fn baseEcho(g: *gc.Gc, args: ?*v.Value) *v.Value {
-    if (args) |arguments| {
-        var it: ?*v.Value = arguments;
-        while (it) |value| {
-            const val = e.evaluate(g, value.cons.car.?) catch |err| return evalErrResult(g, err);
-            const s = val.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
-            defer g.allocator.free(s);
-            std.debug.print("{s} ", .{s});
-            it = value.cons.cdr;
+fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const outw = std.io.getStdOut().writer();
+    var i: usize = 0;
+    while (i < args.items.len) : (i += 1) {
+        const s = args.items[i].toString(g.allocator) catch return errResult(g, "Failed to allocate string");
+        outw.print("{s}", .{s}) catch unreachable;
+        if (i < args.items.len - 1) {
+            _ = outw.write(" ") catch unreachable;
         }
-        std.debug.print("\n", .{});
     }
+    _ = outw.write("\n") catch unreachable;
     return g.T();
 }
 
-fn baseWrite(g: *gc.Gc, args: ?*v.Value) *v.Value {
-    const stdout = std.io.getStdOut().writer();
-
-    if (args) |arguments| {
-        var it: ?*v.Value = arguments;
-        while (it) |value| {
-            const val = e.evaluate(g, value.cons.car.?) catch |err| return evalErrResult(g, err);
-            const s = val.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
-            defer g.allocator.free(s);
-            _ = stdout.write(s) catch unreachable;
-            it = value.cons.cdr;
-        }
+fn baseWrite(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const outw = std.io.getStdOut().writer();
+    var i: usize = 0;
+    while (i < args.items.len) : (i += 1) {
+        const s = args.items[i].toString(g.allocator) catch return errResult(g, "Failed to allocate string");
+        outw.print("{s}", .{s}) catch unreachable;
     }
     return g.T();
 }
@@ -67,7 +59,7 @@ const ReadLine = struct {
 
 var readLine: ?ReadLine = null;
 
-pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
+pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     // may want to switch to u21 strings
 
     if (readLine == null) {
@@ -84,11 +76,9 @@ pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
     stdout.writer().print("{s}", .{utils.enable_mouse_tracking}) catch unreachable;
     defer stdout.writer().print("{s}", .{utils.disable_mouse_tracking}) catch {};
 
-    if (args) |arguments| {
-        if (arguments.cons.car) |prompt| {
-            const value = e.evaluate(g, prompt) catch unreachable;
-            stdout.writer().print("{s}", .{value.string}) catch unreachable;
-        }
+    if (args.items.len > 0) {
+        const prompt = args.items[0];
+        stdout.writer().print("{s}", .{prompt.string}) catch unreachable;
     }
 
     var line = std.ArrayList(u8).init(g.allocator);
@@ -144,31 +134,10 @@ pub fn baseReadLine(g: *gc.Gc, args: ?*v.Value) *v.Value {
     return g.str(str);
 }
 
-fn baseEval(g: *gc.Gc, args: ?*v.Value) *v.Value {
-    if (args) |arguments| {
-        const value = e.evaluate(g, arguments.cons.car orelse g.nothing()) catch g.nothing();
-        return e.eval(g, value.string) catch g.nothing();
+fn concat(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    var strs = std.ArrayList([]const u8).init(g.allocator);
+    for (args.items) |arg| {
+        strs.append(arg.toString(g.allocator) catch unreachable) catch unreachable;
     }
-    return g.nothing();
-}
-
-fn concat(g: *gc.Gc, args: ?*v.Value) *v.Value {
-    if (args) |arguments| {
-        var buffer = std.ArrayList(u8).init(g.allocator);
-        defer buffer.deinit();
-        var it: ?*v.Value = arguments;
-        while (it != null) : (it = it.?.cons.cdr) {
-            if (it.?.cons.car) |str| {
-                const value = e.evaluate(g, str) catch unreachable;
-                const s = value.toString(g.allocator) catch return errResult(g, "Failed to allocate string");
-                defer g.allocator.free(s);
-                for (s) |c| {
-                    buffer.append(c) catch unreachable;
-                }
-            }
-        }
-        return g.create(.{ .string = buffer.toOwnedSlice() catch unreachable }) catch unreachable;
-    }
-
-    return g.nothing();
+    return g.str(std.mem.join(g.allocator, "", strs.items) catch unreachable);
 }

@@ -1,15 +1,13 @@
 const std = @import("std");
 const json = std.json;
 const gc = @import("gc.zig");
-const e = @import("evaluation.zig");
-
 const ValueError = error{KeyNotFound};
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, function2, dictionary, nativeFunction };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, dictionary, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
-pub const NativeFunction = *const fn (*gc.Gc, ?*Value) *Value;
+pub const NativeFunction = *const fn (*gc.Gc, std.ArrayList(*Value)) *Value;
 
 pub const Value = union(ValueType) {
     nothing: void,
@@ -19,7 +17,6 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
-    function2: Function2,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
 
@@ -53,12 +50,6 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
             },
             Value.function => |f| {
-                if (f.name) |s| {
-                    return std.fmt.allocPrint(allocator, "[fn:{s}]", .{s.symbol});
-                }
-                return std.fmt.allocPrint(allocator, "[fn]", .{});
-            },
-            Value.function2 => |f| {
                 return std.fmt.allocPrint(allocator, "[fn:{d}]", .{f.address});
             },
             Value.nativeFunction => {
@@ -133,8 +124,7 @@ pub const Value = union(ValueType) {
             .symbol => |s| std.mem.eql(u8, s, b.symbol),
             .boolean => |bol| bol == b.boolean,
             .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
-            .function => |f| f.name == b.function.name and f.body == b.function.body and f.params == b.function.params,
-            .function2 => |f| f.address == b.function2.address,
+            .function => |f| f.address == b.function.address,
             .dictionary => false, // TODO
             .nativeFunction => a.nativeFunction == b.nativeFunction,
         };
@@ -246,20 +236,13 @@ pub fn arrayListToString(allocator: std.mem.Allocator, list: std.ArrayList(u8)) 
 }
 
 pub const Function = struct {
-    name: ?*Value,
-    body: *Value,
-    params: *Value,
-    env: *Environment,
-};
-
-pub const Function2 = struct {
     address: usize,
     params: std.ArrayList([]const u8),
     env: *Environment,
-    pub fn init(address: usize, params: std.ArrayList([]const u8), env: *Environment) Function2 {
-        return Function2{ .address = address, .params = params, .env = env };
+    pub fn init(address: usize, params: std.ArrayList([]const u8), env: *Environment) Function {
+        return Function{ .address = address, .params = params, .env = env };
     }
-    pub fn deinit(self: *Function2) void {
+    pub fn deinit(self: *Function) void {
         self.params.deinit();
     }
 };
@@ -386,6 +369,10 @@ pub const Environment = struct {
         }
 
         return null;
+    }
+
+    pub fn define(self: *Environment, key: []const u8, val: *Value) !void {
+        try self.values.put(key, val);
     }
 
     pub fn set(self: *Environment, key: []const u8, val: *Value) !void {

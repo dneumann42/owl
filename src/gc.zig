@@ -19,6 +19,7 @@ pub const Gc = struct {
         header: GcHeader,
     };
 
+    depth: i64,
     allocator: std.mem.Allocator,
     topEnv: *v.Environment,
 
@@ -37,6 +38,7 @@ pub const Gc = struct {
             .root = .{
                 .environment = environment,
             },
+            .depth = 0,
             .topEnv = environment,
         };
     }
@@ -60,6 +62,7 @@ pub const Gc = struct {
             .values = self.values,
             .nothingValue = self.nothingValue,
             .root = self.root,
+            .depth = self.depth + 1,
             .topEnv = new_environment,
         };
 
@@ -72,6 +75,7 @@ pub const Gc = struct {
             .values = self.values,
             .nothingValue = self.nothingValue,
             .root = self.root,
+            .depth = self.depth + 1,
             .topEnv = en,
         };
         return g;

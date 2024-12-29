@@ -12,8 +12,8 @@ const allocator = std.heap.page_allocator;
 
 fn evalStr(code: []const u8) *v.Value {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    return ev.eval(code) catch unreachable;
+    var ev = e.Eval.init(allocator);
+    return ev.eval(&g, code) catch unreachable;
 }
 
 test "evaluating numbers" {
@@ -24,40 +24,40 @@ test "evaluating numbers" {
 test "evaluating symbols" {
     var g = gc.Gc.init(allocator);
     try g.env().set("hello", g.num(123.0));
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval("hello");
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g, "hello");
     try expectEq(123.0, value.number);
 
-    const err = ev.eval("world");
+    const err = ev.eval(&g, "world");
     try expectError(error.UndefinedSymbol, err);
-    const log: []const u8 = try ev.getErrorLog();
+    const log = ev.getErrorLog();
     try expectEqStr("Undefined symbol 'world'", log);
 }
 
 test "evaluating binary expressions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
+    var ev = e.Eval.init(allocator);
 
-    try expectEq(3, (try ev.eval("1 + 3 + -1")).number);
-    try expectEq(12, (try ev.eval("3 * 4")).number);
-    try expectEq(8 - 5, (try ev.eval("8 - 5")).number);
-    try expectEq(1.0 / 3.0, (try ev.eval("1 / 3")).number);
+    try expectEq(3, (try ev.eval(&g, "1 + 3 + -1")).number);
+    try expectEq(12, (try ev.eval(&g, "3 * 4")).number);
+    try expectEq(8 - 5, (try ev.eval(&g, "8 - 5")).number);
+    try expectEq(1.0 / 3.0, (try ev.eval(&g, "1 / 3")).number);
 }
 
 test "evaluating unary expressions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
+    var ev = e.Eval.init(allocator);
 
-    try expectEq(-3, (try ev.eval("-3")).number);
-    try expectEq(true, (try ev.eval("not false")).boolean);
-    try expectEq(1, (try ev.eval("not 0")).number);
+    try expectEq(-3, (try ev.eval(&g, "-3")).number);
+    try expectEq(true, (try ev.eval(&g, "not false")).boolean);
+    try expectEq(1, (try ev.eval(&g, "not 0")).number);
 }
 
 test "evaluating definition" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
+    var ev = e.Eval.init(allocator);
 
-    const value = try ev.eval(
+    const value = try ev.eval(&g,
         \\ a := 9
         \\ a
     );
@@ -66,8 +66,8 @@ test "evaluating definition" {
 
 test "evaluate defining and calling functions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\ fun a(b) b + 1 end
         \\ a(9)
     );
@@ -76,13 +76,13 @@ test "evaluate defining and calling functions" {
 
 test "evaluating anonymous functions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\ a := fun(b) b + 1 end
         \\ a(9)
     );
     try expectEq(10, value.number);
-    const value2 = try ev.eval(
+    const value2 = try ev.eval(&g,
         \\ b := fn(b) b + 1
         \\ b(4)
     );
@@ -91,17 +91,17 @@ test "evaluating anonymous functions" {
 
 test "evaluating if expressions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval("if true then 1 else 2 end");
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g, "if true then 1 else 2 end");
     try expectEq(1, value.number);
-    const value2 = try ev.eval("if false then 1 else 2 end");
+    const value2 = try ev.eval(&g, "if false then 1 else 2 end");
     try expectEq(2, value2.number);
 }
 
 test "evaluating recursive functions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\fun factorial(n)
         \\  if n < 2 then
         \\    1
@@ -116,8 +116,8 @@ test "evaluating recursive functions" {
 
 test "evaluating functions out of order" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\fun a() b() end
         \\fun b() 69 end
         \\a()
@@ -127,8 +127,8 @@ test "evaluating functions out of order" {
 
 test "evaluating passing functions" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\fun a(b) b() end
         \\fun b() 69 end
         \\a(b)
@@ -138,14 +138,14 @@ test "evaluating passing functions" {
 
 test "closures and scoping" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = ev.eval(&g,
         \\ add := fn(a) fn(b) a + b
         \\ add(2)(3)
         \\ a + b
     );
     try std.testing.expectError(error.UndefinedSymbol, value);
-    const value2 = try ev.eval(
+    const value2 = try ev.eval(&g,
         \\ add := fn(a) fn(b) a + b
         \\ add(2)(3)
     );
@@ -154,13 +154,13 @@ test "closures and scoping" {
 
 test "records and dot syntax" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\ x := { y: { z: 123 } }
         \\ x.y.z
     );
     try expectEq(123, value.number);
-    const value2 = try ev.eval(
+    const value2 = try ev.eval(&g,
         \\ x := { y: fn() { z: 123 } }
         \\ x.y().z
     );
@@ -169,10 +169,43 @@ test "records and dot syntax" {
 
 test "assignment" {
     var g = gc.Gc.init(allocator);
-    var ev = e.Eval.init(&g);
-    const value = try ev.eval(
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
+        \\ x := 0
+        \\ x = 6
+        \\ x
+    );
+    try expectEq(6, value.number);
+}
+
+test "table assignment" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
         \\ x := { y: 0 }
         \\ x.y = 6
     );
     try expectEq(6, value.number);
+}
+
+test "assignment and scoping" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
+        \\ x := 0
+        \\ do x = 3 end
+        \\ x
+    );
+    try expectEq(3, value.number);
+}
+
+test "assignment and out of scoping" {
+    var g = gc.Gc.init(allocator);
+    var ev = e.Eval.init(allocator);
+    const value = try ev.eval(&g,
+        \\ x := 0
+        \\ do x := 3 end
+        \\ x
+    );
+    try expectEq(0, value.number);
 }
