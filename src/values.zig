@@ -3,12 +3,18 @@ const json = std.json;
 const gc = @import("gc.zig");
 const ValueError = error{KeyNotFound};
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, list, function, dictionary, nativeFunction };
-
-pub const Cons = struct { car: ?*Value, cdr: ?*Value };
-pub const List = std.ArrayList(*Value);
-
-pub const NativeFunction = *const fn (*gc.Gc, std.ArrayList(*Value)) *Value;
+pub const ValueType = enum {
+    nothing, //
+    number,
+    string,
+    symbol,
+    boolean,
+    cons,
+    list,
+    function,
+    dictionary,
+    nativeFunction,
+};
 
 pub const Value = union(ValueType) {
     nothing: void,
@@ -21,184 +27,185 @@ pub const Value = union(ValueType) {
     function: Function,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
+};
 
-    pub fn isStatic(self: *Value) bool {
-        return self.dictionary.static;
-    }
+pub fn isNothing(self: *Value) bool {
+    return switch (self.*) {
+        Value.nothing => true,
+        else => false,
+    };
+}
 
-    pub fn isNothing(self: *Value) bool {
-        return switch (self.*) {
-            Value.nothing => true,
-            else => false,
-        };
-    }
-
-    pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![]const u8 {
-        switch (self.*) {
-            Value.nothing => {
-                return std.fmt.allocPrint(allocator, "Nothing", .{});
-            },
-            Value.symbol => {
-                return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
-            },
-            Value.string => |s| {
-                if (literal) {
-                    return std.fmt.allocPrint(allocator, "\"{s}\"", .{s});
-                } else {
-                    return std.fmt.allocPrint(allocator, "{s}", .{s});
-                }
-            },
-            Value.number => {
-                return std.fmt.allocPrint(allocator, "{d}", .{self.number});
-            },
-            Value.boolean => |b| {
-                const s = if (b) "true" else "false";
+pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![]const u8 {
+    switch (self.*) {
+        Value.nothing => {
+            return std.fmt.allocPrint(allocator, "Nothing", .{});
+        },
+        Value.symbol => {
+            return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
+        },
+        Value.string => |s| {
+            if (literal) {
+                return std.fmt.allocPrint(allocator, "\"{s}\"", .{s});
+            } else {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
-            },
-            Value.function => |f| {
-                return std.fmt.allocPrint(allocator, "<fn {d}>", .{f.address});
-            },
-            Value.nativeFunction => {
-                return std.fmt.allocPrint(allocator, "<native>", .{});
-            },
-            Value.cons => {
-                var it: ?*Value = self;
-                var strings = std.ArrayList([]const u8).init(allocator);
+            }
+        },
+        Value.number => {
+            return std.fmt.allocPrint(allocator, "{d}", .{self.number});
+        },
+        Value.boolean => |b| {
+            const s = if (b) "true" else "false";
+            return std.fmt.allocPrint(allocator, "{s}", .{s});
+        },
+        Value.function => |f| {
+            return std.fmt.allocPrint(allocator, "<fn {d}>", .{f.address});
+        },
+        Value.nativeFunction => {
+            return std.fmt.allocPrint(allocator, "<native>", .{});
+        },
+        Value.cons => {
+            var it: ?*Value = self;
+            var strings = std.ArrayList([]const u8).init(allocator);
 
-                while (it != null) : (it = it.?.cons.cdr) {
-                    const cr = it.?.cons.car;
-                    if (cr) |value| {
-                        try strings.append(try value.toStringRaw(allocator, literal));
+            while (it != null) : (it = it.?.cons.cdr) {
+                const cr = it.?.cons.car;
+                if (cr) |value| {
+                    try strings.append(try toStringRaw(value, allocator, literal));
 
-                        if (it.?.cons.cdr == null) {
+                    if (it.?.cons.cdr == null) {
+                        break;
+                    }
+
+                    switch (it.?.cons.cdr.?.*) {
+                        .cons => {},
+                        else => {
+                            try strings.append(" . ");
+                            try strings.append(try toStringRaw(it.?.cons.cdr.?, allocator, literal));
                             break;
-                        }
-
-                        switch (it.?.cons.cdr.?.*) {
-                            .cons => {},
-                            else => {
-                                try strings.append(" . ");
-                                try strings.append(try it.?.cons.cdr.?.toStringRaw(allocator, literal));
-                                break;
-                            },
-                        }
+                        },
                     }
                 }
+            }
 
-                const finalStr = try joinWithSpaces(allocator, strings);
-                return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
-            },
-            Value.list => |xs| {
-                var strings = std.ArrayList([]const u8).init(allocator);
-                for (xs.items) |item| {
-                    const str = try item.toStringRaw(allocator, literal);
-                    try strings.append(str);
-                }
-                const list_string = try std.mem.join(allocator, ", ", strings.items);
-                return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
-            },
-            Value.dictionary => |dict| {
-                var strings = std.ArrayList([]const u8).init(allocator);
-                var key_iterator = dict.keyIterator();
-                while (key_iterator.next()) |key| {
-                    const value = dict.get(key.*) orelse continue;
-                    const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try key.*.toString(allocator), try value.toStringRaw(allocator, literal) });
-                    try strings.append(s);
-                }
+            const finalStr = try joinWithSpaces(allocator, strings);
+            return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
+        },
+        Value.list => |xs| {
+            var strings = std.ArrayList([]const u8).init(allocator);
+            for (xs.items) |item| {
+                const str = try toStringRaw(item, allocator, literal);
+                try strings.append(str);
+            }
+            const list_string = try std.mem.join(allocator, ", ", strings.items);
+            return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
+        },
+        Value.dictionary => |dict| {
+            var strings = std.ArrayList([]const u8).init(allocator);
+            var key_iterator = dict.keyIterator();
+            while (key_iterator.next()) |key| {
+                const value = dict.get(key.*) orelse continue;
+                const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try toString(key.*, allocator), try toStringRaw(value, allocator, literal) });
+                try strings.append(s);
+            }
 
-                const list_string = try std.mem.join(allocator, ", ", strings.items);
-                return std.fmt.allocPrint(allocator, "{{ {s} }}", .{list_string});
-            },
-        }
+            const list_string = try std.mem.join(allocator, ", ", strings.items);
+            return std.fmt.allocPrint(allocator, "{{ {s} }}", .{list_string});
+        },
+    }
+}
+
+pub fn toString(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
+    return toStringRaw(self, allocator, true);
+}
+
+pub fn toStr(self: *Value) []const u8 {
+    return toString(self, std.heap.page_allocator) catch "";
+}
+
+pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
+    if (self == null) {
+        return other == null;
     }
 
-    pub fn toString(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
-        return self.toStringRaw(allocator, true);
+    const a = self.?;
+    const b = other.?;
+
+    if (@as(ValueType, a.*) != @as(ValueType, b.*)) {
+        return false;
     }
 
-    pub fn toStr(self: *Value) []const u8 {
-        return self.toString(std.heap.page_allocator) catch "";
+    return switch (a.*) {
+        .nothing => true,
+        .number => |n| n == b.number,
+        .string => |s| std.mem.eql(u8, s, b.string),
+        .symbol => |s| std.mem.eql(u8, s, b.symbol),
+        .boolean => |bol| bol == b.boolean,
+        .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
+        .function => |f| f.address == b.function.address,
+        .dictionary => false, // TODO
+        .list => false, // TODO
+        .nativeFunction => a.nativeFunction == b.nativeFunction,
+    };
+}
+
+fn getFormatString(value: *Value) []const u8 {
+    return switch (value.*) {
+        .nothing => "Nothing",
+        .symbol => "{s}",
+        .number => "{d}",
+        .boolean => "{s}",
+        .function => "[fn: {s}]",
+        .nativeFunction => "[native-fn]",
+        .cons => "({s})",
+        else => "{any}",
+    };
+}
+
+pub fn isBoolean(self: *const Value) bool {
+    return switch (self.*) {
+        .boolean => true,
+        else => false,
+    };
+}
+
+pub fn isTrue(self: *const Value) bool {
+    return switch (self.*) {
+        .boolean => |t| t != false,
+        else => true,
+    };
+}
+
+pub fn isFalse(self: *const Value) bool {
+    return !isTrue(self);
+}
+
+pub fn toNumber(self: *const Value) f64 {
+    return switch (self.*) {
+        .number => self.number,
+        else => 0.0,
+    };
+}
+
+pub fn reverse(self: *Value) *Value {
+    var prev: ?*Value = null;
+    var current: ?*Value = self;
+    while (current) |value| {
+        const next = value.cons.cdr;
+        value.cons.cdr = prev;
+        prev = value;
+        current = next;
     }
-
-    pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
-        if (self == null) {
-            return other == null;
-        }
-
-        const a = self.?;
-        const b = other.?;
-
-        if (@as(ValueType, a.*) != @as(ValueType, b.*)) {
-            return false;
-        }
-
-        return switch (a.*) {
-            .nothing => true,
-            .number => |n| n == b.number,
-            .string => |s| std.mem.eql(u8, s, b.string),
-            .symbol => |s| std.mem.eql(u8, s, b.symbol),
-            .boolean => |bol| bol == b.boolean,
-            .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
-            .function => |f| f.address == b.function.address,
-            .dictionary => false, // TODO
-            .list => false, // TODO
-            .nativeFunction => a.nativeFunction == b.nativeFunction,
-        };
+    if (prev) |value| {
+        return value;
     }
+    return self;
+}
 
-    fn getFormatString(value: *Value) []const u8 {
-        return switch (value.*) {
-            .nothing => "Nothing",
-            .symbol => "{s}",
-            .number => "{d}",
-            .boolean => "{s}",
-            .function => "[fn: {s}]",
-            .nativeFunction => "[native-fn]",
-            .cons => "({s})",
-            else => "{any}",
-        };
-    }
+pub const Cons = struct { car: ?*Value, cdr: ?*Value };
+pub const List = std.ArrayList(*Value);
 
-    pub fn isBoolean(self: *const Value) bool {
-        return switch (self.*) {
-            .boolean => true,
-            else => false,
-        };
-    }
-
-    pub fn isTrue(self: *const Value) bool {
-        return switch (self.*) {
-            .boolean => |t| t != false,
-            else => true,
-        };
-    }
-
-    pub fn isFalse(self: *const Value) bool {
-        return !self.isTrue();
-    }
-
-    pub fn toNumber(self: *const Value) f64 {
-        return switch (self.*) {
-            .number => self.number,
-            else => 0.0,
-        };
-    }
-
-    pub fn reverse(self: *Value) *Value {
-        var prev: ?*Value = null;
-        var current: ?*Value = self;
-        while (current) |value| {
-            const next = value.cons.cdr;
-            value.cons.cdr = prev;
-            prev = value;
-            current = next;
-        }
-        if (prev) |value| {
-            return value;
-        }
-        return self;
-    }
-};
+pub const NativeFunction = *const fn (*gc.Gc, std.ArrayList(*Value)) *Value;
 
 pub fn getValueEqlFn(comptime K: type, comptime Context: type) (fn (Context, K, K) bool) {
     return struct {
@@ -295,7 +302,7 @@ const ValueKeyContext = struct {
 
     pub fn eql(ctx: ValueKeyContext, a: *Value, b: *Value) bool {
         _ = ctx;
-        return a.isEql(b);
+        return isEql(a, b);
     }
 };
 
@@ -351,6 +358,9 @@ pub const Environment = struct {
                     return;
                 }
             }
+        } else {
+            try self.values.put(key, val);
+            return;
         }
 
         // throw an error if value doesn't exist in environment

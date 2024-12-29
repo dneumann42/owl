@@ -23,7 +23,7 @@ test "evaluating numbers" {
 
 test "evaluating symbols" {
     var g = gc.Gc.init(allocator);
-    try g.env().set("hello", g.num(123.0));
+    try g.env().define("hello", g.num(123.0));
     var ev = e.Eval.init(allocator);
     const value = try ev.eval(&g, "hello");
     try expectEq(123.0, value.number);

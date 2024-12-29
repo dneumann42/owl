@@ -93,19 +93,19 @@ pub const Eval = struct {
         const left = try self.evalNode(gc, bin.a);
         const right = try self.evalNode(gc, bin.b);
         return if (std.mem.eql(u8, bin.op.symbol, "+"))
-            gc.num(left.toNumber() + right.toNumber())
+            gc.num(v.toNumber(left) + v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, "-"))
-            gc.num(left.toNumber() - right.toNumber())
+            gc.num(v.toNumber(left) - v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, "*"))
-            gc.num(left.toNumber() * right.toNumber())
+            gc.num(v.toNumber(left) * v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, "/"))
-            gc.num(left.toNumber() / right.toNumber())
+            gc.num(v.toNumber(left) / v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, "<"))
-            gc.boolean(left.toNumber() < right.toNumber())
+            gc.boolean(v.toNumber(left) < v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, ">"))
-            gc.boolean(left.toNumber() > right.toNumber())
+            gc.boolean(v.toNumber(left) > v.toNumber(right))
         else if (std.mem.eql(u8, bin.op.symbol, "eq"))
-            gc.boolean(left.isEql(right))
+            gc.boolean(v.isEql(left, right))
         else {
             self.logErr("Unexpected binary operator '{s}'", .{bin.op.symbol});
             return error.InvalidBinexp;
@@ -319,7 +319,7 @@ pub const Eval = struct {
     pub fn evalIf(self: *Eval, gc: *g.Gc, ifx: ast.If) EvalError!*v.Value {
         for (ifx.branches.items) |branch| {
             const cond = try self.evalNode(gc, branch.check);
-            if (cond.isTrue()) {
+            if (v.isTrue(cond)) {
                 return self.evalNode(gc, branch.then);
             }
         }
@@ -335,7 +335,7 @@ pub const Eval = struct {
         var result = gc.nothing();
         while (true) {
             const condition_result = try self.evalNode(gc, whilex.condition);
-            if (condition_result.isFalse()) {
+            if (v.isFalse(condition_result)) {
                 break;
             }
             result = try self.evalNode(gc, whilex.block);
