@@ -151,11 +151,11 @@ pub const Eval = struct {
     }
 
     pub fn evalDictionary(self: *Eval, gc: *g.Gc, d: ast.Dictionary) EvalError!*v.Value {
-        var dict = try v.Dictionary.init(gc);
+        var dict = v.Dictionary.init(gc.allocator);
         for (d.items) |kv| {
             const key = gc.sym(kv.key.symbol);
             const value = try self.evalNode(gc, kv.value);
-            try dict.putOrReplace(key, value);
+            try dict.put(key, value);
         }
         return gc.create(.{ .dictionary = dict });
     }
@@ -196,7 +196,7 @@ pub const Eval = struct {
                 var dict = try self.reduceLExpr(gc, dot);
                 const key = gc.sym(dot.b.symbol);
                 const value = try self.evalNode(gc, assign.right);
-                try dict.dictionary.putOrReplace(key, value);
+                try dict.dictionary.put(key, value);
                 return value;
             },
             .symbol => |key| {

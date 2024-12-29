@@ -97,9 +97,17 @@ pub fn build(b: *std.Build) void {
     });
     lib_ast_unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
 
+    const lib_value_unit_testsn = b.addTest(.{
+        .root_source_file = b.path("src/value_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    lib_value_unit_testsn.root_module.addImport("pretty", pretty.module("pretty"));
+
     const run_lib_reader_unit_testsn = b.addRunArtifact(lib_reader_unit_testsn);
     const run_lib_evaluation_unit_testsn = b.addRunArtifact(lib_evaluation_unit_testsn);
     const run_lib_ast_unit_tests = b.addRunArtifact(lib_ast_unit_tests);
+    const run_lib_value_unit_tests = b.addRunArtifact(lib_value_unit_testsn);
 
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const exe_unit_tests = b.addTest(.{ .root_source_file = b.path("src/main.zig"), .target = target, .optimize = optimize, .filters = test_filters });
@@ -115,5 +123,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_lib_reader_unit_testsn.step);
     test_step.dependOn(&run_lib_evaluation_unit_testsn.step);
     test_step.dependOn(&run_lib_ast_unit_tests.step);
+    test_step.dependOn(&run_lib_value_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 }

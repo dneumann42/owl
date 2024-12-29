@@ -94,18 +94,16 @@ pub const Value = union(ValueType) {
                 return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
             },
             Value.dictionary => |dict| {
-                var it: ?*Value = dict.pairs;
                 var strings = std.ArrayList([]const u8).init(allocator);
-                while (it != null) {
-                    if (it) |xs| {
-                        if (xs.cons.car) |pair| {
-                            try strings.append(try pair.toString(allocator));
-                        }
-                        it = xs.cons.cdr;
-                    }
+                var key_iterator = dict.keyIterator();
+                while (key_iterator.next()) |key| {
+                    const value = dict.get(key.*) orelse continue;
+                    const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try key.*.toString(allocator), try value.toString(allocator) });
+                    try strings.append(s);
                 }
-                const final_str = try joinWithSpaces(allocator, strings);
-                return std.fmt.allocPrint(allocator, "({s})", .{final_str});
+
+                const list_string = try std.mem.join(allocator, ", ", strings.items);
+                return std.fmt.allocPrint(allocator, "{{ {s} }}", .{list_string});
             },
         }
     }
@@ -257,92 +255,43 @@ pub const Function = struct {
     }
 };
 
-pub const Dictionary = struct {
-    pairs: *Value,
-    g: *gc.Gc,
-    static: bool,
+const ValueKeyContext = struct {
+    pub fn hash(ctx: ValueKeyContext, key: *Value) u64 {
+        _ = ctx;
+        var h = std.hash.Fnv1a_64.init();
 
-    pub fn init(g: *gc.Gc) !@This() {
-        return .{
-            .pairs = try g.create(.{ .cons = .{ .car = null, .cdr = null } }),
-            .g = g,
-            .static = false,
-        };
-    }
-
-    pub fn init_record(g: *gc.Gc, fields: std.ArrayList(*Value)) Dictionary {
-        var xs = try g.create(.{ .cons = .{ .car = null, .cdr = null } });
-
-        for (fields) |f| {
-            xs = cons(g, cons(g, f, g.nothing()), xs);
+        switch (key.*) {
+            .string => |s| {
+                h.update(s);
+            },
+            .symbol => |s| {
+                h.update(s);
+            },
+            .number => |n| {
+                const i: u64 = @intFromFloat(n);
+                var bytes: [8]u8 = undefined;
+                std.mem.writeInt(u64, bytes[0..], i, std.builtin.Endian.little);
+                h.update(bytes[0..]);
+            },
+            .boolean => |b| {
+                const i = @intFromBool(b);
+                const bytes = [_]u8{@intCast(i)};
+                h.update(bytes[0..]);
+            },
+            else => {
+                @panic("Invalid dictionary key value");
+            },
         }
-
-        return .{
-            .pairs = xs,
-            .g = g,
-            .static = true,
-        };
+        return h.final();
     }
 
-    pub fn deinit(self: *Dictionary) void {
-        // NOTE: this will be needed once we switch to a hash based dictionary
-        _ = self;
-    }
-
-    pub fn get(self: Dictionary, key: *Value) ?*Value {
-        var it: ?*Value = self.pairs;
-        while (it != null) : (it = it.?.cons.cdr) {
-            const pair = it.?.cons.car;
-            if (pair) |p| {
-                if (p.cons.car) |cr| {
-                    if (cr.isEql(key)) {
-                        return p.cons.cdr;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    pub fn hasKey(self: *Dictionary, key: *Value) bool {
-        var it: ?*Value = self.pairs;
-        while (it) : (it = it.?.cons.cdr) {
-            const pair = it.?.car;
-            if (pair) |p| {
-                if (p.cons.car) |cr| {
-                    if (cr.isEql(key)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    pub fn putOrReplace(self: *Dictionary, key: *Value, value: *Value) !void {
-        var it: ?*Value = self.pairs;
-        while (it != null) : (it = it.?.cons.cdr) {
-            const pair = it.?.cons.car;
-            if (pair) |p| {
-                if (p.cons.car) |cr| {
-                    if (cr.isEql(key)) {
-                        p.cons.cdr = value;
-                        return;
-                    }
-                }
-            }
-        }
-        if (self.static) {
-            return error.KeyNotFound;
-        }
-        self.pairs = cons(self.g, cons(self.g, key, value), self.pairs);
-        return;
-    }
-
-    pub fn put(self: *Dictionary, key: *Value, value: *Value) !void {
-        try self.putOrReplace(key, value);
+    pub fn eql(ctx: ValueKeyContext, a: *Value, b: *Value) bool {
+        _ = ctx;
+        return a.isEql(b);
     }
 };
+
+pub const Dictionary = std.HashMap(*Value, *Value, ValueKeyContext, std.hash_map.default_max_load_percentage);
 
 // Environment does not own the values and will not free them
 pub const Environment = struct {
