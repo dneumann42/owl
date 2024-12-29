@@ -76,19 +76,19 @@ pub fn build(b: *std.Build) void {
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
-    const lib_reader2_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/reader2_tests.zig"),
+    const lib_reader_unit_testsn = b.addTest(.{
+        .root_source_file = b.path("src/reader_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    lib_reader2_unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
+    lib_reader_unit_testsn.root_module.addImport("pretty", pretty.module("pretty"));
 
-    const lib_evaluation2_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/evaluation2_tests.zig"),
+    const lib_evaluation_unit_testsn = b.addTest(.{
+        .root_source_file = b.path("src/evaluation_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    lib_evaluation2_unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
+    lib_evaluation_unit_testsn.root_module.addImport("pretty", pretty.module("pretty"));
 
     const lib_ast_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/ast_tests.zig"),
@@ -97,8 +97,8 @@ pub fn build(b: *std.Build) void {
     });
     lib_ast_unit_tests.root_module.addImport("pretty", pretty.module("pretty"));
 
-    const run_lib_reader2_unit_tests = b.addRunArtifact(lib_reader2_unit_tests);
-    const run_lib_evaluation2_unit_tests = b.addRunArtifact(lib_evaluation2_unit_tests);
+    const run_lib_reader_unit_testsn = b.addRunArtifact(lib_reader_unit_testsn);
+    const run_lib_evaluation_unit_testsn = b.addRunArtifact(lib_evaluation_unit_testsn);
     const run_lib_ast_unit_tests = b.addRunArtifact(lib_ast_unit_tests);
 
     const test_filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
@@ -112,8 +112,8 @@ pub fn build(b: *std.Build) void {
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_reader2_unit_tests.step);
-    test_step.dependOn(&run_lib_evaluation2_unit_tests.step);
+    test_step.dependOn(&run_lib_reader_unit_testsn.step);
+    test_step.dependOn(&run_lib_evaluation_unit_testsn.step);
     test_step.dependOn(&run_lib_ast_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
 }

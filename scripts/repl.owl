@@ -1,0 +1,68 @@
+archimedes := " ~___~  Owl (0.0.0-dev)
+ {O,o}  enter ',h' for help screen
+/)___)  or '?' for list of repl commands
+  ' '"
+
+fun command(key, description, call)
+  { 
+    key: key, 
+    description: description, 
+    call: call 
+  }
+end
+
+done := false
+history := []
+
+commands := [
+  command(
+    ",q", 
+    "Quits the read eval print loop",
+    fn() done = true
+  ),
+  command(
+    ",h", 
+    "Displays command history",
+    fn() echo(history)
+  ),
+  command(
+    ",e", 
+    "Open editor",
+    fn() echo("WIP")
+  ),
+  command(
+    ",n", 
+    "New menu",
+    fn() echo("WIP")
+  ),
+  command(
+    ",p", 
+    "Packages menu",
+    fn() echo("WIP")
+  ),
+]
+
+fun repl()
+  line := read-line("> ")
+
+  cond
+    line eq ",q"  do done = true end
+    line eq ",h"  do echo(history) end
+    line eq "?"   do echo("Help is work in progress.") end
+    true          do echo(eval(line)) end
+  end
+
+  if done then 
+    echo("bye.")
+  else 
+    list-add(history, line)
+    repl()
+  end
+end
+
+fun confirm()
+  read-line("eval? (y/n)") not-eq "n"
+end
+
+echo(archimedes)
+repl()

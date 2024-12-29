@@ -1,8 +1,8 @@
 const std = @import("std");
-const reader = @import("reader2.zig");
+const reader = @import("reader.zig");
 const term = @import("terminal.zig");
 const v = @import("values.zig");
-const e = @import("evaluation2.zig");
+const e = @import("evaluation.zig");
 const gc = @import("gc.zig");
 const owlStd = @import("base.zig");
 const dot = @import("ast_dot.zig");
@@ -50,7 +50,7 @@ pub fn main() !void {
     }
 
     if (cli.should_run_repl()) {
-        try runScript(allocator, "scripts/repl2.owl", cli.output_ast);
+        try runScript(allocator, "scripts/repl.owl", cli.output_ast);
     }
 
     if (cli.run_script) |path| {

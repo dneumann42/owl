@@ -1,7 +1,7 @@
 const v = @import("values.zig");
 const gc = @import("gc.zig");
 const std = @import("std");
-const e = @import("evaluation2.zig");
+const e = @import("evaluation.zig");
 const os = std.os;
 
 const mibu = @import("mibu");
@@ -16,6 +16,9 @@ pub fn installBase(g: *gc.Gc) void {
     g.env().set("echo", g.nfun(baseEcho)) catch unreachable;
     g.env().set("write", g.nfun(baseWrite)) catch unreachable;
     g.env().set("cat", g.nfun(concat)) catch unreachable;
+    g.env().set("list-add", g.nfun(baseListAdd)) catch unreachable;
+    g.env().set("list-remove", g.nfun(baseListAdd)) catch unreachable;
+    g.env().set("nth", g.nfun(baseNth)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -26,6 +29,33 @@ pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
 pub fn evalErrResult(g: *gc.Gc, err: e.EvalError) *v.Value {
     std.log.err("{any}", .{err});
     return errResult(g, "Evaluation error");
+}
+
+fn baseNth(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const list = args.items[0];
+    const index: usize = @intFromFloat(args.items[1].number);
+
+    if (index >= list.list.items.len) {
+        return g.nothing();
+    }
+
+    return list.list.items[index];
+}
+
+fn baseListRemove(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    _ = g;
+    const list = args.items[0];
+    list.list.swapRemove(@intFromFloat(args.items[1].number));
+    return list;
+}
+
+fn baseListAdd(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    _ = g;
+    const list = args.items[0];
+    for (1..args.items.len) |i| {
+        list.list.append(args.items[i]) catch unreachable;
+    }
+    return list;
 }
 
 fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {

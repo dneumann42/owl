@@ -1,3 +1,5 @@
 my-list := [1, 2, 3]
 
+list-add(my-list, 4)
+
 echo(my-list)

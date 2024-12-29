@@ -1,7 +1,7 @@
 // works directly on the ast
 
 const v = @import("values.zig");
-const r = @import("reader2.zig");
+const r = @import("reader.zig");
 const g = @import("gc.zig");
 const ast = @import("ast.zig");
 const std = @import("std");
@@ -16,14 +16,11 @@ pub const Eval = struct {
     error_log: std.ArrayList([]const u8),
     function_bodies: std.ArrayList(*ast.Ast),
 
-    eval_gc: g.Gc,
-
     pub fn init(allocator: std.mem.Allocator) Eval {
         return Eval{
             .allocator = allocator,
             .error_log = std.ArrayList([]const u8).init(allocator), //
             .function_bodies = std.ArrayList(*ast.Ast).init(allocator),
-            .eval_gc = g.Gc.init(allocator),
         };
     }
 
@@ -260,7 +257,7 @@ pub const Eval = struct {
                             return error.InvalidCallable;
                         },
                     }
-                    return self.eval(&self.eval_gc, str.string) catch |e| {
+                    return self.eval(gc, str.string) catch |e| {
                         const log = self.getErrorLog();
                         self.clearErrorLog();
                         std.log.err("{any} {s}", .{ e, log });
