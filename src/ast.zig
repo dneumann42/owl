@@ -30,7 +30,10 @@ pub const Func = struct {
     }
 };
 
-pub const If = struct { branches: std.ArrayList(Branch), elseBranch: ?*Ast };
+pub const If = struct {
+    branches: std.ArrayList(Branch), //
+    elseBranch: ?*Ast,
+};
 
 pub const Branch = struct { check: *Ast, then: *Ast };
 

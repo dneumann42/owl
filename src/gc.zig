@@ -77,6 +77,12 @@ pub const Gc = struct {
         return g;
     }
 
+    pub fn newEnv(self: *Gc, en: *v.Environment) !*Gc {
+        const next = try self.allocator.create(Gc);
+        next.* = self.withEnv(en);
+        return next;
+    }
+
     pub fn deinit(self: *Gc) void {
         self.destroyAll();
         self.values.deinit();

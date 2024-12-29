@@ -5,7 +5,7 @@ const e = @import("evaluation.zig");
 
 const ValueError = error{KeyNotFound};
 
-pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, dictionary, nativeFunction };
+pub const ValueType = enum { nothing, number, string, symbol, boolean, cons, function, function2, dictionary, nativeFunction };
 
 pub const Cons = struct { car: ?*Value, cdr: ?*Value };
 
@@ -19,6 +19,7 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     function: Function,
+    function2: Function2,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
 
@@ -56,6 +57,9 @@ pub const Value = union(ValueType) {
                     return std.fmt.allocPrint(allocator, "[fn:{s}]", .{s.symbol});
                 }
                 return std.fmt.allocPrint(allocator, "[fn]", .{});
+            },
+            Value.function2 => |f| {
+                return std.fmt.allocPrint(allocator, "[fn:{d}]", .{f.address});
             },
             Value.nativeFunction => {
                 return std.fmt.allocPrint(allocator, "[native-fn]", .{});
@@ -245,6 +249,18 @@ pub const Function = struct {
     body: *Value,
     params: *Value,
     env: *Environment,
+};
+
+pub const Function2 = struct {
+    address: usize,
+    params: std.ArrayList([]const u8),
+    env: *Environment,
+    pub fn init(address: usize, params: std.ArrayList([]const u8), env: *Environment) Function2 {
+        return Function2{ .address = address, .params = params, .env = env };
+    }
+    pub fn deinit(self: *Function2) void {
+        self.params.deinit();
+    }
 };
 
 pub const Dictionary = struct {
