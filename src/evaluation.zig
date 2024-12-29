@@ -61,59 +61,23 @@ pub const Eval = struct {
     }
 
     pub fn evalNode(self: *Eval, gc: *g.Gc, node: *ast.Ast) EvalError!*v.Value {
-        switch (node.*) {
-            .number, .boolean, .string => {
-                return ast.buildValueFromAst(gc, node) catch {
-                    return error.ValueError;
-                };
-            },
-            .dictionary => |d| {
-                var dict = try v.Dictionary.init(gc);
-                for (d.items) |kv| {
-                    const key = gc.sym(kv.key.symbol);
-                    const value = try self.evalNode(gc, kv.value);
-                    try dict.putOrReplace(key, value);
-                }
-                return gc.create(.{ .dictionary = dict });
-            },
-            .symbol => |s| {
-                if (gc.env().find(s)) |value| {
-                    return value;
-                }
-                self.logErr("Undefined symbol '{s}'", .{s});
-                return error.UndefinedSymbol;
-            },
-            .definition => |define| {
-                return self.evalDefinition(gc, define);
-            },
-            .assignment => |assign| {
-                return self.evalAssignment(gc, assign);
-            },
-            .block => |xs| {
-                return self.evalBlock(gc, xs);
-            },
-            .binexp => |bin| {
-                return self.evalBinexp(gc, bin);
-            },
-            .unexp => |un| {
-                return self.evalUnexp(gc, un);
-            },
-            .func => |fun| {
-                return self.evalFunc(gc, fun);
-            },
-            .call => |call| {
-                return self.evalCall(gc, call);
-            },
-            .dot => |dot| {
-                return self.evalDot(gc, dot);
-            },
-            .ifx => |ifx| {
-                return self.evalIf(gc, ifx);
-            },
-            .list => |xs| {
-                return self.evalList(gc, xs);
-            },
-        }
+        return switch (node.*) {
+            .number, .boolean, .string => self.evalLiteral(gc, node),
+            .dictionary => |d| self.evalDictionary(gc, d),
+            .symbol => |s| self.evalSymbol(gc, s),
+            .definition => |define| self.evalDefinition(gc, define),
+            .assignment => |assign| self.evalAssignment(gc, assign),
+            .block => |xs| self.evalBlock(gc, xs),
+            .binexp => |bin| self.evalBinexp(gc, bin),
+            .unexp => |un| self.evalUnexp(gc, un),
+            .func => |fun| self.evalFunc(gc, fun),
+            .call => |call| self.evalCall(gc, call),
+            .dot => |dot| self.evalDot(gc, dot),
+            .ifx => |ifx| self.evalIf(gc, ifx),
+            .whilex => |whilex| self.evalWhile(gc, whilex),
+            .forx => |whilex| self.evalFor(gc, whilex),
+            .list => |xs| return self.evalList(gc, xs),
+        };
     }
 
     pub fn evalBlock(self: *Eval, gc: *g.Gc, xs: std.ArrayList(*ast.Ast)) EvalError!*v.Value {
@@ -174,6 +138,37 @@ pub const Eval = struct {
         const value = try self.evalNode(gc, define.right);
         try gc.env().define(sym, value);
         return value;
+    }
+
+    pub fn evalLiteral(self: *Eval, gc: *g.Gc, node: *ast.Ast) EvalError!*v.Value {
+        _ = self;
+        return switch (node.*) {
+            .number => |n| gc.num(n),
+            .string => |s| gc.str(s),
+            .boolean => |b| gc.boolean(b),
+            else => gc.nothing(),
+        };
+    }
+
+    pub fn evalDictionary(self: *Eval, gc: *g.Gc, d: ast.Dictionary) EvalError!*v.Value {
+        var dict = try v.Dictionary.init(gc);
+        for (d.items) |kv| {
+            const key = gc.sym(kv.key.symbol);
+            const value = try self.evalNode(gc, kv.value);
+            try dict.putOrReplace(key, value);
+        }
+        return gc.create(.{ .dictionary = dict });
+    }
+
+    pub fn evalSymbol(self: *Eval, gc: *g.Gc, s: []const u8) EvalError!*v.Value {
+        if (std.mem.eql(u8, s, "nothing")) {
+            return gc.nothing();
+        }
+        if (gc.env().find(s)) |value| {
+            return value;
+        }
+        self.logErr("Undefined symbol '{s}'", .{s});
+        return error.UndefinedSymbol;
     }
 
     pub fn reduceLExpr(self: *Eval, gc: *g.Gc, dot: ast.Dot) EvalError!*v.Value {
@@ -327,5 +322,46 @@ pub const Eval = struct {
         }
 
         return gc.nothing();
+    }
+
+    pub fn evalWhile(self: *Eval, gc: *g.Gc, whilex: ast.While) EvalError!*v.Value {
+        var result = gc.nothing();
+        while (true) {
+            const condition_result = try self.evalNode(gc, whilex.condition);
+            if (condition_result.isFalse()) {
+                break;
+            }
+            result = try self.evalNode(gc, whilex.block);
+        }
+        return result;
+    }
+
+    pub fn evalFor(self: *Eval, gc: *g.Gc, ifx: ast.For) EvalError!*v.Value {
+        // rewrites into a while loop
+        // TODO: move this to a preprocessor step
+
+        // do
+        //   next = range(0, 10)
+        //   i = next()
+        //   while i do
+        //     ;; block
+        //     i = next()
+        //   end
+        // end
+
+        const iter_sym = try ast.sym(gc.allocator, "next");
+        const iter_call = try ast.call(gc.allocator, iter_sym, std.ArrayList(*ast.Ast).init(gc.allocator));
+        var body = std.ArrayList(*ast.Ast).init(gc.allocator);
+        try body.append(try ast.define(gc.allocator, iter_sym, ifx.iterable));
+        try body.append(try ast.define(gc.allocator, ifx.variable, iter_call));
+
+        const condition = ifx.variable;
+        var while_body = ifx.block.block;
+        try while_body.append(try ast.assign(gc.allocator, ifx.variable, iter_call));
+
+        const whilex = try ast.whilex(gc.allocator, condition, try ast.block(gc.allocator, while_body));
+        try body.append(whilex);
+
+        return self.evalNode(gc, try ast.block(gc.allocator, body));
     }
 };

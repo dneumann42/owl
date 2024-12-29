@@ -19,6 +19,7 @@ pub fn installBase(g: *gc.Gc) void {
     g.env().set("list-add", g.nfun(baseListAdd)) catch unreachable;
     g.env().set("list-remove", g.nfun(baseListAdd)) catch unreachable;
     g.env().set("nth", g.nfun(baseNth)) catch unreachable;
+    g.env().set("len", g.nfun(baseLen)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -29,6 +30,16 @@ pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
 pub fn evalErrResult(g: *gc.Gc, err: e.EvalError) *v.Value {
     std.log.err("{any}", .{err});
     return errResult(g, "Evaluation error");
+}
+
+fn baseLen(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const item = args.items[0];
+    return switch (item.*) {
+        .list => |xs| g.num(@floatFromInt(xs.items.len)),
+        .string => |s| g.num(@floatFromInt(s.len)),
+        .symbol => |s| g.num(@floatFromInt(s.len)),
+        else => g.num(0.0),
+    };
 }
 
 fn baseNth(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {

@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, InvalidFor, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -61,7 +61,7 @@ pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
 
     pub fn getKeywords() []const []const u8 {
-        return comptime &.{ "if", "fun", "fn", "then", "else", "end", "for", "do", "cond", "true", "false", "or", "and", "not" };
+        return comptime &.{ "if", "fun", "fn", "while", "for", "then", "else", "end", "for", "do", "cond", "true", "false", "or", "and", "not" };
     }
 
     pub fn getKeyword(slice: []const u8) ?[]const u8 {
@@ -563,6 +563,28 @@ pub const Reader = struct {
             },
         }
 
+        switch (self.readWhile()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+        }
+
+        switch (self.readFor()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+        }
+
         return R.noMatch("Primary");
     }
 
@@ -758,6 +780,61 @@ pub const Reader = struct {
 
         return R.ok(ast.ifx(self.allocator, branches, elseBranch) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
+        });
+    }
+
+    pub fn readWhile(self: *Reader) R {
+        if (self.tokenMatches("while") == null) {
+            return R.noMatch("Not a while");
+        }
+        self.index += 1;
+        const cond = switch (self.readExpression()) {
+            .success => |v| v,
+            .failure => |e| {
+                return R.fromErr(e);
+            },
+        };
+        if (self.tokenMatches("do") == null) {
+            return R.errMsg(ReaderErrorKind.InvalidCond, 0, "Condition is missing do");
+        }
+        self.index += 1;
+        const block = self.readBlockTillEnd();
+        return R.ok(ast.whilex(self.allocator, cond, block) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate while");
+        });
+    }
+
+    pub fn readFor(self: *Reader) R {
+        if (self.tokenMatches("for") == null) {
+            return R.noMatch("Not a if");
+        }
+        self.index += 1;
+        const variable = switch (self.readSymbol(false)) {
+            .success => |s| s,
+            .failure => {
+                return R.errMsg(ReaderErrorKind.InvalidFor, 0, "for expects symbol for variable");
+            },
+        };
+
+        if (self.tokenMatches("in") == null) {
+            return R.errMsg(ReaderErrorKind.InvalidFor, 0, "For is missing 'in' keyword");
+        }
+        self.index += 1;
+
+        const iterable = switch (self.readExpression()) {
+            .success => |v| v,
+            .failure => |e| {
+                return R.fromErr(e);
+            },
+        };
+
+        if (self.tokenMatches("do") == null) {
+            return R.errMsg(ReaderErrorKind.InvalidCond, 0, "Condition is missing do");
+        }
+        self.index += 1;
+        const block = self.readBlockTillEnd();
+        return R.ok(ast.forx(self.allocator, variable, iterable, block) catch {
+            return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate for");
         });
     }
 

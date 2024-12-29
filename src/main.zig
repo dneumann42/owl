@@ -59,7 +59,11 @@ pub fn main() !void {
 }
 
 pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: bool) !void {
-    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_only });
+    var file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
+        const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+        std.log.err("File not found '{s}' current working directory '{s}'", .{ path, cwd });
+        return err;
+    };
     defer file.close();
 
     const file_content = try file.readToEndAlloc(allocator, comptime std.math.maxInt(usize));
@@ -84,13 +88,11 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: boo
     }
 
     var ev = e.Eval.init(g.allocator);
-    const val = ev.eval(&g, file_content) catch |err| {
+    _ = ev.eval(&g, file_content) catch |err| {
         const log = ev.getErrorLog();
         std.log.err("{s}\n", .{log});
         return err;
     };
-
-    std.debug.print("{s}\n", .{val.toStr()});
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {

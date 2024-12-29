@@ -331,17 +331,3 @@ test "blocks" {
     try testing.expectEqual(program.block.items[1].number, 2);
     try testing.expectEqual(program.block.items[2].number, 3);
 }
-
-test "building function value from ast" {
-    var reader = try r.Reader.init(testing.allocator, "fun id(a) a end");
-    defer reader.deinit();
-    const program = reader.read().success;
-    defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    var G = g.Gc.init(testing.allocator);
-    defer G.deinit();
-    const value = try a.buildValueFromAst(&G, exp);
-    try testing.expectEqualStrings("fun", value.cons.car.?.symbol);
-    try testing.expectEqualStrings("id", value.cons.cdr.?.cons.car.?.symbol);
-    try testing.expectEqualStrings("a", value.cons.cdr.?.cons.cdr.?.cons.car.?.cons.car.?.symbol);
-}

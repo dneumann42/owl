@@ -61,7 +61,7 @@ fun repl()
 end
 
 fun confirm()
-  read-line("eval? (y/n)") not-eq "n"
+  read-line("eval? (y/n)") noteq "n"
 end
 
 echo(archimedes)
