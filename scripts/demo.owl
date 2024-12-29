@@ -1,7 +1,6 @@
-x := 1
-
-do
-  x = 7
+fun test()
+  y := 123
+  y + 1
 end
 
-echo(x)
+test()

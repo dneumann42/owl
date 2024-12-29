@@ -272,13 +272,13 @@ pub const Eval = struct {
             },
         };
         const body = self.function_bodies.items[fun.address];
-        var next = try gc.newEnv(fun.env);
+        var next = gc.pushEnv(fun.env);
         for (0..fun.params.items.len) |i| {
             const param = fun.params.items[i];
-            const value = try self.evalNode(next, call.args.items[i]);
+            const value = try self.evalNode(gc, call.args.items[i]);
             try next.env().set(param, value);
         }
-        return self.evalNode(next, body);
+        return self.evalNode(&next, body);
     }
 
     pub fn evalNativeCallFn(self: *Eval, gc: *g.Gc, native: v.NativeFunction, args: std.ArrayList(*ast.Ast)) EvalError!*v.Value {

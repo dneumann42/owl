@@ -83,8 +83,8 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: boo
         defer ast.deinit(node, g.allocator);
     }
 
-    var ev = e.Eval.init(&g);
-    const val = ev.eval(file_content) catch |err| {
+    var ev = e.Eval.init(g.allocator);
+    const val = ev.eval(&g, file_content) catch |err| {
         const log = ev.getErrorLog();
         std.log.err("{s}\n", .{log});
         return err;
