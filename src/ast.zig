@@ -4,7 +4,7 @@ const g = @import("gc.zig");
 const Gc = g.Gc;
 const Value = v.Value;
 
-const AstTag = enum { symbol, number, boolean, string, list, dictionary, call, func, ifx, whilex, forx, dot, binexp, unexp, block, assignment, definition };
+const AstTag = enum { symbol, number, boolean, string, list, dictionary, call, func, ifx, whilex, forx, dot, binexp, unexp, block, assignment, definition, use };
 
 pub const Ast = union(AstTag) {
     symbol: []const u8, //
@@ -24,12 +24,15 @@ pub const Ast = union(AstTag) {
     block: std.ArrayList(*Ast),
     assignment: Assign,
     definition: Define,
+    use: Use,
 };
 
 pub const Call = struct {
     callable: *Ast,
     args: std.ArrayList(*Ast),
 };
+
+pub const Use = struct { name: []const u8 };
 
 pub const Dot = struct { a: *Ast, b: *Ast };
 pub const Assign = struct { left: *Ast, right: *Ast };
@@ -140,6 +143,9 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
                 deinit(item, allocator);
             }
             ast.list.deinit();
+        },
+        .string => |s| {
+            allocator.free(s);
         },
         else => {},
     }
@@ -259,6 +265,12 @@ pub fn assign(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast) !*Ast {
         .right = value,
     } };
     return d;
+}
+
+pub fn use(allocator: std.mem.Allocator, name: []const u8) !*Ast {
+    const u = try allocator.create(Ast);
+    u.* = .{ .use = .{ .name = name } };
+    return u;
 }
 
 pub fn dict(allocator: std.mem.Allocator, pairs: std.ArrayList(KV)) !*Ast {

@@ -11,6 +11,7 @@ pub const ValueType = enum {
     boolean,
     cons,
     list,
+    module,
     function,
     dictionary,
     nativeFunction,
@@ -24,47 +25,56 @@ pub const Value = union(ValueType) {
     boolean: bool,
     cons: Cons,
     list: List,
+    module: Module,
     function: Function,
     dictionary: Dictionary,
     nativeFunction: NativeFunction,
 };
 
+pub const Module = struct {
+    name: []const u8,
+    value: *Value,
+};
+
 pub fn isNothing(self: *Value) bool {
     return switch (self.*) {
-        Value.nothing => true,
+        .nothing => true,
         else => false,
     };
 }
 
 pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![]const u8 {
     switch (self.*) {
-        Value.nothing => {
+        .nothing => {
             return std.fmt.allocPrint(allocator, "Nothing", .{});
         },
-        Value.symbol => {
+        .symbol => {
             return std.fmt.allocPrint(allocator, "{s}", .{self.symbol});
         },
-        Value.string => |s| {
+        .string => |s| {
             if (literal) {
                 return std.fmt.allocPrint(allocator, "\"{s}\"", .{s});
             } else {
                 return std.fmt.allocPrint(allocator, "{s}", .{s});
             }
         },
-        Value.number => {
+        .number => {
             return std.fmt.allocPrint(allocator, "{d}", .{self.number});
         },
-        Value.boolean => |b| {
+        .boolean => |b| {
             const s = if (b) "true" else "false";
             return std.fmt.allocPrint(allocator, "{s}", .{s});
         },
-        Value.function => |f| {
+        .module => |m| {
+            return std.fmt.allocPrint(allocator, "<module: {s}>", .{m.name});
+        },
+        .function => |f| {
             return std.fmt.allocPrint(allocator, "<fn {d}>", .{f.address});
         },
-        Value.nativeFunction => {
+        .nativeFunction => {
             return std.fmt.allocPrint(allocator, "<native>", .{});
         },
-        Value.cons => {
+        .cons => {
             var it: ?*Value = self;
             var strings = std.ArrayList([]const u8).init(allocator);
 
@@ -91,7 +101,7 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
             const finalStr = try joinWithSpaces(allocator, strings);
             return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
         },
-        Value.list => |xs| {
+        .list => |xs| {
             var strings = std.ArrayList([]const u8).init(allocator);
             for (xs.items) |item| {
                 const str = try toStringRaw(item, allocator, literal);
@@ -100,7 +110,7 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
             const list_string = try std.mem.join(allocator, ", ", strings.items);
             return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
         },
-        Value.dictionary => |dict| {
+        .dictionary => |dict| {
             var strings = std.ArrayList([]const u8).init(allocator);
             var key_iterator = dict.keyIterator();
             while (key_iterator.next()) |key| {
@@ -140,6 +150,7 @@ pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
         .number => |n| n == b.number,
         .string => |s| std.mem.eql(u8, s, b.string),
         .symbol => |s| std.mem.eql(u8, s, b.symbol),
+        .module => |m| std.mem.eql(u8, m.name, b.module.name),
         .boolean => |bol| bol == b.boolean,
         .cons => (isEql(a.cons.car, b.cons.car) and isEql(a.cons.cdr, b.cons.cdr)),
         .function => |f| f.address == b.function.address,

@@ -48,4 +48,6 @@ fun bg-rgb(r, g, b)
   cat(ESC, "48;2;", r, ";", g, ";", b, "m")
 end
 
-write(bg-rgb(100, 0, 200), "Hello, World")
+{
+  hello: hello
+}

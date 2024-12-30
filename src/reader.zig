@@ -15,7 +15,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, InvalidFor, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, InvalidFor, InvalidUse, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -152,11 +152,7 @@ pub const Tokenizer = struct {
             return null;
         }
         index.* += 1;
-        const str = convertEscapeSequences(self.allocator, self.code[start..index.*]) catch {
-            std.log.err("Failed to convert escape sequences", .{});
-            return null;
-        };
-        return str;
+        return self.code[start..index.*];
     }
 
     pub fn readNumberLexeme(self: Tokenizer, index: *usize) ?[]const u8 {
@@ -237,10 +233,10 @@ pub const Tokenizer = struct {
     pub fn getLexeme(self: Tokenizer, t: Token) ?[]const u8 {
         var index = t.start;
         return switch (t.kind) {
-            TokenKind.number => self.readNumberLexeme(&index),
-            TokenKind.symbol => self.readSymbolLexeme(&index),
-            TokenKind.keyword => self.readKeywordLexeme(&index),
-            TokenKind.string => self.readStringLexeme(&index),
+            .number => self.readNumberLexeme(&index),
+            .symbol => self.readSymbolLexeme(&index),
+            .keyword => self.readKeywordLexeme(&index),
+            .string => self.readStringLexeme(&index),
             else => self.readSpecialCharacter(&index),
         };
     }
@@ -479,6 +475,17 @@ pub const Reader = struct {
             return R.ok(exp);
         }
 
+        switch (self.readUse()) {
+            .success => |v| {
+                return R.ok(v);
+            },
+            .failure => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+        }
+
         switch (self.readDefinition()) {
             .success => |v| {
                 return R.ok(v);
@@ -594,11 +601,28 @@ pub const Reader = struct {
 
     pub fn readDoBlock(self: *Reader) R {
         if (self.tokenMatches("do") == null) {
-            return R.err(ReaderErrorKind.NoMatch, 0);
+            return R.noMatch("Not a do block");
         }
         self.index += 1;
         const block = self.readBlockTillEnd();
         return R.ok(block);
+    }
+
+    pub fn readUse(self: *Reader) R {
+        if (self.tokenMatches("use") == null) {
+            return R.noMatch("Not a use");
+        }
+        self.index += 1;
+        switch (self.readSymbol(false)) {
+            .success => |s| {
+                return R.ok(ast.use(self.allocator, s.symbol) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
+                });
+            },
+            .failure => {
+                return R.errMsg(ReaderErrorKind.InvalidUse, 0, "Use expects a module name");
+            },
+        }
     }
 
     pub fn readDefinition(self: *Reader) R {
@@ -1162,7 +1186,10 @@ pub const Reader = struct {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to get lexeme");
         };
         self.index += 1;
-        return R.ok(ast.str(self.allocator, lexeme[1 .. lexeme.len - 1]) catch {
+        const slice = convertEscapeSequences(self.allocator, lexeme[1 .. lexeme.len - 1]) catch {
+            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
+        };
+        return R.ok(ast.str(self.allocator, slice) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
         });
     }

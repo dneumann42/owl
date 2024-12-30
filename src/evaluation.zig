@@ -77,6 +77,7 @@ pub const Eval = struct {
             .whilex => |whilex| self.evalWhile(gc, whilex),
             .forx => |whilex| self.evalFor(gc, whilex),
             .list => |xs| return self.evalList(gc, xs),
+            .use => return gc.nothing(),
         };
     }
 

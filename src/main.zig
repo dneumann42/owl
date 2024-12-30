@@ -7,11 +7,11 @@ const gc = @import("gc.zig");
 const owlStd = @import("base.zig");
 const dot = @import("ast_dot.zig");
 const ast = @import("ast.zig");
+const m = @import("modules.zig");
 
 const Cli = struct {
     run_script: ?[]const u8,
     new_project: ?NewProject,
-    output_ast: bool,
 
     fn should_run_repl(self: @This()) bool {
         return self.run_script == null;
@@ -31,7 +31,10 @@ pub fn main() !void {
     const args = try Args.init(allocator);
     defer args.deinit();
 
-    var cli = Cli{ .run_script = null, .new_project = null, .output_ast = false };
+    var cli = Cli{
+        .run_script = null,
+        .new_project = null,
+    };
 
     var it = args.iterator();
     while (it.has_next()) : (it.next()) {
@@ -44,54 +47,21 @@ pub fn main() !void {
         } else if (it.is_arg("new")) {
             std.debug.print("New is a work in progress, this command will generate projects, librarys and scripts", .{});
             return;
-        } else if (it.is_arg("output-ast")) {
-            cli.output_ast = true;
         }
     }
 
     if (cli.should_run_repl()) {
-        try runScript(allocator, "scripts/repl.owl", cli.output_ast);
+        try runScript(allocator, "scripts/repl.owl");
     }
 
     if (cli.run_script) |path| {
-        try runScript(allocator, path, cli.output_ast);
+        try runScript(allocator, path);
     }
 }
 
-pub fn runScript(allocator: std.mem.Allocator, path: []const u8, output_ast: bool) !void {
-    var file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
-        const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
-        std.log.err("File not found '{s}' current working directory '{s}'", .{ path, cwd });
-        return err;
-    };
-    defer file.close();
-
-    const file_content = try file.readToEndAlloc(allocator, comptime std.math.maxInt(usize));
-    defer allocator.free(file_content);
-
-    var g = gc.Gc.init(allocator);
-    defer g.deinit();
-    owlStd.installBase(&g);
-
-    if (output_ast) {
-        var r = reader.Reader.init(g.allocator, file_content) catch {
-            return error.ParseError;
-        };
-        const node = switch (r.read()) {
-            .success => |val| val,
-            .failure => {
-                return error.ParseError;
-            },
-        };
-        try dot.buildAndWriteGraphvizFromAst(g.allocator, node);
-        defer ast.deinit(node, g.allocator);
-    }
-
-    var ev = e.Eval.init(g.allocator);
-    _ = ev.eval(&g, file_content) catch |err| {
-        const log = ev.getErrorLog();
-        std.log.err("{any}: {s}\n", .{ err, log });
-    };
+pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
+    var modules = m.Library.init(allocator);
+    try modules.loadEntry(path);
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {
