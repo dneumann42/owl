@@ -379,6 +379,12 @@ pub const Environment = struct {
     }
 };
 
+pub fn clist(g: *gc.Gc, xs: std.ArrayList(*Value)) *Value {
+    return g.create(.{ .list = xs }) catch |err| {
+        std.debug.panic("Panicked at Error: {any}", .{err});
+    };
+}
+
 pub fn cons(g: *gc.Gc, vcar: ?*Value, vcdr: ?*Value) *Value {
     return g.create(.{ .cons = .{ .car = vcar, .cdr = vcdr } }) catch |err| {
         std.debug.panic("Panicked at Error: {any}", .{err});

@@ -3,16 +3,6 @@ archimedes := " ~___~  Owl (0.0.0-dev)
 /)___)  or '?' for list of repl commands
   ' '"
 
-fun range(min, max)
-  fn() if min > max then
-    false
-  else
-    idx := min
-    min = min + 1
-    idx
-  end
-end
-
 fun command(key, description, call)
   { 
     key: key, 

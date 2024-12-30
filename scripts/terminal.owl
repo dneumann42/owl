@@ -1,27 +1,35 @@
 ESC := "\x1b["
 
-BLACK   := "0"
-RED     := "1"
-GREEN   := "2"
-YELLOW  := "3"
-BLUE    := "4"
-MAGENTA := "5"
-CYAN    := "6"
-WHITE   := "7"
-DEFAULT := "9"
+Color := {
+  black: "0",
+  red: "1",
+  green: "2",
+  yellow: "3",
+  blue: "4",
+  magenta: "5",
+  cyan: "6",
+  white: "7",
+  default: "9"
+}
 
-RESET := "0"
-BOLD := "1"
-DIM := "2"
-ITALIC := "3"
-UNDERLINE := "4"
-BLINKING := "5"
-INVERT := "7"
-HIDDEN := "8"
-STRIKETHROUGH := "9"
+Style := {
+  reset: "0",
+  bold: "1",
+  dim: "2",
+  italic: "3",
+  underline: "4",
+  blinking: "5",
+  invert: "7",
+  hidden: "8",
+  strikethrough: "9",
+}
 
-fun cmd(code)
-  write(ESC, code, "m")
+fun style(code)
+  cat(ESC, code, "m")
+end
+
+fun fg-color(color)
+  cat(ESC, fg(color), "m")
 end
 
 fun fg(col)
@@ -49,5 +57,8 @@ fun bg-rgb(r, g, b)
 end
 
 {
-  hello: hello
+  Color: Color,
+  Style: Style,
+  style: style,
+  fg-color: fg-color,
 }

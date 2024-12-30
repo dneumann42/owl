@@ -18,6 +18,8 @@ pub fn installBase(g: *gc.Gc) void {
     g.env().define("cat", g.nfun(concat)) catch unreachable;
     g.env().define("list-add", g.nfun(baseListAdd)) catch unreachable;
     g.env().define("list-remove", g.nfun(baseListAdd)) catch unreachable;
+    g.env().define("dict-keys", g.nfun(baseDictKeys)) catch unreachable;
+    g.env().define("ref", g.nfun(baseDictRef)) catch unreachable;
     g.env().define("nth", g.nfun(baseNth)) catch unreachable;
     g.env().define("len", g.nfun(baseLen)) catch unreachable;
 }
@@ -58,6 +60,22 @@ fn baseListRemove(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     const list = args.items[0];
     list.list.swapRemove(@intFromFloat(args.items[1].number));
     return list;
+}
+
+fn baseDictKeys(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const dict = args.items[0];
+    var keys = std.ArrayList(*v.Value).init(g.allocator);
+    var iterator = dict.dictionary.keyIterator();
+    while (iterator.next()) |key| {
+        keys.append(key.*) catch unreachable;
+    }
+    return v.clist(g, keys);
+}
+
+fn baseDictRef(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    const dict = args.items[0];
+    const key = args.items[1];
+    return dict.dictionary.get(key) orelse g.nothing();
 }
 
 fn baseListAdd(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
@@ -187,7 +205,7 @@ pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
 fn concat(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     var strs = std.ArrayList([]const u8).init(g.allocator);
     for (args.items) |arg| {
-        strs.append(v.toString(arg, g.allocator) catch unreachable) catch unreachable;
+        strs.append(v.toStringRaw(arg, g.allocator, false) catch unreachable) catch unreachable;
     }
     return g.str(std.mem.join(g.allocator, "", strs.items) catch unreachable);
 }

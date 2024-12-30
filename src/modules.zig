@@ -106,7 +106,23 @@ pub const Library = struct {
         try self.modules.append(v.Module{ .name = slice, .value = value });
     }
 
+    pub fn installCoreLibrary(self: *Library, path: []const u8) !void {
+        const ast = try self.getModuleAst(path);
+        const value = self.evaluator.evalNode(&self.gc, ast) catch |err| {
+            const log = self.evaluator.getErrorLog();
+            std.log.err("{any}: {s}\n", .{ err, log });
+            return;
+        };
+
+        var iterator = value.dictionary.keyIterator();
+        while (iterator.next()) |key| {
+            const val = value.dictionary.get(key.*) orelse continue;
+            try self.gc.env().define(key.*.symbol, val);
+        }
+    }
+
     pub fn loadEntry(self: *Library, path: []const u8) !void {
+        try self.installCoreLibrary("lib/core.owl");
         try self.loadModuleDependencies(path);
     }
 };

@@ -10,3 +10,6 @@ fun range(min, max)
   end
 end
 
+{
+  range: range
+}
