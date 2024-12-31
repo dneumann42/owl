@@ -6,6 +6,9 @@ const Value = v.Value;
 
 const AstTag = enum { symbol, number, boolean, string, list, dictionary, call, func, ifx, whilex, forx, dot, binexp, unexp, block, assignment, definition, use };
 
+// NOTE: the ast doesn't own any of the strings,
+// it will give the strings to the values during evaluation
+
 pub const Ast = union(AstTag) {
     symbol: []const u8, //
     number: f64,
@@ -145,6 +148,9 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
             ast.list.deinit();
         },
         .string => |s| {
+            allocator.free(s);
+        },
+        .symbol => |s| {
             allocator.free(s);
         },
         else => {},

@@ -26,7 +26,15 @@ const NewProject = struct {
 };
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        if (gpa.deinit() == .leak) {
+            std.log.err("LEAKED MEMORY\n", .{});
+        }
+    }
+
+    // const allocator = std.heap.page_allocator;
 
     const args = try Args.init(allocator);
     defer args.deinit();
@@ -61,7 +69,12 @@ pub fn main() !void {
 
 pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     var modules = m.Library.init(allocator);
-    try modules.loadEntry(path);
+    defer modules.deinit();
+    try modules.loadEntry(path, .{
+        .install_core = true,
+        .install_base = true,
+        .log_values = false,
+    });
 }
 
 fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {

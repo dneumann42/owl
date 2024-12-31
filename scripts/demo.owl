@@ -1,16 +1,6 @@
-use terminal
-
-Color := terminal.Color
-Style := terminal.Style
-fg-color := terminal.fg-color
-style := terminal.style
-
-colors := []
-color-keys := dict-keys(Color)
-for i in range(0, len(color-keys) - 1) do
-  list-add(colors, ref(Color, nth(color-keys, i)))
-end
-
-for i in range(0, len(colors) - 1) do
-  write(fg-color(nth(colors, i)), "Hello\n")
+n := 3
+cond
+  n eq 1 do echo("HERE?") end
+  n eq 2 do echo("HERE?") end
+  n eq 3 do echo("HERE?") end
 end

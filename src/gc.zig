@@ -10,87 +10,50 @@ pub const Gc = struct {
         marked: bool,
     };
 
-    const GcRoot = struct {
-        environment: *v.Environment,
-    };
-
     const AlignedPair = struct {
         value: v.Value,
         header: GcHeader,
     };
 
-    depth: i64,
     allocator: std.mem.Allocator,
-    topEnv: *v.Environment,
-
     values: std.ArrayList(*v.Value),
-
-    root: GcRoot,
-
-    nothingValue: ?*v.Value,
+    nothing_value: ?*v.Value,
 
     pub fn init(allocator: std.mem.Allocator) Gc {
-        const environment = v.Environment.init(allocator) catch unreachable;
         return .{
             .allocator = allocator,
             .values = std.ArrayList(*v.Value).init(allocator),
-            .nothingValue = null,
-            .root = .{
-                .environment = environment,
-            },
-            .depth = 0,
-            .topEnv = environment,
+            .nothing_value = null,
         };
-    }
-
-    pub fn env(self: *Gc) *v.Environment {
-        return self.topEnv;
-    }
-
-    pub fn push(self: *Gc) Gc {
-        return self.pushEnv(self.topEnv);
-    }
-
-    // this is busted, en could be the environment from the function
-    // we need en to be the top and not the next
-    pub fn pushEnv(self: *Gc, en: *v.Environment) Gc {
-        const new_environment = v.Environment.init(self.allocator) catch unreachable;
-        new_environment.next = en;
-
-        const g = Gc{
-            .allocator = self.allocator,
-            .values = self.values,
-            .nothingValue = self.nothingValue,
-            .root = self.root,
-            .depth = self.depth + 1,
-            .topEnv = new_environment,
-        };
-
-        return g;
-    }
-
-    pub fn withEnv(self: *Gc, en: *v.Environment) Gc {
-        const g = Gc{
-            .allocator = self.allocator,
-            .values = self.values,
-            .nothingValue = self.nothingValue,
-            .root = self.root,
-            .depth = self.depth + 1,
-            .topEnv = en,
-        };
-        return g;
-    }
-
-    pub fn newEnv(self: *Gc, en: *v.Environment) !*Gc {
-        const next = try self.allocator.create(Gc);
-        next.* = self.withEnv(en);
-        return next;
     }
 
     pub fn deinit(self: *Gc) void {
-        self.destroyAll();
+        for (self.values.items) |value| {
+            self.deinitValue(value);
+        }
         self.values.deinit();
-        self.root.environment.deinit();
+    }
+
+    pub fn deinitValue(self: *Gc, value: *v.Value) void {
+        switch (value.*) {
+            .string => |s| {
+                self.allocator.free(s);
+            },
+            .symbol => |s| {
+                self.allocator.free(s);
+            },
+            .list => |xs| {
+                xs.deinit();
+            },
+            .function => |f| {
+                f.deinit();
+            },
+            .dictionary => |*d| {
+                d.deinit();
+            },
+            else => {},
+        }
+        self.destroy(value);
     }
 
     fn destroy(self: *Gc, value: *v.Value) void {
@@ -99,10 +62,10 @@ pub const Gc = struct {
     }
 
     pub fn nothing(self: *Gc) *v.Value {
-        if (self.nothingValue == null) {
-            self.nothingValue = self.create(v.Value.nothing) catch unreachable;
+        if (self.nothing_value == null) {
+            self.nothing_value = self.create(v.Value.nothing) catch unreachable;
         }
-        return self.nothingValue.?;
+        return self.nothing_value.?;
     }
 
     pub fn create(self: *Gc, default: v.Value) !*v.Value {
@@ -126,6 +89,18 @@ pub const Gc = struct {
         return self.create(.{ .string = s }) catch unreachable;
     }
 
+    pub fn symAlloc(self: *Gc, s: []const u8) *v.Value {
+        const copy = self.allocator.alloc(u8, s.len) catch unreachable;
+        std.mem.copyForwards(u8, copy, s);
+        return self.create(.{ .symbol = copy }) catch unreachable;
+    }
+
+    pub fn strAlloc(self: *Gc, s: []const u8) *v.Value {
+        const copy = self.allocator.alloc(u8, s.len) catch unreachable;
+        std.mem.copyForwards(u8, copy, s);
+        return self.create(.{ .string = copy }) catch unreachable;
+    }
+
     pub fn boolean(self: *Gc, b: bool) *v.Value {
         return self.create(.{ .boolean = b }) catch unreachable;
     }
@@ -145,19 +120,6 @@ pub const Gc = struct {
     pub fn getHeader(value: *v.Value) *GcHeader {
         const pair: *AlignedPair = @fieldParentPtr("value", value);
         return &pair.header;
-    }
-
-    pub fn destroyAll(self: *Gc) void {
-        for (self.values.items) |val| {
-            switch (val.*) {
-                .dictionary => {
-                    val.dictionary.deinit();
-                },
-                else => {},
-            }
-            self.destroy(val);
-        }
-        self.values.resize(0) catch {};
     }
 
     pub fn mark(self: *Gc, root: *v.Value) void {

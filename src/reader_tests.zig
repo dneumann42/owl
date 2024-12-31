@@ -170,6 +170,15 @@ test "reading nested dot expressions" {
     try testing.expectEqualStrings(exp1.dot.b.symbol, "c");
 }
 
+test "reading empty functions" {
+    var reader = try r.Reader.init(testing.allocator, "fun a() end");
+    defer reader.deinit();
+    const program = reader.read().success;
+    defer a.deinit(program, reader.allocator);
+    const exp = program.block.items[0];
+    try testing.expectEqualStrings(exp.func.sym.?.symbol, "a");
+}
+
 test "reading function definitions" {
     var reader = try r.Reader.init(testing.allocator, "fun add-1(y) y + 1 end");
     defer reader.deinit();

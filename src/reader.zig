@@ -125,11 +125,11 @@ pub const Tokenizer = struct {
                 };
                 try tokens.append(.{ .kind = kind, .start = start });
             } else if (self.readKeywordLexeme(&index)) |_| {
-                try tokens.append(.{ .kind = TokenKind.keyword, .start = start });
+                try tokens.append(.{ .kind = .keyword, .start = start });
             } else if (self.readSymbolLexeme(&index)) |_| {
-                try tokens.append(.{ .kind = TokenKind.symbol, .start = start });
+                try tokens.append(.{ .kind = .symbol, .start = start });
             } else if (self.readStringLexeme(&index)) |_| {
-                try tokens.append(.{ .kind = TokenKind.string, .start = start });
+                try tokens.append(.{ .kind = .string, .start = start });
             } else {
                 std.debug.panic("Not Implemented", .{});
             }
@@ -403,6 +403,7 @@ pub const Reader = struct {
         const primary = switch (self.readPrimary()) {
             .failure => {
                 self.index = start;
+                ast.deinit(op, self.allocator);
                 return R.noMatch("Read unary primary");
             },
             .success => |p| p,
@@ -446,7 +447,11 @@ pub const Reader = struct {
         };
         if (std.mem.eql(u8, lexeme, "-") or std.mem.eql(u8, lexeme, "~") or std.mem.eql(u8, lexeme, "'") or std.mem.eql(u8, lexeme, "not")) {
             self.index += 1;
-            const new_sym = ast.sym(self.allocator, lexeme) catch {
+            const lexeme_copy = self.allocator.alloc(u8, lexeme.len) catch {
+                return R.errMsg(ReaderErrorKind.Error, token.start, "Failed to allocate symbol.");
+            };
+            @memcpy(lexeme_copy, lexeme);
+            const new_sym = ast.sym(self.allocator, lexeme_copy) catch {
                 return R.errMsg(ReaderErrorKind.Error, token.start, "Failed to allocate symbol.");
             };
             return R.ok(new_sym);
@@ -508,16 +513,16 @@ pub const Reader = struct {
             },
         }
 
-        switch (self.readDotCall()) {
-            .success => |v| {
-                return R.ok(v);
-            },
-            .failure => |e| {
-                if (e.kind != ReaderErrorKind.NoMatch) {
-                    return R.fromErr(e);
-                }
-            },
-        }
+        // switch (self.readDotCall()) {
+        //     .success => |v| {
+        //         return R.ok(v);
+        //     },
+        //     .failure => |e| {
+        //         if (e.kind != ReaderErrorKind.NoMatch) {
+        //             return R.fromErr(e);
+        //         }
+        //     },
+        // }
 
         switch (self.readDoBlock()) {
             .success => |v| {
@@ -670,9 +675,7 @@ pub const Reader = struct {
             .success => |v| v,
         };
         if (self.tokenMatches("=") == null) {
-            self.index = start;
-            ast.deinit(sym, self.allocator);
-            return R.noMatch("Not a definition");
+            return R.ok(sym);
         }
         self.index += 1;
         const exp = switch (self.readExpression()) {
@@ -977,6 +980,13 @@ pub const Reader = struct {
     pub fn readBlockTillEnd(self: *Reader) *ast.Ast {
         var args = std.ArrayList(*ast.Ast).init(self.allocator);
 
+        if (self.tokenMatches("end")) |_| {
+            self.index += 1;
+            return ast.block(self.allocator, args) catch {
+                std.debug.panic("Failed to allocate block", .{});
+            };
+        }
+
         while (self.index < self.tokens.items.len) {
             const exp = switch (self.readExpression()) {
                 .failure => |e| {
@@ -1187,7 +1197,7 @@ pub const Reader = struct {
         };
         self.index += 1;
         const slice = convertEscapeSequences(self.allocator, lexeme[1 .. lexeme.len - 1]) catch {
-            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
+            return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to get lexeme");
         };
         return R.ok(ast.str(self.allocator, slice) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
@@ -1232,7 +1242,11 @@ pub const Reader = struct {
         const lexeme = self.tokenizer.getLexeme(sym) orelse {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to allocate lexeme");
         };
-        const symbol = ast.sym(self.allocator, lexeme) catch {
+        const lexeme_copy = self.allocator.alloc(u8, lexeme.len) catch {
+            return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
+        };
+        @memcpy(lexeme_copy, lexeme);
+        const symbol = ast.sym(self.allocator, lexeme_copy) catch {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
         };
         self.index += 1;

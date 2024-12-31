@@ -11,17 +11,17 @@ const utils = mibu.utils;
 const cursor = mibu.cursor;
 const clear = mibu.clear;
 
-pub fn installBase(g: *gc.Gc) void {
-    g.env().define("read-line", g.nfun(baseReadLine)) catch unreachable;
-    g.env().define("echo", g.nfun(baseEcho)) catch unreachable;
-    g.env().define("write", g.nfun(baseWrite)) catch unreachable;
-    g.env().define("cat", g.nfun(concat)) catch unreachable;
-    g.env().define("list-add", g.nfun(baseListAdd)) catch unreachable;
-    g.env().define("list-remove", g.nfun(baseListAdd)) catch unreachable;
-    g.env().define("dict-keys", g.nfun(baseDictKeys)) catch unreachable;
-    g.env().define("ref", g.nfun(baseDictRef)) catch unreachable;
-    g.env().define("nth", g.nfun(baseNth)) catch unreachable;
-    g.env().define("len", g.nfun(baseLen)) catch unreachable;
+pub fn installBase(g: *gc.Gc, env: *v.Environment) void {
+    env.define("read-line", g.nfun(baseReadLine)) catch unreachable;
+    env.define("echo", g.nfun(baseEcho)) catch unreachable;
+    env.define("write", g.nfun(baseWrite)) catch unreachable;
+    env.define("cat", g.nfun(concat)) catch unreachable;
+    env.define("list-add", g.nfun(baseListAdd)) catch unreachable;
+    env.define("list-remove", g.nfun(baseListAdd)) catch unreachable;
+    env.define("dict-keys", g.nfun(baseDictKeys)) catch unreachable;
+    env.define("ref", g.nfun(baseDictRef)) catch unreachable;
+    env.define("nth", g.nfun(baseNth)) catch unreachable;
+    env.define("len", g.nfun(baseLen)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -92,6 +92,7 @@ fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
         const s = v.toStringRaw(args.items[i], g.allocator, true) catch return errResult(g, "Failed to allocate string");
+        defer g.allocator.free(s);
         outw.print("{s}", .{s}) catch unreachable;
         if (i < args.items.len - 1) {
             _ = outw.write(" ") catch unreachable;
@@ -106,6 +107,7 @@ fn baseWrite(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
         const s = v.toStringRaw(args.items[i], g.allocator, false) catch return errResult(g, "Failed to allocate string");
+        defer g.allocator.free(s);
         outw.print("{s}", .{s}) catch unreachable;
     }
     return g.T();
@@ -117,6 +119,12 @@ const ReadLine = struct {
 };
 
 var readLine: ?ReadLine = null;
+
+pub fn deinitReadline() void {
+    if (readLine) |rl| {
+        rl.history.deinit();
+    }
+}
 
 pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     // may want to switch to u21 strings

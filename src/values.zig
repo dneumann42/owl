@@ -160,19 +160,6 @@ pub fn isEql(self: ?*const Value, other: ?*const Value) bool {
     };
 }
 
-fn getFormatString(value: *Value) []const u8 {
-    return switch (value.*) {
-        .nothing => "Nothing",
-        .symbol => "{s}",
-        .number => "{d}",
-        .boolean => "{s}",
-        .function => "[fn: {s}]",
-        .nativeFunction => "[native-fn]",
-        .cons => "({s})",
-        else => "{any}",
-    };
-}
-
 pub fn isBoolean(self: *const Value) bool {
     return switch (self.*) {
         .boolean => true,
@@ -276,7 +263,7 @@ pub const Function = struct {
     pub fn init(address: usize, params: std.ArrayList([]const u8), env: *Environment) Function {
         return Function{ .address = address, .params = params, .env = env };
     }
-    pub fn deinit(self: *Function) void {
+    pub fn deinit(self: Function) void {
         self.params.deinit();
     }
 };
@@ -336,12 +323,14 @@ pub const Environment = struct {
     }
 
     pub fn deinit(self: *Environment) void {
-        if (self.next) |nextEnv| {
-            nextEnv.deinit();
-        }
-
         self.values.deinit();
         self.allocator.destroy(self);
+    }
+
+    pub fn push(self: *Environment) *Environment {
+        const new_env = Environment.init(self.allocator) catch unreachable;
+        new_env.next = self;
+        return new_env;
     }
 
     pub fn find(self: *Environment, key: []const u8) ?*Value {
