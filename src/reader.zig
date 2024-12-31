@@ -257,7 +257,7 @@ pub const Tokenizer = struct {
 
     pub fn validSymbolCharacter(ch: u8) bool {
         return switch (ch) {
-            '+', '/', '*', '%', '$', '-', '>', '<', '=', '_' => true,
+            '+', '/', '*', '%', '$', '-', '>', '<', '=', '_', '?' => true,
             else => std.ascii.isAlphanumeric(ch),
         };
     }
@@ -513,17 +513,6 @@ pub const Reader = struct {
             },
         }
 
-        // switch (self.readDotCall()) {
-        //     .success => |v| {
-        //         return R.ok(v);
-        //     },
-        //     .failure => |e| {
-        //         if (e.kind != ReaderErrorKind.NoMatch) {
-        //             return R.fromErr(e);
-        //         }
-        //     },
-        // }
-
         switch (self.readDoBlock()) {
             .success => |v| {
                 return R.ok(v);
@@ -708,7 +697,7 @@ pub const Reader = struct {
             return R.err(ReaderErrorKind.InvalidFunctionDefinition, 0);
         }
         self.index += 1;
-        const args = self.readArgList();
+        const args = self.readArgList() catch |e| return R.err(e, 0);
         const body = self.readBlockTillEnd();
         return R.ok(ast.func(self.allocator, sym, args, body) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate func");
@@ -726,7 +715,7 @@ pub const Reader = struct {
             return R.err(ReaderErrorKind.InvalidLambda, 0);
         }
         self.index += 1;
-        const args = self.readArgList();
+        const args = self.readArgList() catch |e| return R.err(e, 0);
         const exp = switch (self.readExpression()) {
             .success => |v| v,
             .failure => |e| {
@@ -937,7 +926,7 @@ pub const Reader = struct {
                 };
             } else if (self.tokenMatches("(")) |_| {
                 self.index += 1;
-                const args = self.readArgList();
+                const args = self.readArgList() catch |e| return R.err(e, 0);
                 callable = ast.call(self.allocator, callable, args) catch {
                     return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate call.");
                 };
@@ -947,7 +936,7 @@ pub const Reader = struct {
         return R.ok(callable);
     }
 
-    pub fn readArgList(self: *Reader) std.ArrayList(*ast.Ast) {
+    pub fn readArgList(self: *Reader) error{MissingComma}!std.ArrayList(*ast.Ast) {
         var args = std.ArrayList(*ast.Ast).init(self.allocator);
         while (self.index < self.tokens.items.len) {
             if (self.tokenMatches(")")) |_| {
@@ -968,9 +957,8 @@ pub const Reader = struct {
                 self.index += 1;
                 break;
             }
-            if (self.tokens.items[self.index].kind != TokenKind.comma) {
-                ast.deinit(exp, self.allocator);
-                return args;
+            if (!self.isTokenKind(TokenKind.comma)) {
+                return error.MissingComma;
             }
             self.index += 1;
         }
@@ -1096,28 +1084,45 @@ pub const Reader = struct {
         }
 
         while (self.index < self.tokens.items.len) {
-            const sym = switch (self.readSymbol(false)) {
-                .success => |v| v,
-                .failure => {
-                    return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
-                },
-            };
+            // handle :<sym>
+            if (self.isTokenKind(TokenKind.colon)) {
+                self.index += 1;
+                const sym = switch (self.readSymbol(false)) {
+                    .success => |v| v,
+                    .failure => {
+                        return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
+                    },
+                };
+                const sym_value = ast.symAlloc(self.allocator, sym.symbol) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate value");
+                };
+                pairs.append(ast.KV{ .key = sym, .value = sym_value }) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append dictionary key value");
+                };
+            } else {
+                const sym = switch (self.readSymbol(false)) {
+                    .success => |v| v,
+                    .failure => {
+                        return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
+                    },
+                };
 
-            if (!self.isTokenKind(TokenKind.colon)) {
-                return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected colon after key");
+                if (!self.isTokenKind(TokenKind.colon)) {
+                    return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected colon after key");
+                }
+                self.index += 1;
+
+                const value = switch (self.readExpression()) {
+                    .success => |v| v,
+                    .failure => |e| {
+                        return R.fromErr(e);
+                    },
+                };
+
+                pairs.append(ast.KV{ .key = sym, .value = value }) catch {
+                    return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append dictionary key value");
+                };
             }
-            self.index += 1;
-
-            const value = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
-                    return R.fromErr(e);
-                },
-            };
-
-            pairs.append(ast.KV{ .key = sym, .value = value }) catch {
-                return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append dictionary key value");
-            };
 
             if (self.isTokenKind(TokenKind.comma)) {
                 self.index += 1;

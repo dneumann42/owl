@@ -9,32 +9,15 @@ const dot = @import("ast_dot.zig");
 const ast = @import("ast.zig");
 const m = @import("modules.zig");
 
-const Cli = struct {
-    run_script: ?[]const u8,
-    new_project: ?NewProject,
-
-    fn should_run_repl(self: @This()) bool {
-        return self.run_script == null;
-    }
-};
-
-const ProjectKind = enum { Library, Binary };
-
-const NewProject = struct {
-    name: []const u8,
-    kind: ProjectKind,
-};
-
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        if (gpa.deinit() == .leak) {
-            std.log.err("LEAKED MEMORY\n", .{});
-        }
-    }
-
-    // const allocator = std.heap.page_allocator;
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer {
+    //     if (gpa.deinit() == .leak) {
+    //         std.log.err("LEAKED MEMORY\n", .{});
+    //     }
+    // }
+    const allocator = std.heap.page_allocator;
 
     const args = try Args.init(allocator);
     defer args.deinit();
@@ -90,6 +73,22 @@ fn readValue(env: *v.Environment, args0: ?*v.Value) *v.Value {
         else => str,
     };
 }
+
+const Cli = struct {
+    run_script: ?[]const u8,
+    new_project: ?NewProject,
+
+    fn should_run_repl(self: @This()) bool {
+        return self.run_script == null;
+    }
+};
+
+const ProjectKind = enum { Library, Binary };
+
+const NewProject = struct {
+    name: []const u8,
+    kind: ProjectKind,
+};
 
 const Args = struct {
     allocator: std.mem.Allocator,

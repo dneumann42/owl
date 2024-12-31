@@ -1,6 +1,4 @@
-n := 3
-cond
-  n eq 1 do echo("HERE?") end
-  n eq 2 do echo("HERE?") end
-  n eq 3 do echo("HERE?") end
-end
+x := "hello"
+
+echo("hello", "world")
+

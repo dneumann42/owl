@@ -1,0 +1,26 @@
+fun create-task(name, status)
+  {
+    name: name,
+    status: status
+  }
+end
+
+fun completed?(task)
+  task.status eq "completed"
+end
+
+fun pending?(task)
+  task.status eq "pending"
+end
+
+fun working?(task)
+  task.status eq "working"
+end
+
+{
+  :create-task
+  :completed?
+  :pending?
+  :working?
+}
+
