@@ -164,6 +164,12 @@ pub fn sym(allocator: std.mem.Allocator, lexeme: []const u8) !*Ast {
     return s;
 }
 
+pub fn symAlloc(allocator: std.mem.Allocator, s: []const u8) !*Ast {
+    const copy = try allocator.alloc(u8, s.len);
+    std.mem.copyForwards(u8, copy, s);
+    return sym(allocator, copy);
+}
+
 pub fn num(allocator: std.mem.Allocator, number: f64) !*Ast {
     const s = try allocator.create(Ast);
     s.* = .{ .number = number };
@@ -174,6 +180,12 @@ pub fn str(allocator: std.mem.Allocator, lexeme: []const u8) !*Ast {
     const s = try allocator.create(Ast);
     s.* = .{ .string = lexeme };
     return s;
+}
+
+pub fn strAlloc(allocator: std.mem.Allocator, s: []const u8) !*Ast {
+    const copy = try allocator.alloc(u8, s.len);
+    std.mem.copyForwards(u8, copy, s);
+    return str(allocator, copy);
 }
 
 pub fn T(allocator: std.mem.Allocator) !*Ast {

@@ -11,12 +11,11 @@ const g = @import("gc.zig");
 test "dictionaries" {
     var gc = g.Gc.init(std.testing.allocator);
     defer gc.deinit();
-    var dict = v.Dictionary.init(gc.allocator);
-    defer dict.deinit();
-    try dict.put(gc.sym("hello"), gc.num(123.0));
-    try dict.put(gc.num(69.0), gc.num(420.0));
-    const value = dict.get(gc.sym("hello")) orelse unreachable;
-    const value2 = dict.get(gc.num(69.0)) orelse unreachable;
+    const dict = try gc.create(.{ .dictionary = v.Dictionary.init(gc.allocator) });
+    try dict.dictionary.put(gc.symAlloc("hello"), gc.num(123.0));
+    try dict.dictionary.put(gc.num(69.0), gc.num(420.0));
+    const value = dict.dictionary.get(gc.symAlloc("hello")) orelse unreachable;
+    const value2 = dict.dictionary.get(gc.num(69.0)) orelse unreachable;
     try expectEq(123.0, value.number);
     try expectEq(420.0, value2.number);
 }
