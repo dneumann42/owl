@@ -102,6 +102,15 @@ fun sub(a, b) a - b end
 }
 ```
 
+for the example above, a short hand syntax can be used
+
+```
+{
+    :add,
+    :sub
+}
+```
+
 ```
 ;; using the math module in `main.owl`
 use math

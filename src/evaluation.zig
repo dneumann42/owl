@@ -64,8 +64,8 @@ pub const Eval = struct {
             return error.ReaderError;
         };
         const node = switch (reader.read()) {
-            .success => |n| n,
-            .failure => {
+            .ok => |n| n,
+            .err => {
                 return error.ReaderError;
             },
         };

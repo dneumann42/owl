@@ -45,7 +45,7 @@ test "comments and whitespace" {
 test "reading programs" {
     var reader = try r.Reader.init(testing.allocator, "1");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     try testing.expectEqual(program.block.items[0].number, 1.0);
 }
@@ -53,7 +53,7 @@ test "reading programs" {
 test "reading number literals" {
     var reader = try r.Reader.init(testing.allocator, "31415926 1 2 3");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     try testing.expectEqual(program.block.items[0].number, 31415926);
     try testing.expectEqual(program.block.items[1].number, 1);
@@ -64,7 +64,7 @@ test "reading number literals" {
 test "reading boolean literals" {
     var reader = try r.Reader.init(testing.allocator, "true false");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     try testing.expectEqual(program.block.items[0].boolean, true);
     try testing.expectEqual(program.block.items[1].boolean, false);
@@ -75,7 +75,7 @@ test "reading string literals" {
         \\"Hello, World!" ""
     );
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     try testing.expectEqualStrings(program.block.items[0].string, "Hello, World!");
     try testing.expectEqualStrings(program.block.items[1].string, "");
@@ -84,15 +84,15 @@ test "reading string literals" {
 test "reading unary operators" {
     var reader = try r.Reader.init(testing.allocator, "not - x");
     defer reader.deinit();
-    const aa = reader.readUnaryOperator().success;
+    const aa = reader.readUnaryOperator().ok;
     defer a.deinit(aa, testing.allocator);
-    const ab = reader.readUnaryOperator().success;
+    const ab = reader.readUnaryOperator().ok;
     defer a.deinit(ab, testing.allocator);
     switch (reader.readUnaryOperator()) {
-        .success => {
+        .ok => {
             try testing.expect(false);
         },
-        .failure => {},
+        .err => {},
     }
 }
 
@@ -100,7 +100,7 @@ test "reading unary expressions" {
     var reader = try r.Reader.init(testing.allocator, "-123");
     defer reader.deinit();
     const aa_result = reader.readUnary();
-    const aa = aa_result.success;
+    const aa = aa_result.ok;
     defer a.deinit(aa, testing.allocator);
     try testing.expectEqualStrings(aa.unexp.op.symbol, "-");
     try testing.expectEqual(aa.unexp.value.number, 123);
@@ -109,7 +109,7 @@ test "reading unary expressions" {
 test "reading binary expressions" {
     var reader = try r.Reader.init(testing.allocator, "1 or 2 and 3 4 + 5");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqual(exp.binexp.a.number, 1);
@@ -126,7 +126,7 @@ test "reading binary expressions" {
 test "reading function calls" {
     var reader = try r.Reader.init(testing.allocator, "call(1, 2)");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
 
     const exp = program.block.items[0];
@@ -138,7 +138,7 @@ test "reading function calls" {
 test "reading dot & call expressions" {
     var reader = try r.Reader.init(testing.allocator, "a.b a().b a.b() a.b().c");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
 
     const exp1 = program.block.items[0];
@@ -162,7 +162,7 @@ test "reading dot & call expressions" {
 test "reading nested dot expressions" {
     var reader = try r.Reader.init(testing.allocator, "a.b.c");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp1 = program.block.items[0];
     try testing.expectEqualStrings(exp1.dot.a.dot.a.symbol, "a");
@@ -173,7 +173,7 @@ test "reading nested dot expressions" {
 test "reading empty functions" {
     var reader = try r.Reader.init(testing.allocator, "fun a() end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqualStrings(exp.func.sym.?.symbol, "a");
@@ -182,7 +182,7 @@ test "reading empty functions" {
 test "reading function definitions" {
     var reader = try r.Reader.init(testing.allocator, "fun add-1(y) y + 1 end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -197,7 +197,7 @@ test "reading function definitions" {
 test "reading lambdas" {
     var reader = try r.Reader.init(testing.allocator, "fn(y) y + 1");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -212,7 +212,7 @@ test "reading lambdas" {
 test "reading definitions" {
     var reader = try r.Reader.init(testing.allocator, "x := 10");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqualStrings(exp.definition.left.symbol, "x");
@@ -222,7 +222,7 @@ test "reading definitions" {
 test "reading assignment" {
     var reader = try r.Reader.init(testing.allocator, "x = 10");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqualStrings(exp.assignment.left.symbol, "x");
@@ -232,7 +232,7 @@ test "reading assignment" {
 test "reading do blocks" {
     var reader = try r.Reader.init(testing.allocator, "do 1 end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expect(exp.block.items.len == 1);
@@ -241,7 +241,7 @@ test "reading do blocks" {
 test "reading if" {
     var reader = try r.Reader.init(testing.allocator, "if true then 1 end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -254,7 +254,7 @@ test "reading if" {
 test "reading if with else" {
     var reader = try r.Reader.init(testing.allocator, "if true then 1 else 2 end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
@@ -266,7 +266,7 @@ test "reading if with else" {
 test "reading if with elif and else" {
     var reader = try r.Reader.init(testing.allocator, "if true then 1 elif false then 3 else 2 end");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
     try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
@@ -285,7 +285,7 @@ test "reading conditions" {
         \\end
     );
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -298,7 +298,7 @@ test "reading conditions" {
 test "reading dictionary literals" {
     var reader = try r.Reader.init(testing.allocator, "{ a: 1 b: 2 }");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -312,7 +312,7 @@ test "reading dictionary literals" {
 test "reading list literals" {
     var reader = try r.Reader.init(testing.allocator, "[1 2 3]");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -324,7 +324,7 @@ test "reading list literals" {
 test "reading empty list literals" {
     var reader = try r.Reader.init(testing.allocator, "[]");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     const exp = program.block.items[0];
 
@@ -334,7 +334,7 @@ test "reading empty list literals" {
 test "blocks" {
     var reader = try r.Reader.init(testing.allocator, "1 2 3");
     defer reader.deinit();
-    const program = reader.read().success;
+    const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
     try testing.expectEqual(program.block.items[0].number, 1);
     try testing.expectEqual(program.block.items[1].number, 2);

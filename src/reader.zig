@@ -25,31 +25,31 @@ pub const ReaderError = struct {
 
 fn Result(comptime T: type) type {
     return union(enum) {
-        success: T,
-        failure: ReaderError,
+        ok: T,
+        err: ReaderError,
 
         pub fn noMatch(msg: []const u8) @This() {
-            return .{ .failure = .{ .kind = ReaderErrorKind.NoMatch, .start = 0, .message = msg } };
+            return .{ .err = .{ .kind = ReaderErrorKind.NoMatch, .start = 0, .message = msg } };
         }
 
-        pub fn err(kind: ReaderErrorKind, start: usize) @This() {
+        pub fn e(kind: ReaderErrorKind, start: usize) @This() {
             return .{
-                .failure = .{ .kind = kind, .start = start, .message = null },
+                .err = .{ .kind = kind, .start = start, .message = null },
             };
         }
 
         pub fn errMsg(kind: ReaderErrorKind, start: usize, message: []const u8) @This() {
             return .{
-                .failure = .{ .kind = kind, .start = start, .message = message },
+                .err = .{ .kind = kind, .start = start, .message = message },
             };
         }
 
-        pub fn fromErr(e: ReaderError) @This() {
-            return .{ .failure = e };
+        pub fn fromErr(er: ReaderError) @This() {
+            return .{ .err = er };
         }
 
-        pub fn ok(value: T) @This() {
-            return .{ .success = value };
+        pub fn o(value: T) @This() {
+            return .{ .ok = value };
         }
     };
 }
@@ -294,8 +294,8 @@ pub const Reader = struct {
         };
         while (self.index < self.tokens.items.len) {
             const exp = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
+                .ok => |v| v,
+                .err => |e| {
                     if (e.message) |msg| {
                         std.log.err("{s}\n", .{msg});
                     } else {
@@ -308,7 +308,7 @@ pub const Reader = struct {
                 return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append expression");
             };
         }
-        return R.ok(block);
+        return R.o(block);
     }
 
     fn readExpression(self: *Reader) R {
@@ -323,19 +323,19 @@ pub const Reader = struct {
     ) R {
         var pin = self.index;
         const left = switch (left_parse(self)) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 self.index = pin;
-                return R.err(e.kind, e.start);
+                return R.e(e.kind, e.start);
             },
         };
         pin = self.index;
         const symbol = switch (self.readSymbol(true)) {
-            .success => |v| v,
-            .failure => {
+            .ok => |v| v,
+            .err => {
                 // handle non no match errors
                 self.index = pin;
-                return R.ok(left);
+                return R.o(left);
             },
         };
 
@@ -350,12 +350,12 @@ pub const Reader = struct {
         if (!operator_match) {
             self.index = pin;
             ast.deinit(symbol, self.allocator);
-            return R.ok(left);
+            return R.o(left);
         }
 
         const right = switch (right_parse(self)) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 self.index = pin;
                 return R.fromErr(e);
             },
@@ -364,7 +364,7 @@ pub const Reader = struct {
         const exp = ast.binexp(self.allocator, left, symbol, right) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate binexp");
         };
-        return R.ok(exp);
+        return R.o(exp);
     }
 
     fn readBinaryLogicalOr(self: *Reader) R {
@@ -394,26 +394,26 @@ pub const Reader = struct {
     pub fn readUnary(self: *Reader) R {
         const start = self.index;
         const op = switch (self.readUnaryOperator()) {
-            .failure => {
+            .err => {
                 self.index = start;
                 return self.readPrimary();
             },
-            .success => |s| s,
+            .ok => |s| s,
         };
         const primary = switch (self.readPrimary()) {
-            .failure => {
+            .err => {
                 self.index = start;
                 ast.deinit(op, self.allocator);
                 return R.noMatch("Read unary primary");
             },
-            .success => |p| p,
+            .ok => |p| p,
         };
 
         const un = ast.unexp(self.allocator, op, primary) catch {
             return R.errMsg(ReaderErrorKind.Error, self.index, "Failed to allocate unexp");
         };
 
-        return R.ok(un);
+        return R.o(un);
     }
 
     pub fn tokenMatches(self: *Reader, match: []const u8) ?usize {
@@ -454,7 +454,7 @@ pub const Reader = struct {
             const new_sym = ast.sym(self.allocator, lexeme_copy) catch {
                 return R.errMsg(ReaderErrorKind.Error, token.start, "Failed to allocate symbol.");
             };
-            return R.ok(new_sym);
+            return R.o(new_sym);
         }
         return R.noMatch("Lexeme is not a unary operator");
     }
@@ -468,23 +468,23 @@ pub const Reader = struct {
         if (self.tokenMatches("(")) |start| {
             self.index += 1;
             const exp = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
-                    return R.err(e.kind, e.start);
+                .ok => |v| v,
+                .err => |e| {
+                    return R.e(e.kind, e.start);
                 },
             };
 
             if (self.tokenMatches(")")) |_| {} else {
                 return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
             }
-            return R.ok(exp);
+            return R.o(exp);
         }
 
         switch (self.readUse()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -492,10 +492,10 @@ pub const Reader = struct {
         }
 
         switch (self.readDefinition()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -503,10 +503,10 @@ pub const Reader = struct {
         }
 
         switch (self.readAssignment()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -514,10 +514,10 @@ pub const Reader = struct {
         }
 
         switch (self.readDoBlock()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -525,10 +525,10 @@ pub const Reader = struct {
         }
 
         switch (self.readFunctionDefinition()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -536,10 +536,10 @@ pub const Reader = struct {
         }
 
         switch (self.readLambda()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -547,10 +547,10 @@ pub const Reader = struct {
         }
 
         switch (self.readIf()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -558,10 +558,10 @@ pub const Reader = struct {
         }
 
         switch (self.readCond()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -569,10 +569,10 @@ pub const Reader = struct {
         }
 
         switch (self.readWhile()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -580,10 +580,10 @@ pub const Reader = struct {
         }
 
         switch (self.readFor()) {
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -599,7 +599,7 @@ pub const Reader = struct {
         }
         self.index += 1;
         const block = self.readBlockTillEnd();
-        return R.ok(block);
+        return R.o(block);
     }
 
     pub fn readUse(self: *Reader) R {
@@ -608,12 +608,12 @@ pub const Reader = struct {
         }
         self.index += 1;
         switch (self.readSymbol(false)) {
-            .success => |s| {
-                return R.ok(ast.use(self.allocator, s.symbol) catch {
+            .ok => |s| {
+                return R.o(ast.use(self.allocator, s.symbol) catch {
                     return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
                 });
             },
-            .failure => {
+            .err => {
                 return R.errMsg(ReaderErrorKind.InvalidUse, 0, "Use expects a module name");
             },
         }
@@ -622,10 +622,10 @@ pub const Reader = struct {
     pub fn readDefinition(self: *Reader) R {
         const start = self.index;
         const sym = switch (self.readSymbol(false)) {
-            .failure => |e| {
+            .err => |e| {
                 return R.fromErr(e);
             },
-            .success => |v| v,
+            .ok => |v| v,
         };
 
         if (self.isTokenKind(TokenKind.colon)) {
@@ -643,14 +643,14 @@ pub const Reader = struct {
         }
 
         const exp = switch (self.readExpression()) {
-            .failure => |e| {
+            .err => |e| {
                 self.index = start;
                 ast.deinit(sym, self.allocator);
                 return R.fromErr(e);
             },
-            .success => |v| v,
+            .ok => |v| v,
         };
-        return R.ok(ast.define(self.allocator, sym, exp) catch {
+        return R.o(ast.define(self.allocator, sym, exp) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
         });
     }
@@ -658,24 +658,24 @@ pub const Reader = struct {
     pub fn readAssignment(self: *Reader) R {
         const start = self.index;
         const sym = switch (self.readDotCall()) {
-            .failure => |e| {
+            .err => |e| {
                 return R.fromErr(e);
             },
-            .success => |v| v,
+            .ok => |v| v,
         };
         if (self.tokenMatches("=") == null) {
-            return R.ok(sym);
+            return R.o(sym);
         }
         self.index += 1;
         const exp = switch (self.readExpression()) {
-            .failure => |e| {
+            .err => |e| {
                 self.index = start;
                 ast.deinit(sym, self.allocator);
                 return R.fromErr(e);
             },
-            .success => |v| v,
+            .ok => |v| v,
         };
-        return R.ok(ast.assign(self.allocator, sym, exp) catch {
+        return R.o(ast.assign(self.allocator, sym, exp) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate definition");
         });
     }
@@ -688,18 +688,18 @@ pub const Reader = struct {
         self.index += 1;
 
         const sym: ?*ast.Ast = switch (self.readSymbol(false)) {
-            .failure => null,
-            .success => |s| s,
+            .err => null,
+            .ok => |s| s,
         };
 
         if (!self.isTokenKind(TokenKind.openParen)) {
             self.index = start;
-            return R.err(ReaderErrorKind.InvalidFunctionDefinition, 0);
+            return R.e(ReaderErrorKind.InvalidFunctionDefinition, 0);
         }
         self.index += 1;
-        const args = self.readArgList() catch |e| return R.err(e, 0);
+        const args = self.readArgList() catch |e| return R.e(e, 0);
         const body = self.readBlockTillEnd();
-        return R.ok(ast.func(self.allocator, sym, args, body) catch {
+        return R.o(ast.func(self.allocator, sym, args, body) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate func");
         });
     }
@@ -712,17 +712,17 @@ pub const Reader = struct {
         self.index += 1;
         if (!self.isTokenKind(TokenKind.openParen)) {
             self.index = start;
-            return R.err(ReaderErrorKind.InvalidLambda, 0);
+            return R.e(ReaderErrorKind.InvalidLambda, 0);
         }
         self.index += 1;
-        const args = self.readArgList() catch |e| return R.err(e, 0);
+        const args = self.readArgList() catch |e| return R.e(e, 0);
         const exp = switch (self.readExpression()) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 return R.fromErr(e);
             },
         };
-        return R.ok(ast.func(self.allocator, null, args, exp) catch {
+        return R.o(ast.func(self.allocator, null, args, exp) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate func");
         });
     }
@@ -756,8 +756,8 @@ pub const Reader = struct {
             first = false;
 
             const elifCond = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
+                .ok => |v| v,
+                .err => |e| {
                     return R.fromErr(e);
                 },
             };
@@ -786,10 +786,10 @@ pub const Reader = struct {
                 }
 
                 switch (self.readExpression()) {
-                    .failure => |e| {
+                    .err => |e| {
                         return R.fromErr(e);
                     },
-                    .success => |v| {
+                    .ok => |v| {
                         blockBody.append(v) catch {
                             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to append block body");
                         };
@@ -798,7 +798,7 @@ pub const Reader = struct {
             }
         }
 
-        return R.ok(ast.ifx(self.allocator, branches, elseBranch) catch {
+        return R.o(ast.ifx(self.allocator, branches, elseBranch) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
         });
     }
@@ -809,8 +809,8 @@ pub const Reader = struct {
         }
         self.index += 1;
         const cond = switch (self.readExpression()) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 return R.fromErr(e);
             },
         };
@@ -819,7 +819,7 @@ pub const Reader = struct {
         }
         self.index += 1;
         const block = self.readBlockTillEnd();
-        return R.ok(ast.whilex(self.allocator, cond, block) catch {
+        return R.o(ast.whilex(self.allocator, cond, block) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate while");
         });
     }
@@ -830,8 +830,8 @@ pub const Reader = struct {
         }
         self.index += 1;
         const variable = switch (self.readSymbol(false)) {
-            .success => |s| s,
-            .failure => {
+            .ok => |s| s,
+            .err => {
                 return R.errMsg(ReaderErrorKind.InvalidFor, 0, "for expects symbol for variable");
             },
         };
@@ -842,8 +842,8 @@ pub const Reader = struct {
         self.index += 1;
 
         const iterable = switch (self.readExpression()) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 return R.fromErr(e);
             },
         };
@@ -853,7 +853,7 @@ pub const Reader = struct {
         }
         self.index += 1;
         const block = self.readBlockTillEnd();
-        return R.ok(ast.forx(self.allocator, variable, iterable, block) catch {
+        return R.o(ast.forx(self.allocator, variable, iterable, block) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate for");
         });
     }
@@ -868,8 +868,8 @@ pub const Reader = struct {
         self.index += 1;
         while (self.index < self.tokens.items.len) {
             const cond = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
+                .ok => |v| v,
+                .err => |e| {
                     return R.fromErr(e);
                 },
             };
@@ -893,7 +893,7 @@ pub const Reader = struct {
             }
         }
 
-        return R.ok(ast.ifx(self.allocator, branches, null) catch {
+        return R.o(ast.ifx(self.allocator, branches, null) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate if");
         });
     }
@@ -901,8 +901,8 @@ pub const Reader = struct {
     // this is a terminal that can yield a literal
     pub fn readDotCall(self: *Reader) R {
         var callable = switch (self.readCallable()) {
-            .success => |v| v,
-            .failure => |e| {
+            .ok => |v| v,
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
@@ -910,30 +910,30 @@ pub const Reader = struct {
             },
         };
         if (!self.isTokenKind(TokenKind.dot) and self.tokenMatches("(") == null) {
-            return R.ok(callable);
+            return R.o(callable);
         }
         while (self.isTokenKind(TokenKind.dot) or self.tokenMatches("(") != null) {
             if (self.isTokenKind(TokenKind.dot)) {
                 self.index += 1;
                 const sym = switch (self.readSymbol(false)) {
-                    .failure => {
-                        return R.err(ReaderErrorKind.DotMissingParameter, 0);
+                    .err => {
+                        return R.e(ReaderErrorKind.DotMissingParameter, 0);
                     },
-                    .success => |s| s,
+                    .ok => |s| s,
                 };
                 callable = ast.dot(self.allocator, callable, sym) catch {
                     return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dot.");
                 };
             } else if (self.tokenMatches("(")) |_| {
                 self.index += 1;
-                const args = self.readArgList() catch |e| return R.err(e, 0);
+                const args = self.readArgList() catch |e| return R.e(e, 0);
                 callable = ast.call(self.allocator, callable, args) catch {
                     return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate call.");
                 };
             }
         }
 
-        return R.ok(callable);
+        return R.o(callable);
     }
 
     pub fn readArgList(self: *Reader) error{MissingComma}!std.ArrayList(*ast.Ast) {
@@ -944,8 +944,8 @@ pub const Reader = struct {
                 break;
             }
             const exp = switch (self.readExpression()) {
-                .success => |s| s,
-                .failure => {
+                .ok => |s| s,
+                .err => {
                     return args;
                 },
             };
@@ -977,10 +977,10 @@ pub const Reader = struct {
 
         while (self.index < self.tokens.items.len) {
             const exp = switch (self.readExpression()) {
-                .failure => |e| {
+                .err => |e| {
                     std.debug.panic("Failed to read expression: {any}", .{e});
                 },
-                .success => |v| v,
+                .ok => |v| v,
             };
 
             args.append(exp) catch unreachable;
@@ -1003,13 +1003,13 @@ pub const Reader = struct {
 
     pub fn readCallable(self: *Reader) R {
         switch (self.readLiteral()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         return self.readSymbol(false);
@@ -1017,53 +1017,53 @@ pub const Reader = struct {
 
     pub fn readLiteral(self: *Reader) R {
         switch (self.readNumber()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         switch (self.readBoolean()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         switch (self.readString()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         switch (self.readList()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         switch (self.readDictionary()) {
-            .failure => |e| {
+            .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {
                     return R.fromErr(e);
                 }
             },
-            .success => |v| {
-                return R.ok(v);
+            .ok => |v| {
+                return R.o(v);
             },
         }
         return R.noMatch("Literal");
@@ -1078,7 +1078,7 @@ pub const Reader = struct {
 
         if (self.isTokenKind(TokenKind.closeBrace)) {
             self.index += 1;
-            return R.ok(ast.dict(self.allocator, pairs) catch {
+            return R.o(ast.dict(self.allocator, pairs) catch {
                 return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dictionary");
             });
         }
@@ -1088,8 +1088,8 @@ pub const Reader = struct {
             if (self.isTokenKind(TokenKind.colon)) {
                 self.index += 1;
                 const sym = switch (self.readSymbol(false)) {
-                    .success => |v| v,
-                    .failure => {
+                    .ok => |v| v,
+                    .err => {
                         return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
                     },
                 };
@@ -1101,8 +1101,8 @@ pub const Reader = struct {
                 };
             } else {
                 const sym = switch (self.readSymbol(false)) {
-                    .success => |v| v,
-                    .failure => {
+                    .ok => |v| v,
+                    .err => {
                         return R.errMsg(ReaderErrorKind.InvalidDictionary, 0, "Expected symbol");
                     },
                 };
@@ -1113,8 +1113,8 @@ pub const Reader = struct {
                 self.index += 1;
 
                 const value = switch (self.readExpression()) {
-                    .success => |v| v,
-                    .failure => |e| {
+                    .ok => |v| v,
+                    .err => |e| {
                         return R.fromErr(e);
                     },
                 };
@@ -1136,7 +1136,7 @@ pub const Reader = struct {
             }
         }
 
-        return R.ok(ast.dict(self.allocator, pairs) catch {
+        return R.o(ast.dict(self.allocator, pairs) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to allocate dictionary");
         });
     }
@@ -1149,14 +1149,14 @@ pub const Reader = struct {
         var xs = std.ArrayList(*ast.Ast).init(self.allocator);
         if (self.isTokenKind(TokenKind.closeBracket)) {
             self.index += 1;
-            return R.ok(ast.list(self.allocator, xs) catch {
+            return R.o(ast.list(self.allocator, xs) catch {
                 return R.errMsg(ReaderErrorKind.Error, 0, "Failed to alloc list");
             });
         }
         while (self.index < self.tokens.items.len) {
             const exp = switch (self.readExpression()) {
-                .success => |v| v,
-                .failure => |e| {
+                .ok => |v| v,
+                .err => |e| {
                     return R.fromErr(e);
                 },
             };
@@ -1170,10 +1170,10 @@ pub const Reader = struct {
                 self.index += 1;
                 break;
             } else if (self.index >= self.tokens.items.len) {
-                return R.err(ReaderErrorKind.MissingClosingBracket, 0);
+                return R.e(ReaderErrorKind.MissingClosingBracket, 0);
             }
         }
-        return R.ok(ast.list(self.allocator, xs) catch {
+        return R.o(ast.list(self.allocator, xs) catch {
             return R.errMsg(ReaderErrorKind.Error, 0, "Failed to alloc list");
         });
     }
@@ -1187,7 +1187,7 @@ pub const Reader = struct {
             return R.noMatch("Number lexeme");
         };
         self.index += 1;
-        return R.ok(ast.num(self.allocator, num) catch {
+        return R.o(ast.num(self.allocator, num) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc number node");
         });
     }
@@ -1204,7 +1204,7 @@ pub const Reader = struct {
         const slice = convertEscapeSequences(self.allocator, lexeme[1 .. lexeme.len - 1]) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to get lexeme");
         };
-        return R.ok(ast.str(self.allocator, slice) catch {
+        return R.o(ast.str(self.allocator, slice) catch {
             return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc string");
         });
     }
@@ -1220,13 +1220,13 @@ pub const Reader = struct {
         };
         if (std.mem.eql(u8, lexeme, "true")) {
             self.index += 1;
-            return R.ok(ast.T(self.allocator) catch {
+            return R.o(ast.T(self.allocator) catch {
                 return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc boolean");
             });
         }
         if (std.mem.eql(u8, lexeme, "false")) {
             self.index += 1;
-            return R.ok(ast.F(self.allocator) catch {
+            return R.o(ast.F(self.allocator) catch {
                 return R.errMsg(ReaderErrorKind.Error, tok.start, "Failed to alloc boolean");
             });
         }
@@ -1255,7 +1255,7 @@ pub const Reader = struct {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
         };
         self.index += 1;
-        return R.ok(symbol);
+        return R.o(symbol);
     }
 };
 
