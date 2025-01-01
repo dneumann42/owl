@@ -157,7 +157,16 @@ pub const Library = struct {
         log_values: bool = false,
     }) !void {
         if (opts.install_core) {
-            try self.installCoreLibrary("lib/core.owl");
+            self.installCoreLibrary("lib/core.owl") catch |err| switch (err) {
+                error.ReaderError => {
+                    if (self.reader_error) |reader_err| {
+                        std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
+                    } else {
+                        std.log.err("Reader error", .{});
+                    }
+                },
+                else => {},
+            };
         }
         if (opts.install_base) {
             owl_std.installBase(self.gc, self.env);

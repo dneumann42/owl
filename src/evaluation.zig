@@ -9,7 +9,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const nothing = v.nothing;
 
-pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr, InvalidAssignment };
+pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr, InvalidAssignment, Undefined };
 
 pub const EvalErrorReport = struct {
     message: []const u8,
@@ -328,7 +328,13 @@ pub const Eval = struct {
             .dictionary => |d| {
                 return d.get(b) orelse self.gc.nothing();
             },
+            .nothing => {
+                const meta = ast.getAstMeta(dot.b);
+                self.logErrLn(meta.line, "Left side of dot operator is undefined", .{});
+                return error.Undefined;
+            },
             else => {
+                std.debug.print("{any}", .{a});
                 return error.NotImplemented;
             },
         }

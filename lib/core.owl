@@ -10,6 +10,17 @@ fun range(min, max)
   end
 end
 
+fun items(list)
+  i := 0
+  fn() if i < len(list) then
+    itm = nth(item, i)
+    i = i + 1
+    itm
+  else
+    false
+  end
+end
+
 {
   range: range
 }

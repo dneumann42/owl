@@ -57,8 +57,8 @@ fun bg-rgb(r, g, b)
 end
 
 {
-  Color: Color,
-  Style: Style,
-  style: style,
-  fg-color: fg-color,
+  :Color,
+  :Style,
+  :style,
+  :fg-color,
 }

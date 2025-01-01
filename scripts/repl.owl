@@ -1,13 +1,13 @@
-archimedes := " ~___~  Owl (0.0.0-dev)
- {O,o}  enter ',h' for help screen
-/)___)  or '?' for list of repl commands
+archimedes := " ~___~  Owl (0.0.0_dev)
+ {O,o}  enter '?' for help screen
+/)___)  or ',h' for history
   ' '"
 
 fun command(key, description, call)
   { 
-    key: key, 
-    description: description, 
-    call: call 
+    :key, 
+    :description, 
+    :call 
   }
 end
 

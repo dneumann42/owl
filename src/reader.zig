@@ -16,7 +16,7 @@ pub const Token = struct {
     }
 };
 
-pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, InvalidFor, InvalidUse, Error };
+pub const ReaderErrorKind = error{ NoMatch, MissingClosingParen, MissingClosingBracket, MissingComma, MissingEnd, DotMissingParameter, InvalidFunctionDefinition, InvalidLambda, InvalidIf, InvalidCond, InvalidDictionary, InvalidFor, InvalidUse, Error };
 
 pub const ReaderError = struct {
     kind: ReaderErrorKind,
@@ -63,6 +63,7 @@ pub fn getErrorMessage(err: ReaderError) []const u8 {
         error.MissingClosingParen => "Missing closing parenthesis",
         error.MissingClosingBracket => "Missing closing bracket",
         error.MissingComma => "Missing comma",
+        error.MissingEnd => "Missing end",
         error.DotMissingParameter => "Dot is missing parameter",
         error.InvalidFunctionDefinition => "Invalid function definition",
         error.InvalidLambda => "Invalid lambda",
@@ -635,7 +636,12 @@ pub const Reader = struct {
             return R.noMatch("Not a do block");
         }
         self.index += 1;
-        const block = self.readBlockTillEnd();
+        const block = switch (self.readBlockTillEnd()) {
+            .err => |e| {
+                return R.fromErr(e);
+            },
+            .ok => |v| v,
+        };
         return R.o(block);
     }
 
@@ -735,7 +741,12 @@ pub const Reader = struct {
         }
         self.index += 1;
         const args = self.readArgList() catch |e| return R.e(e, 0);
-        const body = self.readBlockTillEnd();
+        const body = switch (self.readBlockTillEnd()) {
+            .err => |e| {
+                return R.fromErr(e);
+            },
+            .ok => |v| v,
+        };
         return R.o(ast.func(self.allocator, sym, args, body, .{}) catch {
             return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate func");
         });
@@ -776,7 +787,12 @@ pub const Reader = struct {
         while (self.index < self.tokens.items.len) {
             if (self.tokenMatches("else")) |_| {
                 self.index += 1;
-                elseBranch = self.readBlockTillEnd();
+                elseBranch = switch (self.readBlockTillEnd()) {
+                    .err => |e| {
+                        return R.fromErr(e);
+                    },
+                    .ok => |v| v,
+                };
                 break;
             }
 
@@ -855,7 +871,12 @@ pub const Reader = struct {
             return R.errMsg(ReaderErrorKind.InvalidCond, self.charIndex(), "Condition is missing do");
         }
         self.index += 1;
-        const block = self.readBlockTillEnd();
+        const block = switch (self.readBlockTillEnd()) {
+            .err => |e| {
+                return R.fromErr(e);
+            },
+            .ok => |v| v,
+        };
         return R.o(ast.whilex(self.allocator, cond, block, .{}) catch {
             return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate while");
         });
@@ -889,7 +910,12 @@ pub const Reader = struct {
             return R.errMsg(ReaderErrorKind.InvalidCond, self.charIndex(), "Condition is missing do");
         }
         self.index += 1;
-        const block = self.readBlockTillEnd();
+        const block = switch (self.readBlockTillEnd()) {
+            .err => |e| {
+                return R.fromErr(e);
+            },
+            .ok => |v| v,
+        };
         return R.o(ast.forx(self.allocator, variable, iterable, block, .{}) catch {
             return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate for");
         });
@@ -915,7 +941,12 @@ pub const Reader = struct {
                 return R.errMsg(ReaderErrorKind.InvalidCond, self.charIndex(), "Condition is missing do");
             }
             self.index += 1;
-            const block = self.readBlockTillEnd();
+            const block = switch (self.readBlockTillEnd()) {
+                .err => |e| {
+                    return R.fromErr(e);
+                },
+                .ok => |v| v,
+            };
 
             branches.append(ast.Branch{ .check = cond, .then = block }) catch {
                 return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to append branch");
@@ -1005,20 +1036,22 @@ pub const Reader = struct {
         return args;
     }
 
-    pub fn readBlockTillEnd(self: *Reader) *ast.Ast {
+    pub fn readBlockTillEnd(self: *Reader) R {
+        const start_index = self.charIndex();
         var args = std.ArrayList(*ast.Ast).init(self.allocator);
 
         if (self.tokenMatches("end")) |_| {
             self.index += 1;
-            return ast.block(self.allocator, args, .{}) catch {
+            return R.o(ast.block(self.allocator, args, .{}) catch {
                 std.debug.panic("Failed to allocate block", .{});
-            };
+                return R.e(ReaderErrorKind.Error, 0);
+            });
         }
 
         while (self.index < self.tokens.items.len) {
             const exp = switch (self.readExpression()) {
                 .err => |e| {
-                    std.debug.panic("Failed to read expression: {any}", .{e});
+                    return R.fromErr(e);
                 },
                 .ok => |v| v,
             };
@@ -1031,14 +1064,13 @@ pub const Reader = struct {
             }
 
             if (self.index >= self.tokens.items.len) {
-                std.debug.panic("Missing closing 'end'.\n", .{});
-                break;
+                return R.e(ReaderErrorKind.MissingEnd, start_index);
             }
         }
 
-        return ast.block(self.allocator, args, .{}) catch {
-            std.debug.panic("Failed to allocate block", .{});
-        };
+        return R.o(ast.block(self.allocator, args, .{}) catch {
+            return R.e(ReaderErrorKind.Error, start_index);
+        });
     }
 
     pub fn readCallable(self: *Reader) R {
