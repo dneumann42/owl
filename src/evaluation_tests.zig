@@ -32,8 +32,6 @@ test "evaluating symbols" {
 
     const err = ev.eval(env, "world");
     try expectError(error.UndefinedSymbol, err);
-    const log = ev.getErrorLog();
-    try expectEqStr("Undefined symbol 'world'", log);
 }
 
 test "evaluating binary expressions" {

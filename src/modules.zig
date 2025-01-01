@@ -112,8 +112,13 @@ pub const Library = struct {
         }
 
         const value = self.evaluator.evalNode(self.env, ast) catch |err| {
-            const log = self.evaluator.getErrorLog();
-            std.log.err("{any}: {s}\n", .{ err, log });
+            const logs = self.evaluator.error_log;
+            if (logs.items.len == 0) {
+                std.log.err("{any}\n", .{err});
+                return;
+            }
+            const log = logs.items[0];
+            std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
             return;
         };
 
@@ -129,8 +134,13 @@ pub const Library = struct {
     pub fn installCoreLibrary(self: *Library, path: []const u8) !void {
         const ast = try self.getModuleAst(path);
         const value = self.evaluator.evalNode(self.env, ast) catch |err| {
-            const log = self.evaluator.getErrorLog();
-            std.log.err("{any}: {s}\n", .{ err, log });
+            const logs = self.evaluator.error_log;
+            if (logs.items.len == 0) {
+                std.log.err("{any}\n", .{err});
+                return;
+            }
+            const log = logs.items[0];
+            std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
             return;
         };
 
@@ -155,7 +165,7 @@ pub const Library = struct {
         self.loadModuleDependencies(path, opts.log_values) catch |err| switch (err) {
             error.ReaderError => {
                 if (self.reader_error) |reader_err| {
-                    std.log.err("{s}:{d}: {s}", .{ reader_err.path, reader_err.line_number, reader_err.message });
+                    std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
                 } else {
                     std.log.err("Reader error", .{});
                 }
