@@ -6,12 +6,23 @@ const a = @import("ast.zig");
 const owl_std = @import("base.zig");
 const r = @import("reader.zig");
 
+const ModuleError = error{ IOError, OutOfMemory, ReaderError };
+
+pub const ErrorReport = struct {
+    line_number: usize,
+    char_index: usize,
+    message: []const u8,
+    path: []const u8,
+};
+
 pub const Library = struct {
     gc: *g.Gc,
     env: *v.Environment,
     evaluator: e.Eval,
     allocator: std.mem.Allocator,
     modules: std.StringHashMap(v.Module),
+
+    reader_error: ?ErrorReport,
 
     pub fn init(allocator: std.mem.Allocator) Library {
         // var gc = g.Gc.init(allocator);
@@ -26,6 +37,7 @@ pub const Library = struct {
             .evaluator = e.Eval.init(gc),
             .allocator = allocator,
             .modules = std.StringHashMap(v.Module).init(allocator),
+            .reader_error = null,
         };
     }
 
@@ -38,24 +50,29 @@ pub const Library = struct {
         owl_std.deinitReadline();
     }
 
-    pub fn getModuleAst(self: *Library, path: []const u8) !*a.Ast {
-        var file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch |err| {
-            const cwd = try std.fs.cwd().realpathAlloc(self.allocator, ".");
+    pub fn getModuleAst(self: *Library, path: []const u8) ModuleError!*a.Ast {
+        var file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch {
+            const cwd = std.fs.cwd().realpathAlloc(self.allocator, ".") catch return error.IOError;
             std.log.err("File not found '{s}' current working directory '{s}'", .{ path, cwd });
-            return err;
+            return error.IOError;
         };
+
         defer file.close();
-        const file_content = try file.readToEndAlloc(self.allocator, comptime std.math.maxInt(usize));
+        const file_content = file.readToEndAlloc(self.allocator, comptime std.math.maxInt(usize)) catch return error.IOError;
         defer self.allocator.free(file_content);
 
-        var reader = r.Reader.init(self.allocator, file_content) catch {
-            return error.ParseError;
-        };
+        var reader = r.Reader.init(self.allocator, file_content) catch return error.OutOfMemory;
         defer reader.deinit();
         return switch (reader.read()) {
-            .success => |val| val,
-            .failure => {
-                return error.ParseError;
+            .ok => |val| val,
+            .err => |err| {
+                self.reader_error = ErrorReport{
+                    .line_number = reader.countLines(err.start),
+                    .char_index = 0,
+                    .message = r.getErrorMessage(err),
+                    .path = path,
+                };
+                return error.ReaderError;
             },
         };
     }
@@ -79,6 +96,7 @@ pub const Library = struct {
         }
 
         const ast = try self.getModuleAst(path);
+
         defer a.deinit(ast, self.allocator);
         const deps = try self.getModuleDependencies(ast);
         const dir = std.fs.path.dirname(path) orelse "";
@@ -134,6 +152,15 @@ pub const Library = struct {
         if (opts.install_base) {
             owl_std.installBase(self.gc, self.env);
         }
-        try self.loadModuleDependencies(path, opts.log_values);
+        self.loadModuleDependencies(path, opts.log_values) catch |err| switch (err) {
+            error.ReaderError => {
+                if (self.reader_error) |reader_err| {
+                    std.log.err("{s}:{d}: {s}", .{ reader_err.path, reader_err.line_number, reader_err.message });
+                } else {
+                    std.log.err("Reader error", .{});
+                }
+            },
+            else => {},
+        };
     }
 };
