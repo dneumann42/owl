@@ -25,8 +25,6 @@ pub const Library = struct {
     reader_error: ?ErrorReport,
 
     pub fn init(allocator: std.mem.Allocator) Library {
-        // var gc = g.Gc.init(allocator);
-
         const gc = allocator.create(g.Gc) catch unreachable;
         gc.* = g.Gc.init(allocator);
 
@@ -96,6 +94,9 @@ pub const Library = struct {
         }
 
         const ast = try self.getModuleAst(path);
+
+        // const ast_str = try a.toString(ast, self.allocator);
+        // std.log.info("AST {s}\n{s}\n", .{ path, ast_str });
 
         defer a.deinit(ast, self.allocator);
         const deps = try self.getModuleDependencies(ast);

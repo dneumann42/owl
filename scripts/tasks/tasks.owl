@@ -1,7 +1,6 @@
 use task
 
 done := false
-
 tasks := []
 
 fun list-tasks()

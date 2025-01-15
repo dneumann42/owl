@@ -91,7 +91,7 @@ fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     const outw = std.io.getStdOut().writer();
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
-        const s = v.toStringRaw(args.items[i], g.allocator, true) catch return errResult(g, "Failed to allocate string");
+        const s = v.toStringRaw(args.items[i], g.allocator, true, false) catch return errResult(g, "Failed to allocate string");
         defer g.allocator.free(s);
         outw.print("{s}", .{s}) catch unreachable;
         if (i < args.items.len - 1) {
@@ -106,7 +106,7 @@ fn baseWrite(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     const outw = std.io.getStdOut().writer();
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
-        const s = v.toStringRaw(args.items[i], g.allocator, false) catch return errResult(g, "Failed to allocate string");
+        const s = v.toStringRaw(args.items[i], g.allocator, false, false) catch return errResult(g, "Failed to allocate string");
         defer g.allocator.free(s);
         outw.print("{s}", .{s}) catch unreachable;
     }
@@ -213,7 +213,7 @@ pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
 fn concat(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
     var strs = std.ArrayList([]const u8).init(g.allocator);
     for (args.items) |arg| {
-        strs.append(v.toStringRaw(arg, g.allocator, false) catch unreachable) catch unreachable;
+        strs.append(v.toStringRaw(arg, g.allocator, false, false) catch unreachable) catch unreachable;
     }
     return g.str(std.mem.join(g.allocator, "", strs.items) catch unreachable);
 }

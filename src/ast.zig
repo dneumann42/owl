@@ -163,6 +163,125 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
     allocator.destroy(meta_ast);
 }
 
+pub fn toString(node: *Ast, allocator: std.mem.Allocator) ![]const u8 {
+    return toStringIdent(node, allocator, try std.fmt.allocPrint(allocator, "", .{}));
+}
+
+pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) error{OutOfMemory}![]const u8 {
+    var lines = std.ArrayList([]const u8).init(allocator);
+
+    switch (node.*) {
+        .symbol => |s| try lines.append(try std.fmt.allocPrint(allocator, "#{s}", .{s})),
+        .number => |n| try lines.append(try std.fmt.allocPrint(allocator, "(num {d})", .{n})),
+        .boolean => |b| try lines.append(try std.fmt.allocPrint(allocator, "(bool {any})", .{b})),
+        .string => |s| try lines.append(try std.fmt.allocPrint(allocator, "(str \"{s}\")", .{s})),
+        .list => |ls| {
+            var xs = std.ArrayList([]const u8).init(allocator);
+            defer xs.deinit();
+            try xs.append("[");
+            var index: i32 = 0;
+            var indent = i;
+            var indent_updated = false;
+            for (ls.items) |sub_node| {
+                const s = try toStringIdent(sub_node, allocator, indent);
+                if (index == 0) {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s}", .{s}));
+                } else {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s} {s}", .{ indent, s }));
+                }
+                if (index > 0 and !indent_updated) {
+                    indent_updated = true;
+                    indent = try std.fmt.allocPrint(allocator, "{s}  ", .{indent});
+                }
+                if (index < ls.items.len - 1) {
+                    try xs.append("\n");
+                }
+                index += 1;
+            }
+            try xs.append("]");
+            try lines.append(try std.mem.join(allocator, "", xs.items));
+        },
+        .dictionary => |ls| {
+            var xs = std.ArrayList([]const u8).init(allocator);
+            defer xs.deinit();
+            try xs.append("{");
+            var index: i32 = 0;
+            var indent = i;
+            var indent_updated = false;
+            for (ls.items) |sub_node| {
+                const ks = try toStringIdent(sub_node.key, allocator, indent);
+                const vs = try toStringIdent(sub_node.value, allocator, indent);
+                if (index == 0) {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s}: {s}", .{ ks, vs }));
+                } else {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s}{s}: {s}", .{ indent, ks, vs }));
+                }
+                if (!indent_updated) {
+                    indent_updated = true;
+                    indent = try std.fmt.allocPrint(allocator, "{s}  ", .{indent});
+                }
+                if (index < ls.items.len - 1) {
+                    try xs.append("\n");
+                }
+                index += 1;
+            }
+            try xs.append("}");
+            try lines.append(try std.mem.join(allocator, "", xs.items));
+        },
+        .call => try lines.append(try std.fmt.allocPrint(allocator, "(call)", .{})),
+        .func => |fun| {
+            try lines.append(try std.fmt.allocPrint(allocator, "(func {s})", .{fun.sym.?.symbol}));
+        },
+        .ifx => try lines.append(try std.fmt.allocPrint(allocator, "(if)", .{})),
+        .whilex => try lines.append(try std.fmt.allocPrint(allocator, "(while)", .{})),
+        .forx => try lines.append(try std.fmt.allocPrint(allocator, "(for)", .{})),
+        .dot => try lines.append(try std.fmt.allocPrint(allocator, "(.)", .{})),
+        .binexp => try lines.append(try std.fmt.allocPrint(allocator, "(binexp)", .{})),
+        .unexp => try lines.append(try std.fmt.allocPrint(allocator, "(unexp)", .{})),
+        .block => |ls| {
+            var xs = std.ArrayList([]const u8).init(allocator);
+            defer xs.deinit();
+            try xs.append("[|");
+            var index: i32 = 0;
+            var indent = i;
+            var indent_updated = false;
+            for (ls.items) |sub_node| {
+                const s = try toStringIdent(sub_node, allocator, indent);
+                if (index == 0) {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s}", .{s}));
+                } else {
+                    try xs.append(try std.fmt.allocPrint(allocator, "{s}{s}", .{ indent, s }));
+                }
+                if (!indent_updated) {
+                    indent_updated = true;
+                    indent = try std.fmt.allocPrint(allocator, "{s}  ", .{indent});
+                }
+                if (index < ls.items.len - 1) {
+                    try xs.append("\n");
+                }
+                index += 1;
+            }
+            try xs.append("|]");
+            try lines.append(try std.mem.join(allocator, "", xs.items));
+        },
+        .assignment => try lines.append(try std.fmt.allocPrint(allocator, "(assign)", .{})),
+        .definition => |def| {
+            const left = try toString(def.left, allocator);
+            const indent = try allocator.alloc(u8, 10 + left.len);
+            for (0..indent.len) |idx| {
+                indent[idx] = ' ';
+            }
+            const right = try toStringIdent(def.right, allocator, indent);
+            try lines.append(try std.fmt.allocPrint(allocator, "(define {s} {s})", .{ left, right }));
+        },
+        .use => |u| {
+            try lines.append(try std.fmt.allocPrint(allocator, "(use {s})", .{u.name}));
+        },
+    }
+
+    return std.mem.join(allocator, "\n", lines.items);
+}
+
 pub fn create(allocator: std.mem.Allocator, node: Ast, meta: Meta) !*Ast {
     const meta_ast = try allocator.create(MetaAst);
     meta_ast.meta = meta;

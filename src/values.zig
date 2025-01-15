@@ -43,7 +43,7 @@ pub fn isNothing(self: *Value) bool {
     };
 }
 
-pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![]const u8 {
+pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool, short: bool) ![]const u8 {
     switch (self.*) {
         .nothing => {
             return std.fmt.allocPrint(allocator, "Nothing", .{});
@@ -75,13 +75,16 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
             return std.fmt.allocPrint(allocator, "<native>", .{});
         },
         .cons => {
+            if (short) {
+                return std.fmt.allocPrint(allocator, "( .. )", .{});
+            }
             var it: ?*Value = self;
             var strings = std.ArrayList([]const u8).init(allocator);
 
             while (it != null) : (it = it.?.cons.cdr) {
                 const cr = it.?.cons.car;
                 if (cr) |value| {
-                    try strings.append(try toStringRaw(value, allocator, literal));
+                    try strings.append(try toStringRaw(value, allocator, literal, short));
 
                     if (it.?.cons.cdr == null) {
                         break;
@@ -91,7 +94,7 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
                         .cons => {},
                         else => {
                             try strings.append(" . ");
-                            try strings.append(try toStringRaw(it.?.cons.cdr.?, allocator, literal));
+                            try strings.append(try toStringRaw(it.?.cons.cdr.?, allocator, literal, short));
                             break;
                         },
                     }
@@ -102,20 +105,26 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
             return std.fmt.allocPrint(allocator, "({s})", .{finalStr});
         },
         .list => |xs| {
+            if (short) {
+                return std.fmt.allocPrint(allocator, "[ .. ]", .{});
+            }
             var strings = std.ArrayList([]const u8).init(allocator);
             for (xs.items) |item| {
-                const str = try toStringRaw(item, allocator, literal);
+                const str = try toStringRaw(item, allocator, literal, short);
                 try strings.append(str);
             }
             const list_string = try std.mem.join(allocator, ", ", strings.items);
             return std.fmt.allocPrint(allocator, "[{s}]", .{list_string});
         },
         .dictionary => |dict| {
+            if (short) {
+                return std.fmt.allocPrint(allocator, "{{ .. }}", .{});
+            }
             var strings = std.ArrayList([]const u8).init(allocator);
             var key_iterator = dict.keyIterator();
             while (key_iterator.next()) |key| {
                 const value = dict.get(key.*) orelse continue;
-                const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try toString(key.*, allocator), try toStringRaw(value, allocator, literal) });
+                const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try toString(key.*, allocator), try toStringRaw(value, allocator, literal, short) });
                 try strings.append(s);
             }
 
@@ -126,7 +135,11 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool) ![
 }
 
 pub fn toString(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
-    return toStringRaw(self, allocator, true);
+    return toStringRaw(self, allocator, true, false);
+}
+
+pub fn toStringShort(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
+    return toStringRaw(self, allocator, true, true);
 }
 
 pub fn toStr(self: *Value) []const u8 {
@@ -365,6 +378,28 @@ pub const Environment = struct {
 
         // throw an error if value doesn't exist in environment
         return error.KeyNotFound;
+    }
+
+    pub fn toString(self: *Environment) ![]const u8 {
+        var lines = std.ArrayList([]const u8).init(self.allocator);
+        defer lines.deinit();
+
+        var env: ?*Environment = self;
+        var index: i32 = 0;
+
+        while (env) |e| {
+            try lines.append(try std.fmt.allocPrint(self.allocator, "ENV({d})", .{index}));
+            var iter = e.values.keyIterator();
+            while (iter.next()) |it| {
+                const value = self.values.get(it.*) orelse continue;
+                const value_str = try toStringShort(value, self.allocator);
+                try lines.append(try std.fmt.allocPrint(self.allocator, "{s}: {s}", .{ it.*, value_str }));
+            }
+            index += 1;
+            env = env.?.next;
+        }
+
+        return std.mem.join(self.allocator, "\n", lines.items);
     }
 };
 

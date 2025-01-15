@@ -1,12 +1,12 @@
 Status := {
-  completed: "completed",
-  pending: "pending",
+  completed: "completed"
+  pending: "pending"
   working: "working"
 }
 
 fun create-task(title, status)
   {
-    :title,
+    :title
     :status
   }
 end
