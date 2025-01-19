@@ -4,15 +4,20 @@ done := false
 tasks := []
 
 fun list-tasks()
-  for task in items(tasks) do
-    echo(task)
+  for t in items(tasks) do
+    echo(t)
   end
 end
 
+;; task is in the global scope, this function is having a hard time 
+;; reading that global scope value
+;; at the point of evaluation, we have 'task' in the environment
 fun create-task()
   title := read-line("title: ")
-  task.create-task(title, task.Status.pending)
+  ;; task.create-task(title, task.Status.pending)
 end
+
+task.create-task("", "")
 
 while not done do
   line := read-line("> ")

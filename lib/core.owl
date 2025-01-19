@@ -1,5 +1,3 @@
-;; core library functions needed for most scripts
-
 fun range(min, max)
   fn() if min > max then
     false
@@ -13,7 +11,7 @@ end
 fun items(list)
   i := 0
   fn() if i < len(list) then
-    itm = nth(item, i)
+    itm := nth(list, i)
     i = i + 1
     itm
   else
@@ -22,5 +20,6 @@ fun items(list)
 end
 
 {
-  range: range
+  :range
+  :items
 }

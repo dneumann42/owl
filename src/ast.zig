@@ -136,6 +136,7 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
         .forx => {
             deinit(ast.forx.variable, allocator);
             deinit(ast.forx.iterable, allocator);
+            deinit(ast.forx.block, allocator);
         },
         .dictionary => {
             for (ast.dictionary.items) |kv| {
@@ -156,9 +157,16 @@ pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
         .symbol => |s| {
             allocator.free(s);
         },
-        else => {},
+        .use => |u| {
+            allocator.free(u.name);
+        },
+        .number, .boolean => {},
     }
 
+    destroy(ast, allocator);
+}
+
+pub fn destroy(ast: *Ast, allocator: std.mem.Allocator) void {
     const meta_ast: *MetaAst = @fieldParentPtr("node", ast);
     allocator.destroy(meta_ast);
 }
@@ -301,7 +309,7 @@ pub fn sym(allocator: std.mem.Allocator, lexeme: []const u8, meta: Meta) !*Ast {
 
 pub fn symAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
     const copy = try allocator.alloc(u8, s.len);
-    std.mem.copyForwards(u8, copy, s);
+    @memcpy(copy, s);
     return sym(allocator, copy, meta);
 }
 
@@ -315,7 +323,7 @@ pub fn str(allocator: std.mem.Allocator, lexeme: []const u8, meta: Meta) !*Ast {
 
 pub fn strAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
     const copy = try allocator.alloc(u8, s.len);
-    std.mem.copyForwards(u8, copy, s);
+    @memcpy(copy, s);
     return str(allocator, copy, meta);
 }
 

@@ -6,7 +6,7 @@ const a = @import("ast.zig");
 const owl_std = @import("base.zig");
 const r = @import("reader.zig");
 
-const ModuleError = error{ IOError, OutOfMemory, ReaderError };
+const ModuleError = error{ IOError, OutOfMemory, ReaderError, EvalError };
 
 pub const ErrorReport = struct {
     line_number: usize,
@@ -40,11 +40,11 @@ pub const Library = struct {
     }
 
     pub fn deinit(self: *Library) void {
+        self.evaluator.deinit();
+        self.env.deinit();
         self.gc.deinit();
         self.allocator.destroy(self.gc);
         self.modules.deinit();
-        self.env.deinit();
-        self.evaluator.deinit();
         owl_std.deinitReadline();
     }
 
@@ -94,10 +94,6 @@ pub const Library = struct {
         }
 
         const ast = try self.getModuleAst(path);
-
-        // const ast_str = try a.toString(ast, self.allocator);
-        // std.log.info("AST {s}\n{s}\n", .{ path, ast_str });
-
         defer a.deinit(ast, self.allocator);
         const deps = try self.getModuleDependencies(ast);
         const dir = std.fs.path.dirname(path) orelse "";
@@ -107,49 +103,17 @@ pub const Library = struct {
             try self.loadModuleDependencies(dep_path, log_values);
         }
 
-        var iterator = self.modules.valueIterator();
-        while (iterator.next()) |module| {
-            try self.env.define(module.name, module.value);
-        }
-
-        const value = self.evaluator.evalNode(self.env, ast) catch |err| {
-            const logs = self.evaluator.error_log;
-            if (logs.items.len == 0) {
-                std.log.err("{any}\n", .{err});
-                return;
-            }
-            const log = logs.items[0];
-            std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
-            return;
-        };
-
-        if (log_values) {
-            std.log.info("{s}", .{v.toStr(value)});
-        }
-
+        const value = try self.evaluator.evalNode(self.env, ast);
         const name = std.fs.path.basename(path);
         const slice = name[0 .. name.len - 4];
-        try self.modules.put(path, v.Module{ .name = slice, .value = value });
+        const module = v.Module{ .name = slice, .value = value };
+
+        try self.modules.put(path, module);
+        try self.env.define(slice, value);
     }
 
-    pub fn installCoreLibrary(self: *Library, path: []const u8) !void {
-        const ast = try self.getModuleAst(path);
-        const value = self.evaluator.evalNode(self.env, ast) catch |err| {
-            const logs = self.evaluator.error_log;
-            if (logs.items.len == 0) {
-                std.log.err("{any}\n", .{err});
-                return;
-            }
-            const log = logs.items[0];
-            std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
-            return;
-        };
-
-        var iterator = value.dictionary.keyIterator();
-        while (iterator.next()) |key| {
-            const val = value.dictionary.get(key.*) orelse continue;
-            try self.env.define(key.*.symbol, val);
-        }
+    pub fn loadCoreLibrary(self: *Library, path: []const u8, log_values: bool) !void {
+        try self.loadModuleDependencies(path, log_values);
     }
 
     pub fn loadEntry(self: *Library, path: []const u8, opts: struct {
@@ -157,8 +121,11 @@ pub const Library = struct {
         install_base: bool = true,
         log_values: bool = false,
     }) !void {
+        if (opts.install_base) {
+            owl_std.installBase(self.gc, self.env);
+        }
         if (opts.install_core) {
-            self.installCoreLibrary("lib/core.owl") catch |err| switch (err) {
+            self.loadCoreLibrary("lib/core.owl", opts.log_values) catch |err| switch (err) {
                 error.ReaderError => {
                     if (self.reader_error) |reader_err| {
                         std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
@@ -166,11 +133,16 @@ pub const Library = struct {
                         std.log.err("Reader error", .{});
                     }
                 },
-                else => {},
+                else => {
+                    const logs = self.evaluator.error_log;
+                    if (logs.items.len == 0) {
+                        std.log.err("{any}\n", .{err});
+                        return;
+                    }
+                    const log = logs.items[0];
+                    std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
+                },
             };
-        }
-        if (opts.install_base) {
-            owl_std.installBase(self.gc, self.env);
         }
         self.loadModuleDependencies(path, opts.log_values) catch |err| switch (err) {
             error.ReaderError => {
@@ -180,7 +152,15 @@ pub const Library = struct {
                     std.log.err("Reader error", .{});
                 }
             },
-            else => {},
+            else => {
+                const logs = self.evaluator.error_log;
+                if (logs.items.len == 0) {
+                    std.log.err("{any}\n", .{err});
+                    return;
+                }
+                const log = logs.items[0];
+                std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
+            },
         };
     }
 };

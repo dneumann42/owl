@@ -293,6 +293,9 @@ pub const Reader = struct {
     tokenizer: Tokenizer,
     allocator: std.mem.Allocator,
 
+    // reader cleans up allocated
+    symbols: std.ArrayList([]const u8),
+
     // does not own
     code: []const u8,
 
@@ -303,6 +306,7 @@ pub const Reader = struct {
             .tokens = try tokenizer.tokenize(),
             .tokenizer = tokenizer,
             .allocator = allocator,
+            .symbols = std.ArrayList([]const u8).init(allocator),
             .code = code,
         };
     }
@@ -333,6 +337,7 @@ pub const Reader = struct {
 
     pub fn deinit(self: Reader) void {
         self.tokens.deinit();
+        self.symbols.deinit();
     }
 
     pub fn read(self: *Reader) R {
@@ -379,10 +384,17 @@ pub const Reader = struct {
         pin = self.index;
         const symbol = switch (self.readSymbol(true)) {
             .ok => |v| v,
-            .err => {
-                // handle non no match errors
-                self.index = pin;
-                return R.o(left);
+            .err => |se| {
+                switch (se.kind) {
+                    error.NoMatch => {
+                        // handle non no match errors
+                        self.index = pin;
+                        return R.o(left);
+                    },
+                    else => {
+                        return R.fromErr(se);
+                    },
+                }
             },
         };
 
@@ -404,6 +416,8 @@ pub const Reader = struct {
             .ok => |v| v,
             .err => |e| {
                 self.index = pin;
+                ast.deinit(symbol, self.allocator);
+                ast.deinit(left, self.allocator);
                 return R.fromErr(e);
             },
         };
@@ -515,6 +529,7 @@ pub const Reader = struct {
             if (self.tokenMatches(")")) |_| {} else {
                 return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
             }
+            self.index += 1;
             return R.o(exp);
         }
 
@@ -699,13 +714,13 @@ pub const Reader = struct {
     }
 
     pub fn readAssignment(self: *Reader) R {
-        const start = self.index;
         const sym = switch (self.readDotCall()) {
             .err => |e| {
                 return R.fromErr(e);
             },
             .ok => |v| v,
         };
+        const start = self.index;
         if (self.tokenMatches("=") == null) {
             return R.o(sym);
         }
@@ -1317,11 +1332,12 @@ pub const Reader = struct {
             return R.noMatch("Not a symbol or keyword");
         }
         const lexeme = self.tokenizer.getLexeme(sym) orelse {
-            return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to allocate lexeme");
+            return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to get lexeme");
         };
         const symbol = ast.symAlloc(self.allocator, lexeme, .{ .line = sym.line }) catch {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
         };
+        self.symbols.append(symbol.symbol) catch unreachable;
         self.index += 1;
         return R.o(symbol);
     }

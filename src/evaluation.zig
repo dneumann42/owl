@@ -9,7 +9,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const nothing = v.nothing;
 
-pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr, InvalidAssignment, Undefined };
+pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr, InvalidAssignment, Undefined, InvalidDotValue };
 
 pub const EvalErrorReport = struct {
     message: []const u8,
@@ -22,17 +22,28 @@ pub const Eval = struct {
     function_bodies: std.ArrayList(*ast.Ast),
     environments: std.ArrayList(*v.Environment),
 
+    // generated ast nodes that need to be cleaned up
+    nodes: std.ArrayList(*ast.Ast),
+
     pub fn init(gc: *g.Gc) Eval {
         return Eval{
             .gc = gc,
             .error_log = std.ArrayList(EvalErrorReport).init(gc.allocator), //
             .function_bodies = std.ArrayList(*ast.Ast).init(gc.allocator),
             .environments = std.ArrayList(*v.Environment).init(gc.allocator),
+            .nodes = std.ArrayList(*ast.Ast).init(gc.allocator),
         };
     }
 
     pub fn deinit(self: *Eval) void {
+        for (self.error_log.items) |log| {
+            self.gc.allocator.free(log.message);
+        }
         self.error_log.deinit();
+        for (self.nodes.items) |node| {
+            ast.deinit(node, self.gc.allocator);
+        }
+        self.nodes.deinit();
         self.function_bodies.deinit();
         for (self.environments.items) |env| {
             env.deinit();
@@ -94,7 +105,7 @@ pub const Eval = struct {
             .dot => |dot| self.evalDot(env, dot),
             .ifx => |ifx| self.evalIf(env, ifx),
             .whilex => |whilex| self.evalWhile(env, whilex),
-            .forx => |whilex| self.evalFor(env, whilex),
+            .forx => |forx| self.evalFor(env, forx),
             .list => |xs| return self.evalList(env, xs),
             .use => return self.gc.nothing(),
         };
@@ -250,6 +261,7 @@ pub const Eval = struct {
         }
         const address = try self.addFunctionBody(fun.body);
         const new_env = try self.push(env);
+
         const func = self.gc.create(.{ .function = v.Function.init(address, fs, new_env) }) catch {
             return error.OutOfMemory;
         };
@@ -276,6 +288,8 @@ pub const Eval = struct {
                     switch (str.*) {
                         .string => {},
                         else => {
+                            const meta = ast.getAstMeta(call.callable);
+                            self.logErrLn(meta.line, "Invalid callable", .{});
                             return error.InvalidCallable;
                         },
                     }
@@ -298,6 +312,11 @@ pub const Eval = struct {
                 return self.evalNativeCallFn(env, nfun, call.args);
             },
             else => {
+                const meta = ast.getAstMeta(call.callable);
+                self.logErrLn(meta.line, "Invalid callable", .{});
+                const s = try ast.toString(call.callable, self.gc.allocator);
+                defer self.gc.allocator.free(s);
+                std.debug.print("{s}\n", .{s});
                 return error.InvalidCallable;
             },
         };
@@ -334,8 +353,9 @@ pub const Eval = struct {
                 return error.Undefined;
             },
             else => {
-                std.debug.print("{any}", .{a});
-                return error.NotImplemented;
+                const meta = ast.getAstMeta(dot.a);
+                self.logErrLn(meta.line, "Left side of dot operator is not a valid value", .{});
+                return error.InvalidDotValue;
             },
         }
     }
@@ -365,32 +385,61 @@ pub const Eval = struct {
         return result;
     }
 
-    pub fn evalFor(self: *Eval, env: *v.Environment, ifx: ast.For) EvalError!*v.Value {
+    pub fn evalFor(self: *Eval, env: *v.Environment, forx: ast.For) EvalError!*v.Value {
+        std.debug.print("WHAT\n", .{});
         // rewrites into a while loop
         // TODO: move this to a preprocessor step
 
         // do
-        //   next = range(0, 10)
-        //   i = next()
+        //   next := range(0, 10)
+        //   i := next()
         //   while i do
         //     ;; block
         //     i = next()
         //   end
         // end
 
-        const iter_sym = try ast.sym(self.gc.allocator, "next", .{});
+        const next_str = try self.gc.allocator.alloc(u8, 4);
+        const iter_sym = try ast.symAlloc(self.gc.allocator, next_str, .{});
         const iter_call = try ast.call(self.gc.allocator, iter_sym, std.ArrayList(*ast.Ast).init(self.gc.allocator), .{});
+        defer ast.deinit(iter_call, self.gc.allocator);
+
         var body = std.ArrayList(*ast.Ast).init(self.gc.allocator);
-        try body.append(try ast.define(self.gc.allocator, iter_sym, ifx.iterable, .{}));
-        try body.append(try ast.define(self.gc.allocator, ifx.variable, iter_call, .{}));
+        defer body.deinit();
 
-        const condition = ifx.variable;
-        var while_body = ifx.block.block;
-        try while_body.append(try ast.assign(self.gc.allocator, ifx.variable, iter_call, .{}));
+        const define_sym = try ast.sym(self.gc.allocator, next_str, .{});
+        defer ast.deinit(define_sym, self.gc.allocator);
 
-        const whilex = try ast.whilex(self.gc.allocator, condition, try ast.block(self.gc.allocator, while_body, .{}), .{});
+        const define_it = try ast.define( //
+            self.gc.allocator, //
+            define_sym, //
+            forx.iterable, //
+            .{} //
+        );
+        defer ast.destroy(define_it, self.gc.allocator);
+
+        const define_index = try ast.define(self.gc.allocator, forx.variable, iter_call, .{});
+        defer ast.destroy(define_index, self.gc.allocator);
+
+        try body.append(define_it);
+        try body.append(define_index);
+
+        const condition = forx.variable;
+        var while_block = forx.block.block;
+        const assign = try ast.assign(self.gc.allocator, forx.variable, iter_call, .{});
+        defer ast.destroy(assign, self.gc.allocator);
+
+        try while_block.append(assign);
+
+        const while_body = try ast.block(self.gc.allocator, while_block, .{});
+        defer ast.destroy(while_body, self.gc.allocator);
+
+        const whilex = try ast.whilex(self.gc.allocator, condition, while_body, .{});
+        defer ast.destroy(whilex, self.gc.allocator);
+
         try body.append(whilex);
-
-        return self.evalNode(env, try ast.block(self.gc.allocator, body, .{}));
+        const block = try ast.block(self.gc.allocator, body, .{});
+        defer ast.destroy(block, self.gc.allocator);
+        return self.evalNode(env, block);
     }
 };
