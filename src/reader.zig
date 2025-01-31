@@ -119,6 +119,9 @@ pub const Tokenizer = struct {
                 idx.* += 1;
                 while (idx.* < c.len and c[idx.*] != '\n') {
                     idx.* += 1;
+                    if (idx.* < c.len and c[idx.*] == '\n') {
+                        ln.* += 1;
+                    }
                 }
                 skipWS(idx, ln, c);
             }

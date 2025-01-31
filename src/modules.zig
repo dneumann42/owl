@@ -100,6 +100,8 @@ pub const Library = struct {
 
         for (deps.items) |use| {
             const dep_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.owl", .{ dir, use.name });
+            defer self.allocator.free(dep_path);
+
             try self.loadModuleDependencies(dep_path, log_values);
         }
 
@@ -144,6 +146,7 @@ pub const Library = struct {
                 },
             };
         }
+
         self.loadModuleDependencies(path, opts.log_values) catch |err| switch (err) {
             error.ReaderError => {
                 if (self.reader_error) |reader_err| {

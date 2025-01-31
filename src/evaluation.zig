@@ -386,7 +386,6 @@ pub const Eval = struct {
     }
 
     pub fn evalFor(self: *Eval, env: *v.Environment, forx: ast.For) EvalError!*v.Value {
-        std.debug.print("WHAT\n", .{});
         // rewrites into a while loop
         // TODO: move this to a preprocessor step
 

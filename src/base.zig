@@ -88,11 +88,14 @@ fn baseListAdd(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
 }
 
 fn baseEcho(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     const outw = std.io.getStdOut().writer();
     var i: usize = 0;
     while (i < args.items.len) : (i += 1) {
-        const s = v.toStringRaw(args.items[i], g.allocator, true, false) catch return errResult(g, "Failed to allocate string");
-        defer g.allocator.free(s);
+        const s = v.toStringRaw(args.items[i], allocator, true, false) catch return errResult(g, "Failed to allocate string");
         outw.print("{s}", .{s}) catch unreachable;
         if (i < args.items.len - 1) {
             _ = outw.write(" ") catch unreachable;
