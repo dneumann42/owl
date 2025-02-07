@@ -1,10 +1,8 @@
-// works directly on the ast
-
+const std = @import("std");
 const v = @import("values.zig");
 const r = @import("reader.zig");
 const g = @import("gc.zig");
 const ast = @import("ast.zig");
-const std = @import("std");
 // const pretty = @import("pretty");
 const assert = std.debug.assert;
 const nothing = v.nothing;
@@ -203,6 +201,14 @@ pub const Eval = struct {
         }
         const meta = ast.getAstMeta(s);
         self.logErrLn(meta.line, "Undefined symbol '{s}'", .{s.symbol});
+
+        var arenaAllocator = std.heap.ArenaAllocator.init(self.gc.allocator);
+        const allocator = arenaAllocator.allocator();
+        defer arenaAllocator.deinit();
+
+        const estring = try env.toString(allocator);
+        self.logErrLn(meta.line, "\n{s}", .{estring});
+
         return error.UndefinedSymbol;
     }
 

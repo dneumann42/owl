@@ -1,7 +1,7 @@
+const std = @import("std");
 const r = @import("reader.zig");
 const a = @import("ast.zig");
 const g = @import("gc.zig");
-const std = @import("std");
 const testing = std.testing;
 
 test "tokenization" {

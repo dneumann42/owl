@@ -51,9 +51,9 @@ pub fn main() !void {
 }
 
 pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
-    var modules = m.Library.init(allocator);
+    var modules = m.Modules.init(allocator);
     defer modules.deinit();
-    try modules.loadEntry(path, .{
+    try modules.load(path, .{
         .install_core = true,
         .install_base = true,
         .log_values = true,

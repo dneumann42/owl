@@ -179,7 +179,7 @@ pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) er
     var lines = std.ArrayList([]const u8).init(allocator);
 
     switch (node.*) {
-        .symbol => |s| try lines.append(try std.fmt.allocPrint(allocator, "#{s}", .{s})),
+        .symbol => |s| try lines.append(try std.fmt.allocPrint(allocator, "{s}", .{s})),
         .number => |n| try lines.append(try std.fmt.allocPrint(allocator, "(num {d})", .{n})),
         .boolean => |b| try lines.append(try std.fmt.allocPrint(allocator, "(bool {any})", .{b})),
         .string => |s| try lines.append(try std.fmt.allocPrint(allocator, "(str \"{s}\")", .{s})),

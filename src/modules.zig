@@ -5,6 +5,9 @@ const g = @import("gc.zig");
 const a = @import("ast.zig");
 const owl_std = @import("base.zig");
 const r = @import("reader.zig");
+const logger = @import(" logger.zig");
+
+const CoreLib = @embedFile("lib/core.owl");
 
 const ModuleError = error{ IOError, OutOfMemory, ReaderError, EvalError };
 
@@ -15,7 +18,7 @@ pub const ErrorReport = struct {
     path: []const u8,
 };
 
-pub const Library = struct {
+pub const Modules = struct {
     gc: *g.Gc,
     env: *v.Environment,
     evaluator: e.Eval,
@@ -24,12 +27,12 @@ pub const Library = struct {
 
     reader_error: ?ErrorReport,
 
-    pub fn init(allocator: std.mem.Allocator) Library {
+    pub fn init(allocator: std.mem.Allocator) Modules {
         const gc = allocator.create(g.Gc) catch unreachable;
         gc.* = g.Gc.init(allocator);
 
         const env = v.Environment.init(allocator) catch unreachable;
-        return Library{
+        return Modules{
             .gc = gc, //
             .env = env,
             .evaluator = e.Eval.init(gc),
@@ -39,7 +42,7 @@ pub const Library = struct {
         };
     }
 
-    pub fn deinit(self: *Library) void {
+    pub fn deinit(self: *Modules) void {
         self.evaluator.deinit();
         self.env.deinit();
         self.gc.deinit();
@@ -48,7 +51,24 @@ pub const Library = struct {
         owl_std.deinitReadline();
     }
 
-    pub fn getModuleAst(self: *Library, path: []const u8) ModuleError!*a.Ast {
+    pub fn readAst(self: *Modules, content: []const u8, path: ?[]const u8) !*a.Ast {
+        var reader = r.Reader.init(self.allocator, content) catch return error.OutOfMemory;
+        defer reader.deinit();
+        return switch (reader.read()) {
+            .ok => |val| val,
+            .err => |err| {
+                self.reader_error = ErrorReport{
+                    .line_number = reader.countLines(err.start),
+                    .char_index = 0,
+                    .message = r.getErrorMessage(err),
+                    .path = path orelse "",
+                };
+                return error.ReaderError;
+            },
+        };
+    }
+
+    pub fn getModuleAst(self: *Modules, path: []const u8) ModuleError!*a.Ast {
         var file = std.fs.cwd().openFile(path, .{ .mode = .read_only }) catch {
             const cwd = std.fs.cwd().realpathAlloc(self.allocator, ".") catch return error.IOError;
             std.log.err("File not found '{s}' current working directory '{s}'", .{ path, cwd });
@@ -58,24 +78,10 @@ pub const Library = struct {
         defer file.close();
         const file_content = file.readToEndAlloc(self.allocator, comptime std.math.maxInt(usize)) catch return error.IOError;
         defer self.allocator.free(file_content);
-
-        var reader = r.Reader.init(self.allocator, file_content) catch return error.OutOfMemory;
-        defer reader.deinit();
-        return switch (reader.read()) {
-            .ok => |val| val,
-            .err => |err| {
-                self.reader_error = ErrorReport{
-                    .line_number = reader.countLines(err.start),
-                    .char_index = 0,
-                    .message = r.getErrorMessage(err),
-                    .path = path,
-                };
-                return error.ReaderError;
-            },
-        };
+        return self.readAst(file_content, path);
     }
 
-    pub fn getModuleDependencies(self: *Library, ast: *a.Ast) !std.ArrayList(a.Use) {
+    pub fn getModuleDependencies(self: *Modules, ast: *a.Ast) !std.ArrayList(a.Use) {
         var uses = std.ArrayList(a.Use).init(self.allocator);
         for (ast.block.items) |node| {
             switch (node.*) {
@@ -88,7 +94,7 @@ pub const Library = struct {
         return uses;
     }
 
-    pub fn loadModuleDependencies(self: *Library, path: []const u8, log_values: bool) !void {
+    pub fn loadModuleDependencies(self: *Modules, path: []const u8, log_values: bool) !void {
         if (self.modules.contains(path)) {
             return;
         }
@@ -114,11 +120,16 @@ pub const Library = struct {
         try self.env.define(slice, value);
     }
 
-    pub fn loadCoreLibrary(self: *Library, path: []const u8, log_values: bool) !void {
-        try self.loadModuleDependencies(path, log_values);
+    pub fn loadString(self: *Modules, code: []const u8) !*v.Value {
+        const ast = try self.readAst(code, "<string>");
+        return self.evaluator.evalNode(self.env, ast);
     }
 
-    pub fn loadEntry(self: *Library, path: []const u8, opts: struct {
+    pub fn loadCoreLibrary(self: *Modules, code: []const u8) !void {
+        _ = try self.loadString(code);
+    }
+
+    pub fn load(self: *Modules, path: []const u8, opts: struct {
         install_core: bool = true,
         install_base: bool = true,
         log_values: bool = false,
@@ -127,7 +138,7 @@ pub const Library = struct {
             owl_std.installBase(self.gc, self.env);
         }
         if (opts.install_core) {
-            self.loadCoreLibrary("lib/core.owl", opts.log_values) catch |err| switch (err) {
+            self.loadCoreLibrary(CoreLib) catch |err| switch (err) {
                 error.ReaderError => {
                     if (self.reader_error) |reader_err| {
                         std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
@@ -156,13 +167,7 @@ pub const Library = struct {
                 }
             },
             else => {
-                const logs = self.evaluator.error_log;
-                if (logs.items.len == 0) {
-                    std.log.err("{any}\n", .{err});
-                    return;
-                }
-                const log = logs.items[0];
-                std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
+                logger.log_errors(e.EvalErrorReport, self.evaluator.error_log, .{ .prefix = path });
             },
         };
     }

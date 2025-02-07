@@ -380,26 +380,27 @@ pub const Environment = struct {
         return error.KeyNotFound;
     }
 
-    pub fn toString(self: *Environment) ![]const u8 {
-        var lines = std.ArrayList([]const u8).init(self.allocator);
+    pub fn toString(self: *Environment, allocator: std.mem.Allocator) ![]const u8 {
+        var lines = std.ArrayList([]const u8).init(allocator);
         defer lines.deinit();
 
         var env: ?*Environment = self;
         var index: i32 = 0;
 
         while (env) |e| {
-            try lines.append(try std.fmt.allocPrint(self.allocator, "ENV({d})", .{index}));
+            try lines.append(try std.fmt.allocPrint(allocator, "ENV #{d} count: {d}", .{ index, e.values.count() }));
             var iter = e.values.keyIterator();
+            var xs = std.ArrayList([]const u8).init(allocator);
+            defer xs.deinit();
             while (iter.next()) |it| {
-                const value = self.values.get(it.*) orelse continue;
-                const value_str = try toStringShort(value, self.allocator);
-                try lines.append(try std.fmt.allocPrint(self.allocator, "{s}: {s}", .{ it.*, value_str }));
+                try xs.append(try std.fmt.allocPrint(allocator, "{s}", .{it.*}));
             }
+            try lines.append(try std.mem.join(allocator, " ", xs.items));
             index += 1;
             env = env.?.next;
         }
 
-        return std.mem.join(self.allocator, "\n", lines.items);
+        return std.mem.join(allocator, "\n", lines.items);
     }
 };
 
