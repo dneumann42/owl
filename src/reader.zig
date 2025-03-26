@@ -1,4 +1,5 @@
 const std = @import("std");
+
 const ast = @import("ast.zig");
 
 pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen, closeParen, openBracket, closeBracket, openBrace, closeBrace, comma, dot, colon };
@@ -1102,10 +1103,36 @@ pub const Reader = struct {
                 return R.o(v);
             },
         }
-        return self.readSymbol(false);
+        switch (self.readSymbol(false)) {
+            .err => |e| {
+                if (e.kind != ReaderErrorKind.NoMatch) {
+                    return R.fromErr(e);
+                }
+            },
+            .ok => |v| {
+                return R.o(v);
+            },
+        }
+        return R.e(ReaderErrorKind.NoMatch, 0);
     }
 
     pub fn readLiteral(self: *Reader) R {
+        if (self.tokenMatches("(")) |start| {
+            self.index += 1;
+            const exp = switch (self.readExpression()) {
+                .ok => |v| v,
+                .err => |e| {
+                    return R.e(e.kind, e.start);
+                },
+            };
+
+            if (self.tokenMatches(")")) |_| {} else {
+                return R.errMsg(ReaderErrorKind.MissingClosingParen, start, "Missing closing parenthesis");
+            }
+            self.index += 1;
+            return R.o(exp);
+        }
+
         switch (self.readNumber()) {
             .err => |e| {
                 if (e.kind != ReaderErrorKind.NoMatch) {

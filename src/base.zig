@@ -4,15 +4,7 @@ const std = @import("std");
 const e = @import("evaluation.zig");
 const os = std.os;
 
-const mibu = @import("mibu");
-const events = mibu.events;
-const term = mibu.term;
-const utils = mibu.utils;
-const cursor = mibu.cursor;
-const clear = mibu.clear;
-
 pub fn installBase(g: *gc.Gc, env: *v.Environment) void {
-    env.define("read-line", g.nfun(baseReadLine)) catch unreachable;
     env.define("echo", g.nfun(baseEcho)) catch unreachable;
     env.define("write", g.nfun(baseWrite)) catch unreachable;
     env.define("cat", g.nfun(concat)) catch unreachable;
@@ -22,6 +14,7 @@ pub fn installBase(g: *gc.Gc, env: *v.Environment) void {
     env.define("ref", g.nfun(baseDictRef)) catch unreachable;
     env.define("nth", g.nfun(baseNth)) catch unreachable;
     env.define("len", g.nfun(baseLen)) catch unreachable;
+    env.define("read-line", g.nfun(readLine)) catch unreachable;
 }
 
 pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
@@ -32,6 +25,14 @@ pub fn errResult(g: *gc.Gc, msg: []const u8) *v.Value {
 pub fn evalErrResult(g: *gc.Gc, err: e.EvalError) *v.Value {
     std.log.err("{any}", .{err});
     return errResult(g, "Evaluation error");
+}
+
+fn readLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
+    _ = args;
+    var input: [1024]u8 = undefined;
+    const outr = std.io.getStdOut().reader();
+    const size = outr.readUntilDelimiter(&input, '\n') catch unreachable;
+    return g.strAlloc(input[0..size.len]);
 }
 
 fn baseLen(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
@@ -114,103 +115,6 @@ fn baseWrite(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
         outw.print("{s}", .{s}) catch unreachable;
     }
     return g.T();
-}
-
-// TODO: all string literals should run through this function on read
-const ReadLine = struct {
-    history: std.ArrayList([]const u8),
-};
-
-var readLine: ?ReadLine = null;
-
-pub fn deinitReadline() void {
-    if (readLine) |rl| {
-        rl.history.deinit();
-    }
-}
-
-pub fn baseReadLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
-    // may want to switch to u21 strings
-
-    if (readLine == null) {
-        readLine = .{ .history = std.ArrayList([]const u8).init(g.allocator) };
-    }
-
-    const stdin = std.io.getStdIn();
-    const stdout = std.io.getStdOut();
-
-    var raw_term = term.enableRawMode(stdin.handle, .blocking) catch return errResult(g, "Failed to enable raw mode");
-    defer raw_term.disableRawMode() catch {};
-
-    // To listen mouse events, we need to enable mouse tracking
-    stdout.writer().print("{s}", .{utils.enable_mouse_tracking}) catch unreachable;
-    defer stdout.writer().print("{s}", .{utils.disable_mouse_tracking}) catch {};
-
-    if (args.items.len > 0) {
-        const prompt = args.items[0];
-        stdout.writer().print("{s}", .{prompt.string}) catch unreachable;
-    }
-
-    var line = std.ArrayList(u8).init(g.allocator);
-    defer line.deinit();
-
-    while (true) {
-        const next = events.next(stdin) catch unreachable;
-
-        switch (next) {
-            .key => |k| switch (k) {
-                .char => |ke| {
-                    const u: u8 = @intCast(ke);
-                    line.append(u) catch unreachable;
-                    stdout.writer().print("{c}", .{u}) catch unreachable;
-                },
-                .ctrl => |c| switch (c) {
-                    'c' => break,
-                    'l' => {
-                        line.clearRetainingCapacity();
-                        clear.screenToCursor(stdout.writer()) catch {};
-                        cursor.goTo(stdout.writer(), 0, 0) catch unreachable;
-                        if (args.items.len > 0) {
-                            const prompt = args.items[0];
-                            stdout.writer().print("{s}", .{prompt.string}) catch unreachable;
-                        }
-                    },
-                    else => {},
-                },
-                .enter => {
-                    break;
-                },
-                .backspace => {
-                    if (line.items.len > 0) {
-                        _ = line.pop();
-                        cursor.goLeft(stdout.writer(), 1) catch {};
-                        clear.line_from_cursor(stdout.writer()) catch {};
-                    }
-                },
-                .up => {
-                    if (readLine.?.history.items.len > 0) {
-                        const popped = readLine.?.history.pop();
-                        line.clearRetainingCapacity();
-                        for (popped) |c| {
-                            line.append(c) catch unreachable;
-                        }
-                        stdout.writer().print("{s}", .{line.items}) catch unreachable;
-                    }
-                },
-                else => {
-                    std.debug.print("K: {s}", .{k});
-                },
-            },
-            else => {},
-        }
-    }
-
-    stdout.writer().print("\n", .{}) catch unreachable;
-    const str = v.arrayListToString(g.allocator, line) catch unreachable;
-    cursor.goLeft(stdout.writer(), str.len + 2) catch unreachable;
-    readLine.?.history.append(str) catch unreachable;
-
-    return g.str(str);
 }
 
 fn concat(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {

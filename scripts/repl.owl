@@ -4,10 +4,10 @@ archimedes := " ~___~  Owl (0.0.0_dev)
   ' '"
 
 fun command(key, description, call)
-  { 
-    :key, 
-    :description, 
-    :call 
+  {
+    :key,
+    :description,
+    :call
   }
 end
 
@@ -23,31 +23,11 @@ end
 
 commands := [
   command("?", "Displays the help menu", help),
-  command(
-    ",q", 
-    "Quits the read eval print loop",
-    fn() done = true
-  ),
-  command(
-    ",h", 
-    "Displays command history",
-    fn() echo(history)
-  ),
-  command(
-    ",e", 
-    "Open editor",
-    fn() echo("WIP")
-  ),
-  command(
-    ",n", 
-    "New menu",
-    fn() echo("WIP")
-  ),
-  command(
-    ",p", 
-    "Packages menu",
-    fn() echo("WIP")
-  ),
+  command(",q", "Quits the read eval print loop", fn() done = true),
+  command(",h", "Displays command history", fn() echo(history)),
+  command(",e", "Open editor", fn() echo("WIP")),
+  command(",n", "New menu", fn() echo("WIP")),
+  command(",p", "Packages menu", fn() echo("WIP")),
 ]
 
 fun repl()
@@ -63,7 +43,7 @@ fun repl()
       end
     end
 
-    if not is-command then 
+    if not is-command then
       write(eval(line), "\n")
     end
 

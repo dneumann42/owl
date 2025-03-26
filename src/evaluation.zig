@@ -1,12 +1,12 @@
 // works directly on the ast
 
-const v = @import("values.zig");
-const r = @import("reader.zig");
-const g = @import("gc.zig");
-const ast = @import("ast.zig");
 const std = @import("std");
-// const pretty = @import("pretty");
 const assert = std.debug.assert;
+
+const ast = @import("ast.zig");
+const g = @import("gc.zig");
+const r = @import("reader.zig");
+const v = @import("values.zig");
 const nothing = v.nothing;
 
 pub const EvalError = error{ KeyNotFound, OutOfMemory, NotImplemented, ReaderError, UndefinedSymbol, InvalidUnexp, ValueError, InvalidFunction, InvalidCallable, InvalidBinexp, InvalidLExpr, InvalidAssignment, Undefined, InvalidDotValue };
@@ -22,16 +22,12 @@ pub const Eval = struct {
     function_bodies: std.ArrayList(*ast.Ast),
     environments: std.ArrayList(*v.Environment),
 
-    // generated ast nodes that need to be cleaned up
-    nodes: std.ArrayList(*ast.Ast),
-
     pub fn init(gc: *g.Gc) Eval {
         return Eval{
             .gc = gc,
             .error_log = std.ArrayList(EvalErrorReport).init(gc.allocator), //
             .function_bodies = std.ArrayList(*ast.Ast).init(gc.allocator),
             .environments = std.ArrayList(*v.Environment).init(gc.allocator),
-            .nodes = std.ArrayList(*ast.Ast).init(gc.allocator),
         };
     }
 
@@ -40,10 +36,6 @@ pub const Eval = struct {
             self.gc.allocator.free(log.message);
         }
         self.error_log.deinit();
-        for (self.nodes.items) |node| {
-            ast.deinit(node, self.gc.allocator);
-        }
-        self.nodes.deinit();
         self.function_bodies.deinit();
         for (self.environments.items) |env| {
             env.deinit();

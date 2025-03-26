@@ -17,7 +17,6 @@ pub fn main() !void {
             std.log.err("LEAKED MEMORY\n", .{});
         }
     }
-    // const allocator = std.heap.page_allocator;
 
     const args = try Args.init(allocator);
     defer args.deinit();

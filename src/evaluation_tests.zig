@@ -1,14 +1,14 @@
 const std = @import("std");
-const r = @import("reader.zig");
-const v = @import("values.zig");
-const e = @import("evaluation.zig");
 const expect = std.testing.expect;
 const expectEq = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 const expectEqStr = std.testing.expectEqualStrings;
-const gc = @import("gc.zig");
-
 const allocator = std.heap.page_allocator;
+
+const e = @import("evaluation.zig");
+const gc = @import("gc.zig");
+const r = @import("reader.zig");
+const v = @import("values.zig");
 
 fn evalStr(code: []const u8) *v.Value {
     var g = gc.Gc.init(allocator);
@@ -223,4 +223,12 @@ test "assignment and out of scoping" {
         \\ x
     );
     try expectEq(0, value.number);
+}
+
+test "parenthesis expression" {
+    var g = gc.Gc.init(allocator);
+    const env = try v.Environment.init(allocator);
+    var ev = e.Eval.init(&g);
+    const value = try ev.eval(env, "(11 + 1)");
+    try expectEq(12, value.number);
 }

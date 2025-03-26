@@ -45,7 +45,6 @@ pub const Library = struct {
         self.gc.deinit();
         self.allocator.destroy(self.gc);
         self.modules.deinit();
-        owl_std.deinitReadline();
     }
 
     pub fn getModuleAst(self: *Library, path: []const u8) ModuleError!*a.Ast {
