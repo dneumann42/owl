@@ -28,9 +28,19 @@ pub fn evalErrResult(g: *gc.Gc, err: e.EvalError) *v.Value {
 }
 
 fn readLine(g: *gc.Gc, args: std.ArrayList(*v.Value)) *v.Value {
-    _ = args;
-    var input: [1024]u8 = undefined;
     const outr = std.io.getStdOut().reader();
+    const stdout = std.io.getStdOut().writer();
+
+    if (args.items.len > 0) {
+        const prompt = args.items[0];
+        const s = v.toString(prompt, g.allocator, .{ .literal = false }) catch unreachable;
+        defer {
+            g.allocator.free(s);
+        }
+        _ = stdout.write(s) catch unreachable;
+    }
+
+    var input: [1024]u8 = undefined;
     const size = outr.readUntilDelimiter(&input, '\n') catch unreachable;
     return g.strAlloc(input[0..size.len]);
 }

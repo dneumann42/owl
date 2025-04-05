@@ -124,7 +124,7 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool, sh
             var key_iterator = dict.keyIterator();
             while (key_iterator.next()) |key| {
                 const value = dict.get(key.*) orelse continue;
-                const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try toString(key.*, allocator), try toStringRaw(value, allocator, literal, short) });
+                const s = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ try toString(key.*, allocator, .{}), try toStringRaw(value, allocator, literal, short) });
                 try strings.append(s);
             }
 
@@ -134,8 +134,8 @@ pub fn toStringRaw(self: *Value, allocator: std.mem.Allocator, literal: bool, sh
     }
 }
 
-pub fn toString(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
-    return toStringRaw(self, allocator, true, false);
+pub fn toString(self: *Value, allocator: std.mem.Allocator, cfg: struct { literal: bool = true, short: bool = false }) error{OutOfMemory}![]const u8 {
+    return toStringRaw(self, allocator, cfg.literal, cfg.short);
 }
 
 pub fn toStringShort(self: *Value, allocator: std.mem.Allocator) error{OutOfMemory}![]const u8 {
