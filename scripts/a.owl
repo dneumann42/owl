@@ -1,6 +1,1 @@
-x := read-line()
-echo(x)
 
-{
-  a: "AAAA"
-}

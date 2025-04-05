@@ -36,6 +36,9 @@ pub const Eval = struct {
             self.gc.allocator.free(log.message);
         }
         self.error_log.deinit();
+        for (self.function_bodies.items) |item| {
+            ast.deinit(item, self.gc.allocator);
+        }
         self.function_bodies.deinit();
         for (self.environments.items) |env| {
             env.deinit();
@@ -50,7 +53,8 @@ pub const Eval = struct {
     }
 
     pub fn addFunctionBody(self: *Eval, body: *ast.Ast) error{OutOfMemory}!usize {
-        try self.function_bodies.append(body);
+        const copy = try ast.copyAst(body, self.gc.allocator);
+        try self.function_bodies.append(copy);
         return self.function_bodies.items.len - 1;
     }
 
@@ -251,6 +255,7 @@ pub const Eval = struct {
                 return error.OutOfMemory;
             };
         }
+
         const address = try self.addFunctionBody(fun.body);
         const new_env = try self.push(env);
 
@@ -306,9 +311,6 @@ pub const Eval = struct {
             else => {
                 const meta = ast.getAstMeta(call.callable);
                 self.logErrLn(meta.line, "Invalid callable", .{});
-                const s = try ast.toString(call.callable, self.gc.allocator);
-                defer self.gc.allocator.free(s);
-                std.debug.print("{s}\n", .{s});
                 return error.InvalidCallable;
             },
         };

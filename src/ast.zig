@@ -290,6 +290,125 @@ pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) er
     return std.mem.join(allocator, "\n", lines.items);
 }
 
+pub fn copyAst(node: *Ast, allocator: std.mem.Allocator) !*Ast {
+    const meta = getAstMeta(node);
+
+    switch (node.*) {
+        .symbol => |s| {
+            const sym_copy = try allocator.alloc(u8, s.len);
+            @memcpy(sym_copy, s);
+            return sym(allocator, sym_copy, meta);
+        },
+        .number => |n| {
+            return num(allocator, n, meta);
+        },
+        .boolean => |b| {
+            return if (b) T(allocator, meta) else F(allocator, meta);
+        },
+        .string => |s| {
+            const str_copy = try allocator.alloc(u8, s.len);
+            @memcpy(str_copy, s);
+            return str(allocator, str_copy, meta);
+        },
+        .list => |ls| {
+            var copied_items = std.ArrayList(*Ast).init(allocator);
+            for (ls.items) |item| {
+                const item_copy = try copyAst(item, allocator);
+                try copied_items.append(item_copy);
+            }
+            return list(allocator, copied_items, meta);
+        },
+        .dictionary => |dict_items| {
+            var copied_pairs = std.ArrayList(KV).init(allocator);
+            for (dict_items.items) |kv| {
+                const key_copy = try copyAst(kv.key, allocator);
+                const value_copy = try copyAst(kv.value, allocator);
+                try copied_pairs.append(KV{ .key = key_copy, .value = value_copy });
+            }
+            return dict(allocator, copied_pairs, meta);
+        },
+        .call => |c| {
+            var copied_args = std.ArrayList(*Ast).init(allocator);
+            for (c.args.items) |arg| {
+                const arg_copy = try copyAst(arg, allocator);
+                try copied_args.append(arg_copy);
+            }
+            const callable_copy = try copyAst(c.callable, allocator);
+            return call(allocator, callable_copy, copied_args, meta);
+        },
+        .func => |f| {
+            var copied_args = std.ArrayList(*Ast).init(allocator);
+            for (f.args.items) |arg| {
+                const arg_copy = try copyAst(arg, allocator);
+                try copied_args.append(arg_copy);
+            }
+            const body_copy = try copyAst(f.body, allocator);
+            const sym_copy = if (f.sym) |s| try copyAst(s, allocator) else null;
+            return func(allocator, sym_copy, copied_args, body_copy, meta);
+        },
+        .ifx => |i| {
+            var copied_branches = std.ArrayList(Branch).init(allocator);
+            for (i.branches.items) |branch| {
+                const check_copy = try copyAst(branch.check, allocator);
+                const then_copy = try copyAst(branch.then, allocator);
+                try copied_branches.append(Branch{ .check = check_copy, .then = then_copy });
+            }
+            const else_branch_copy = if (i.elseBranch) |e| try copyAst(e, allocator) else null;
+            return ifx(allocator, copied_branches, else_branch_copy, meta);
+        },
+        .whilex => |w| {
+            const condition_copy = try copyAst(w.condition, allocator);
+            const block_copy = try copyAst(w.block, allocator);
+            return whilex(allocator, condition_copy, block_copy, meta);
+        },
+        .forx => |f| {
+            const variable_copy = try copyAst(f.variable, allocator);
+            const iterable_copy = try copyAst(f.iterable, allocator);
+            const block_copy = try copyAst(f.block, allocator);
+            return forx(allocator, variable_copy, iterable_copy, block_copy, meta);
+        },
+        .dot => |d| {
+            const a_copy = try copyAst(d.a, allocator);
+            const b_copy = try copyAst(d.b, allocator);
+            return dot(allocator, a_copy, b_copy, meta);
+        },
+        .binexp => |b| {
+            const a_copy = try copyAst(b.a, allocator);
+            const op_copy = try copyAst(b.op, allocator);
+            const b_copy = try copyAst(b.b, allocator);
+            return binexp(allocator, a_copy, op_copy, b_copy, meta);
+        },
+        .unexp => |u| {
+            const op_copy = try copyAst(u.op, allocator);
+            const value_copy = try copyAst(u.value, allocator);
+            return unexp(allocator, op_copy, value_copy, meta);
+        },
+        .block => |blk| {
+            var copied_items = std.ArrayList(*Ast).init(allocator);
+            for (blk.items) |item| {
+                const item_copy = try copyAst(item, allocator);
+                try copied_items.append(item_copy);
+            }
+            return block(allocator, copied_items, meta);
+        },
+        .assignment => |a| {
+            const left_copy = try copyAst(a.left, allocator);
+            const right_copy = try copyAst(a.right, allocator);
+            return assign(allocator, left_copy, right_copy, meta);
+        },
+        .definition => |d| {
+            const left_copy = try copyAst(d.left, allocator);
+            const right_copy = try copyAst(d.right, allocator);
+            return define(allocator, left_copy, right_copy, meta);
+        },
+        .use => |u| {
+            const name_copy = try allocator.alloc(u8, u.name.len);
+            @memcpy(name_copy, u.name);
+            return use(allocator, name_copy, meta);
+        },
+    }
+}
+
 pub fn create(allocator: std.mem.Allocator, node: Ast, meta: Meta) !*Ast {
     const meta_ast = try allocator.create(MetaAst);
     meta_ast.meta = meta;

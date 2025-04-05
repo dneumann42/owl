@@ -5,6 +5,7 @@ const g = @import("gc.zig");
 const a = @import("ast.zig");
 const owl_std = @import("base.zig");
 const r = @import("reader.zig");
+const assert = std.debug.assert;
 
 const ModuleError = error{ IOError, OutOfMemory, ReaderError, EvalError };
 
@@ -87,9 +88,9 @@ pub const Library = struct {
         return uses;
     }
 
-    pub fn loadModuleDependencies(self: *Library, path: []const u8, log_values: bool) !void {
+    pub fn loadModuleDependencies(self: *Library, path: []const u8, log_values: bool) !*v.Value {
         if (self.modules.contains(path)) {
-            return;
+            return self.gc.nothing();
         }
 
         const ast = try self.getModuleAst(path);
@@ -101,7 +102,7 @@ pub const Library = struct {
             const dep_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.owl", .{ dir, use.name });
             defer self.allocator.free(dep_path);
 
-            try self.loadModuleDependencies(dep_path, log_values);
+            _ = try self.loadModuleDependencies(dep_path, log_values);
         }
 
         const value = try self.evaluator.evalNode(self.env, ast);
@@ -111,42 +112,11 @@ pub const Library = struct {
 
         try self.modules.put(path, module);
         try self.env.define(slice, value);
+        return value;
     }
 
-    pub fn loadCoreLibrary(self: *Library, path: []const u8, log_values: bool) !void {
-        try self.loadModuleDependencies(path, log_values);
-    }
-
-    pub fn loadEntry(self: *Library, path: []const u8, opts: struct {
-        install_core: bool = true,
-        install_base: bool = true,
-        log_values: bool = false,
-    }) !void {
-        if (opts.install_base) {
-            owl_std.installBase(self.gc, self.env);
-        }
-        if (opts.install_core) {
-            self.loadCoreLibrary("lib/core.owl", opts.log_values) catch |err| switch (err) {
-                error.ReaderError => {
-                    if (self.reader_error) |reader_err| {
-                        std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
-                    } else {
-                        std.log.err("Reader error", .{});
-                    }
-                },
-                else => {
-                    const logs = self.evaluator.error_log;
-                    if (logs.items.len == 0) {
-                        std.log.err("{any}\n", .{err});
-                        return;
-                    }
-                    const log = logs.items[0];
-                    std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
-                },
-            };
-        }
-
-        self.loadModuleDependencies(path, opts.log_values) catch |err| switch (err) {
+    pub fn handleError(self: *Library, path: []const u8, err: anyerror) void {
+        switch (err) {
             error.ReaderError => {
                 if (self.reader_error) |reader_err| {
                     std.log.err("{s}:{d}: {s}\n", .{ reader_err.path, reader_err.line_number, reader_err.message });
@@ -163,6 +133,27 @@ pub const Library = struct {
                 const log = logs.items[0];
                 std.log.err("{s}:{d}: {s}\n", .{ path, log.line, log.message });
             },
-        };
+        }
+    }
+
+    pub fn loadCoreLibrary(self: *Library, path: []const u8, log_values: bool) !void {
+        _ = try self.loadModuleDependencies(path, log_values);
+
+        // var key_iterator = core.dictionary.keyIterator();
+        // while (key_iterator.next()) |key| {
+        //     const value = core.dictionary.get(key.*) orelse continue;
+        //     try self.env.define(key.*.symbol, value);
+        // }
+    }
+
+    pub fn loadEntry(self: *Library, path: []const u8, opts: struct {
+        install_base: bool = true,
+        log_values: bool = false,
+    }) !void {
+        if (opts.install_base) {
+            owl_std.installBase(self.gc, self.env);
+        }
+        self.loadCoreLibrary("lib/core.owl", opts.log_values) catch |err| self.handleError("lib/core.owl", err);
+        _ = self.loadModuleDependencies(path, opts.log_values) catch |err| self.handleError(path, err);
     }
 };

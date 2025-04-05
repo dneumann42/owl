@@ -1,22 +1,28 @@
 fun range(min, max)
-  fn() if min > max then
-    false
-  else
-    idx := min
-    min = min + 1
-    idx
-  end
+  fn() 
+    if min > max then
+      false
+    else
+      idx := min
+      min = min + 1
+      idx
+    end
 end
 
 fun items(list)
   i := 0
-  fn() if i < len(list) then
-    itm := nth(list, i)
-    i = i + 1
-    itm
-  else
-    false
-  end
+  fn() 
+    if i < len(list) then
+      itm := nth(list, i)
+      i = i + 1
+      itm
+    else
+      false
+    end
+end
+
+fun test()
+  echo "TEST"
 end
 
 {

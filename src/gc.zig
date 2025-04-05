@@ -89,16 +89,18 @@ pub const Gc = struct {
         return self.create(.{ .string = s }) catch unreachable;
     }
 
-    pub fn symAlloc(self: *Gc, s: []const u8) *v.Value {
+    pub fn copyStr(self: *Gc, s: []const u8) []const u8 {
         const copy = self.allocator.alloc(u8, s.len) catch unreachable;
         std.mem.copyForwards(u8, copy, s);
-        return self.create(.{ .symbol = copy }) catch unreachable;
+        return copy;
+    }
+
+    pub fn symAlloc(self: *Gc, s: []const u8) *v.Value {
+        return self.create(.{ .symbol = self.copyStr(s) }) catch unreachable;
     }
 
     pub fn strAlloc(self: *Gc, s: []const u8) *v.Value {
-        const copy = self.allocator.alloc(u8, s.len) catch unreachable;
-        std.mem.copyForwards(u8, copy, s);
-        return self.create(.{ .string = copy }) catch unreachable;
+        return self.create(.{ .string = self.copyStr(s) }) catch unreachable;
     }
 
     pub fn boolean(self: *Gc, b: bool) *v.Value {

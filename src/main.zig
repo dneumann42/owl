@@ -53,7 +53,6 @@ pub fn runScript(allocator: std.mem.Allocator, path: []const u8) !void {
     var modules = m.Library.init(allocator);
     defer modules.deinit();
     try modules.loadEntry(path, .{
-        .install_core = true,
         .install_base = true,
         .log_values = true,
     });
