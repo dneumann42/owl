@@ -31,13 +31,13 @@ pub const Eval = struct {
         };
     }
 
-    pub fn deinit(self: *Eval) void {
+    pub fn deinit(self: *Eval, ast_allocator: std.mem.Allocator) void {
         for (self.error_log.items) |log| {
             self.gc.allocator.free(log.message);
         }
         self.error_log.deinit();
         for (self.function_bodies.items) |item| {
-            ast.deinit(item, self.gc.allocator);
+            ast.deinit(item, ast_allocator);
         }
         self.function_bodies.deinit();
         for (self.environments.items) |env| {
@@ -53,8 +53,7 @@ pub const Eval = struct {
     }
 
     pub fn addFunctionBody(self: *Eval, body: *ast.Ast) error{OutOfMemory}!usize {
-        const copy = try ast.copyAst(body, self.gc.allocator);
-        try self.function_bodies.append(copy);
+        try self.function_bodies.append(body);
         return self.function_bodies.items.len - 1;
     }
 

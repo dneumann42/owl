@@ -41,7 +41,7 @@ pub const Library = struct {
     }
 
     pub fn deinit(self: *Library) void {
-        self.evaluator.deinit();
+        self.evaluator.deinit(self.allocator);
         self.env.deinit();
         self.gc.deinit();
         self.allocator.destroy(self.gc);
