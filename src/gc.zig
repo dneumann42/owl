@@ -1,131 +1,152 @@
-const v = @import("values.zig");
 const std = @import("std");
+const v = @import("value.zig");
+const Value = v.Value;
+const Environment = v.Environment;
 
-pub const GcError = error{
-    Invalid,
-};
+const HEAP_SIZE = 1024 * 8;
+const NOTHING_INDEX = 0;
 
 pub const Gc = struct {
-    const GcHeader = struct {
-        marked: bool,
-    };
-
-    const AlignedPair = struct {
-        value: v.Value,
-        header: GcHeader,
-    };
-
     allocator: std.mem.Allocator,
-    values: std.ArrayList(*v.Value),
-    nothing_value: ?*v.Value,
 
-    pub fn init(allocator: std.mem.Allocator) Gc {
-        return .{
+    values: [HEAP_SIZE]Value,
+    headers: [HEAP_SIZE]Header,
+    symbols: std.StringHashMap(usize),
+
+    environment: *Environment,
+
+    const Header = struct {
+        used: bool = false,
+        marked: bool = false,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) !@This() {
+        return @This(){ //
             .allocator = allocator,
-            .values = std.ArrayList(*v.Value).init(allocator),
-            .nothing_value = null,
+            .environment = try Environment.init(allocator),
+            .symbols = std.StringHashMap(usize).init(allocator),
+            .values = [_]Value{.nothing} ** HEAP_SIZE,
+            .headers = [_]Header{Header{}} ** HEAP_SIZE,
         };
     }
 
     pub fn deinit(self: *Gc) void {
-        for (self.values.items) |value| {
-            self.deinitValue(value);
+        self.environment.deinit();
+        self.symbols.deinit();
+        self.allocator.destroy(self.environment);
+        for (0..self.values.len) |i| {
+            const value = self.values[i];
+            if (!self.headers[i].used) {
+                continue;
+            }
+            switch (value) {
+                .string, .symbol => |s| self.allocator.free(s),
+                .list => |xs| xs.deinit(),
+                .fun => |func| {
+                    for (func.params.items) |s| {
+                        self.allocator.free(s);
+                    }
+                    func.params.deinit();
+                },
+                else => {},
+            }
         }
-        self.values.deinit();
     }
 
-    pub fn deinitValue(self: *Gc, value: *v.Value) void {
-        switch (value.*) {
-            .string => |s| {
-                self.allocator.free(s);
-            },
-            .symbol => |s| {
-                self.allocator.free(s);
-            },
-            .list => |xs| {
-                xs.deinit();
-            },
-            .function => |f| {
-                f.deinit();
-            },
-            .dictionary => |*d| {
-                d.deinit();
-            },
-            else => {},
-        }
-        self.destroy(value);
-    }
-
-    fn destroy(self: *Gc, value: *v.Value) void {
-        const pair: *AlignedPair = @fieldParentPtr("value", value);
-        self.allocator.destroy(pair);
-    }
-
-    pub fn nothing(self: *Gc) *v.Value {
-        if (self.nothing_value == null) {
-            self.nothing_value = self.create(v.Value.nothing) catch unreachable;
-        }
-        return self.nothing_value.?;
-    }
-
-    pub fn create(self: *Gc, default: v.Value) !*v.Value {
-        const pair = try self.allocator.create(AlignedPair);
-        pair.header = GcHeader{ .marked = false };
-        const ptr = &pair.value;
-        ptr.* = default;
-        try self.values.append(ptr);
-        return ptr;
-    }
-
-    pub fn num(self: *Gc, n: f64) *v.Value {
-        return self.create(.{ .number = n }) catch unreachable;
-    }
-
-    pub fn sym(self: *Gc, s: []const u8) *v.Value {
-        return self.create(.{ .symbol = s }) catch unreachable;
-    }
-
-    pub fn str(self: *Gc, s: []const u8) *v.Value {
-        return self.create(.{ .string = s }) catch unreachable;
-    }
-
-    pub fn copyStr(self: *Gc, s: []const u8) []const u8 {
-        const copy = self.allocator.alloc(u8, s.len) catch unreachable;
-        std.mem.copyForwards(u8, copy, s);
-        return copy;
-    }
-
-    pub fn symAlloc(self: *Gc, s: []const u8) *v.Value {
-        return self.create(.{ .symbol = self.copyStr(s) }) catch unreachable;
-    }
-
-    pub fn strAlloc(self: *Gc, s: []const u8) *v.Value {
-        return self.create(.{ .string = self.copyStr(s) }) catch unreachable;
-    }
-
-    pub fn boolean(self: *Gc, b: bool) *v.Value {
-        return self.create(.{ .boolean = b }) catch unreachable;
-    }
-
-    pub fn nfun(self: *Gc, f: v.NativeFunction) *v.Value {
-        return self.create(.{ .nativeFunction = f }) catch unreachable;
-    }
-
-    pub fn T(self: *Gc) *v.Value {
-        return self.boolean(true);
-    }
-
-    pub fn F(self: *Gc) *v.Value {
-        return self.boolean(false);
-    }
-
-    pub fn getHeader(value: *v.Value) *GcHeader {
-        const pair: *AlignedPair = @fieldParentPtr("value", value);
-        return &pair.header;
-    }
-
-    pub fn mark(self: *Gc, root: *v.Value) void {
+    pub fn push(self: *Gc) void {
         _ = self;
-        _ = root;
+    }
+
+    pub fn pop() void {}
+
+    pub fn find(self: *Gc, key: usize) ?usize {
+        return self.environment.find(key);
+    }
+
+    pub fn put(self: *Gc, key: usize, value: usize) !void {
+        return self.environment.put(key, value);
+    }
+
+    fn findUnused(self: Gc) ?usize {
+        for (1..self.values.len) |i| {
+            if (!self.headers[i].used) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    pub fn getValue(self: *Gc, index: usize) *Value {
+        return &self.values[index];
+    }
+
+    pub fn getHeader(self: *Gc, index: usize) *Header {
+        return &self.headers[index];
+    }
+
+    pub fn nothing(self: *Gc) usize {
+        if (self.headers[NOTHING_INDEX].used) {
+            return NOTHING_INDEX;
+        }
+        self.headers[NOTHING_INDEX] = .{ .used = true, .marked = false };
+        self.values[NOTHING_INDEX] = .nothing;
+        return NOTHING_INDEX;
+    }
+
+    pub fn number(self: *Gc, n: f64) usize {
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .number = n };
+        return i;
+    }
+
+    pub fn boolean(self: *Gc, b: bool) usize {
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .boolean = b };
+        return i;
+    }
+
+    pub fn string(self: *Gc, s: []const u8) usize {
+        const str = self.allocator.alloc(u8, s.len) catch @panic("Out of memory");
+        @memcpy(str, s);
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .string = str };
+        return i;
+    }
+
+    pub fn symbol(self: *Gc, s: []const u8) usize {
+        if (self.symbols.contains(s)) {
+            return self.symbols.get(s).?;
+        }
+        const str = self.allocator.alloc(u8, s.len) catch @panic("Out of memory");
+        @memcpy(str, s);
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .symbol = str };
+        self.symbols.put(str, i) catch @panic("Out of memory");
+        return i;
+    }
+
+    pub fn list(self: *Gc, xs: std.ArrayList(usize)) usize {
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .list = xs };
+        return i;
+    }
+
+    pub fn ffun(self: *Gc, ff: v.ForeignFunction) usize {
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .ffun = ff };
+        return i;
+    }
+
+    pub fn fun(self: *Gc, env: *Environment, params: std.ArrayList([]const u8), body: usize) usize {
+        const i = self.findUnused() orelse @panic("Out of memory");
+        self.headers[i] = .{ .used = true, .marked = false };
+        self.values[i] = .{ .fun = v.Function{ .body = body, .env = env, .params = params } };
+        return i;
     }
 };
