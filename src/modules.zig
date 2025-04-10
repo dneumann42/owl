@@ -77,8 +77,8 @@ pub const Library = struct {
 
     pub fn getModuleDependencies(self: *Library, ast: *a.Ast) !std.ArrayList(a.Use) {
         var uses = std.ArrayList(a.Use).init(self.allocator);
-        for (ast.block.items) |node| {
-            switch (node.*) {
+        for (ast.node.block.items) |ast_node| {
+            switch (ast_node.node) {
                 .use => |use| {
                     try uses.append(use);
                 },
@@ -105,7 +105,7 @@ pub const Library = struct {
             _ = try self.loadModuleDependencies(dep_path, log_values);
         }
 
-        const value = try self.evaluator.evalNode(self.env, ast);
+        const value = try self.evaluator.evalAst(self.env, ast);
         const name = std.fs.path.basename(path);
         const slice = name[0 .. name.len - 4];
         const module = v.Module{ .name = slice, .value = value };

@@ -82,14 +82,14 @@ pub const Eval = struct {
             },
         };
 
-        return self.evalNode(env, node);
+        return self.evalAst(env, node);
     }
 
-    pub fn evalNode(self: *Eval, env: *v.Environment, node: *ast.Ast) EvalError!*v.Value {
-        return switch (node.*) {
-            .number, .boolean, .string => self.evalLiteral(env, node),
+    pub fn evalAst(self: *Eval, env: *v.Environment, a: *ast.Ast) EvalError!*v.Value {
+        return switch (a.*.node) {
+            .number, .boolean, .string => self.evalLiteral(env, a),
             .dictionary => |d| self.evalDictionary(env, d),
-            .symbol => self.evalSymbol(env, node),
+            .symbol => self.evalSymbol(env, a),
             .definition => |define| self.evalDefinition(env, define),
             .assignment => |assign| self.evalAssignment(env, assign),
             .block => |xs| self.evalBlock(env, xs),
@@ -110,41 +110,40 @@ pub const Eval = struct {
         var value: *v.Value = self.gc.nothing();
         const new_env = try self.push(env);
         for (xs.items) |node| {
-            value = try self.evalNode(new_env, node);
+            value = try self.evalAst(new_env, node);
         }
         return value;
     }
 
     pub fn evalBinexp(self: *Eval, env: *v.Environment, bin: ast.Binexp) EvalError!*v.Value {
-        const left = try self.evalNode(env, bin.a);
-        const right = try self.evalNode(env, bin.b);
-        return if (std.mem.eql(u8, bin.op.symbol, "+"))
+        const left = try self.evalAst(env, bin.a);
+        const right = try self.evalAst(env, bin.b);
+        return if (std.mem.eql(u8, bin.op.node.symbol, "+"))
             self.gc.num(v.toNumber(left) + v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, "-"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, "-"))
             self.gc.num(v.toNumber(left) - v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, "*"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, "*"))
             self.gc.num(v.toNumber(left) * v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, "/"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, "/"))
             self.gc.num(v.toNumber(left) / v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, "<"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, "<"))
             self.gc.boolean(v.toNumber(left) < v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, ">"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, ">"))
             self.gc.boolean(v.toNumber(left) > v.toNumber(right))
-        else if (std.mem.eql(u8, bin.op.symbol, "eq"))
+        else if (std.mem.eql(u8, bin.op.node.symbol, "eq"))
             self.gc.boolean(v.isEql(left, right))
         else {
-            const meta = ast.getAstMeta(bin.op);
-            self.logErrLn(meta.line, "Unexpected binary operator '{s}'", .{bin.op.symbol});
+            self.logErrLn(bin.op.meta.line, "Unexpected binary operator '{s}'", .{bin.op.node.symbol});
             return error.InvalidBinexp;
         };
     }
 
     pub fn evalUnexp(self: *Eval, env: *v.Environment, un: ast.Unexp) EvalError!*v.Value {
-        if (std.mem.eql(u8, un.op.symbol, "-")) {
-            return self.gc.num(-un.value.number);
+        if (std.mem.eql(u8, un.op.node.symbol, "-")) {
+            return self.gc.num(-un.value.node.number);
         }
-        if (std.mem.eql(u8, un.op.symbol, "not")) {
-            const value = try self.evalNode(env, un.value);
+        if (std.mem.eql(u8, un.op.node.symbol, "not")) {
+            const value = try self.evalAst(env, un.value);
             switch (value.*) {
                 .number => |n| {
                     return if (n == 0) self.gc.num(1) else self.gc.num(0);
@@ -157,20 +156,20 @@ pub const Eval = struct {
                 },
             }
         }
-        self.logErr("Invalid unary operator '{s}'", .{un.op.symbol});
+        self.logErr("Invalid unary operator '{s}'", .{un.op.node.symbol});
         return error.InvalidUnexp;
     }
 
-    pub fn evalDefinition(self: *Eval, env: *v.Environment, define: ast.Define) EvalError!*v.Value {
-        const sym = define.left.symbol;
-        const value = try self.evalNode(env, define.right);
+    pub fn evalDefinition(self: *Eval, env: *v.Environment, define: ast.Pair) EvalError!*v.Value {
+        const sym = define.a.node.symbol;
+        const value = try self.evalAst(env, define.b);
         try env.define(sym, value);
         return value;
     }
 
-    pub fn evalLiteral(self: *Eval, env: *v.Environment, node: *ast.Ast) EvalError!*v.Value {
+    pub fn evalLiteral(self: *Eval, env: *v.Environment, lit: *ast.Ast) EvalError!*v.Value {
         _ = env;
-        return switch (node.*) {
+        return switch (lit.node) {
             .number => |n| self.gc.num(n),
             .boolean => |b| self.gc.boolean(b),
             .string => |s| self.gc.strAlloc(s),
@@ -182,33 +181,32 @@ pub const Eval = struct {
         // TODO: fix double free, we need to transfer ownership of symbol and dealloc the ast
         var dict = v.Dictionary.init(self.gc.allocator);
         for (d.items) |kv| {
-            const key = self.gc.symAlloc(kv.key.symbol);
-            const value = try self.evalNode(env, kv.value);
+            const key = self.gc.symAlloc(kv.a.node.symbol);
+            const value = try self.evalAst(env, kv.b);
             try dict.put(key, value);
         }
         return self.gc.create(.{ .dictionary = dict });
     }
 
     pub fn evalSymbol(self: *Eval, env: *v.Environment, s: *ast.Ast) EvalError!*v.Value {
-        if (std.mem.eql(u8, s.symbol, "nothing")) {
+        if (std.mem.eql(u8, s.node.symbol, "nothing")) {
             return self.gc.nothing();
         }
-        if (env.find(s.symbol)) |value| {
+        if (env.find(s.node.symbol)) |value| {
             return value;
         }
-        const meta = ast.getAstMeta(s);
-        self.logErrLn(meta.line, "Undefined symbol '{s}'", .{s.symbol});
+        self.logErrLn(s.meta.line, "Undefined symbol '{s}'", .{s.node.symbol});
         return error.UndefinedSymbol;
     }
 
-    pub fn reduceLExpr(self: *Eval, env: *v.Environment, dot: ast.Dot) EvalError!*v.Value {
-        switch (dot.a.*) {
+    pub fn reduceLExpr(self: *Eval, env: *v.Environment, dot: ast.Pair) EvalError!*v.Value {
+        switch (dot.a.*.node) {
             .symbol => |s| {
                 return env.find(s) orelse self.gc.nothing();
             },
             .dot => |d| {
                 const dict = try self.reduceLExpr(env, d);
-                const key = self.gc.symAlloc(d.b.symbol);
+                const key = self.gc.symAlloc(d.b.node.symbol);
                 return dict.dictionary.get(key) orelse self.gc.nothing();
             },
             .call => |c| {
@@ -220,21 +218,20 @@ pub const Eval = struct {
         }
     }
 
-    pub fn evalAssignment(self: *Eval, env: *v.Environment, assign: ast.Assign) EvalError!*v.Value {
-        switch (assign.left.*) {
+    pub fn evalAssignment(self: *Eval, env: *v.Environment, assign: ast.Pair) EvalError!*v.Value {
+        switch (assign.a.*.node) {
             .dot => |dot| {
                 var dict = try self.reduceLExpr(env, dot);
-                const key = self.gc.symAlloc(dot.b.symbol);
-                const value = try self.evalNode(env, assign.right);
+                const key = self.gc.symAlloc(dot.b.node.symbol);
+                const value = try self.evalAst(env, assign.b);
                 try dict.dictionary.put(key, value);
                 return value;
             },
             .symbol => |key| {
-                const value = try self.evalNode(env, assign.right);
+                const value = try self.evalAst(env, assign.b);
                 env.set(key, value) catch |e| switch (e) {
                     error.KeyNotFound => {
-                        const meta = ast.getAstMeta(assign.left);
-                        self.logErrLn(meta.line, "Variable is undefined '{s}'", .{key});
+                        self.logErrLn(assign.a.meta.line, "Variable is undefined '{s}'", .{key});
                         return e;
                     },
                     else => return e,
@@ -250,7 +247,7 @@ pub const Eval = struct {
     pub fn evalFunc(self: *Eval, env: *v.Environment, fun: ast.Func) EvalError!*v.Value {
         var fs = std.ArrayList([]const u8).init(self.gc.allocator);
         for (fun.args.items) |arg| {
-            fs.append(arg.symbol) catch {
+            fs.append(arg.node.symbol) catch {
                 return error.OutOfMemory;
             };
         }
@@ -262,7 +259,7 @@ pub const Eval = struct {
             return error.OutOfMemory;
         };
         if (fun.sym) |symbol| {
-            try env.define(symbol.symbol, func);
+            try env.define(symbol.node.symbol, func);
         }
         return func;
     }
@@ -270,22 +267,21 @@ pub const Eval = struct {
     pub fn evalList(self: *Eval, env: *v.Environment, xs: std.ArrayList(*ast.Ast)) EvalError!*v.Value {
         var list = std.ArrayList(*v.Value).init(self.gc.allocator);
         for (xs.items) |item| {
-            const value = try self.evalNode(env, item);
+            const value = try self.evalAst(env, item);
             try list.append(value);
         }
         return v.clist(self.gc, list);
     }
 
     pub fn evalCall(self: *Eval, env: *v.Environment, call: ast.Call) EvalError!*v.Value {
-        switch (call.callable.*) {
+        switch (call.callable.*.node) {
             .symbol => |s| {
                 if (std.mem.eql(u8, s, "eval")) {
-                    const str = try self.evalNode(env, call.args.items[0]);
+                    const str = try self.evalAst(env, call.args.items[0]);
                     switch (str.*) {
                         .string => {},
                         else => {
-                            const meta = ast.getAstMeta(call.callable);
-                            self.logErrLn(meta.line, "Invalid callable", .{});
+                            self.logErrLn(0, "Invalid callable", .{});
                             return error.InvalidCallable;
                         },
                     }
@@ -294,22 +290,21 @@ pub const Eval = struct {
                         return self.gc.nothing();
                     };
                 } else if (std.mem.eql(u8, s, "cons")) {
-                    const a = try self.evalNode(env, call.args.items[0]);
-                    const b = try self.evalNode(env, call.args.items[1]);
+                    const a = try self.evalAst(env, call.args.items[0]);
+                    const b = try self.evalAst(env, call.args.items[1]);
                     return v.cons(self.gc, a, b);
                 }
             },
             else => {},
         }
 
-        const fun = switch ((try self.evalNode(env, call.callable)).*) {
+        const fun = switch ((try self.evalAst(env, call.callable)).*) {
             .function => |fun| fun,
             .nativeFunction => |nfun| {
                 return self.evalNativeCallFn(env, nfun, call.args);
             },
             else => {
-                const meta = ast.getAstMeta(call.callable);
-                self.logErrLn(meta.line, "Invalid callable", .{});
+                self.logErrLn(call.callable.meta.line, "Invalid callable", .{});
                 return error.InvalidCallable;
             },
         };
@@ -317,37 +312,35 @@ pub const Eval = struct {
         var next = fun.env;
         for (0..fun.params.items.len) |i| {
             const param = fun.params.items[i];
-            const value = try self.evalNode(env, call.args.items[i]);
+            const value = try self.evalAst(env, call.args.items[i]);
             try next.define(param, value);
         }
-        return self.evalNode(next, body);
+        return self.evalAst(next, body);
     }
 
     pub fn evalNativeCallFn(self: *Eval, env: *v.Environment, native: v.NativeFunction, args: std.ArrayList(*ast.Ast)) EvalError!*v.Value {
         var vs = std.ArrayList(*v.Value).init(self.gc.allocator);
         defer vs.deinit();
         for (args.items) |arg| {
-            try vs.append(try self.evalNode(env, arg));
+            try vs.append(try self.evalAst(env, arg));
         }
         return native(self.gc, vs);
     }
 
-    pub fn evalDot(self: *Eval, env: *v.Environment, dot: ast.Dot) EvalError!*v.Value {
-        const a = try self.evalNode(env, dot.a);
-        const b = self.gc.symAlloc(dot.b.symbol);
+    pub fn evalDot(self: *Eval, env: *v.Environment, dot: ast.Pair) EvalError!*v.Value {
+        const a = try self.evalAst(env, dot.a);
+        const b = self.gc.symAlloc(dot.b.node.symbol);
 
         switch (a.*) {
             .dictionary => |d| {
                 return d.get(b) orelse self.gc.nothing();
             },
             .nothing => {
-                const meta = ast.getAstMeta(dot.b);
-                self.logErrLn(meta.line, "Left side of dot operator is undefined", .{});
+                self.logErrLn(0, "Left side of dot operator is undefined", .{});
                 return error.Undefined;
             },
             else => {
-                const meta = ast.getAstMeta(dot.a);
-                self.logErrLn(meta.line, "Left side of dot operator is not a valid value", .{});
+                self.logErrLn(0, "Left side of dot operator is not a valid value", .{});
                 return error.InvalidDotValue;
             },
         }
@@ -355,13 +348,13 @@ pub const Eval = struct {
 
     pub fn evalIf(self: *Eval, env: *v.Environment, ifx: ast.If) EvalError!*v.Value {
         for (ifx.branches.items) |branch| {
-            const cond = try self.evalNode(env, branch.check);
+            const cond = try self.evalAst(env, branch.check);
             if (v.isTrue(cond)) {
-                return self.evalNode(env, branch.then);
+                return self.evalAst(env, branch.then);
             }
         }
-        if (ifx.elseBranch) |elseBranch| {
-            return self.evalNode(env, elseBranch);
+        if (ifx.otherwise) |otherwise| {
+            return self.evalAst(env, otherwise);
         }
         return self.gc.nothing();
     }
@@ -369,11 +362,11 @@ pub const Eval = struct {
     pub fn evalWhile(self: *Eval, env: *v.Environment, whilex: ast.While) EvalError!*v.Value {
         var result = self.gc.nothing();
         while (true) {
-            const condition_result = try self.evalNode(env, whilex.condition);
+            const condition_result = try self.evalAst(env, whilex.condition);
             if (v.isFalse(condition_result)) {
                 break;
             }
-            result = try self.evalNode(env, whilex.block);
+            result = try self.evalAst(env, whilex.block);
         }
         return result;
     }
@@ -408,30 +401,30 @@ pub const Eval = struct {
             forx.iterable, //
             .{} //
         );
-        defer ast.destroy(define_it, self.gc.allocator);
+        defer ast.deinit(define_it, self.gc.allocator);
 
         const define_index = try ast.define(self.gc.allocator, forx.variable, iter_call, .{});
-        defer ast.destroy(define_index, self.gc.allocator);
+        defer ast.deinit(define_index, self.gc.allocator);
 
         try body.append(define_it);
         try body.append(define_index);
 
         const condition = forx.variable;
-        var while_block = forx.block.block;
+        var while_block = forx.block.node.block;
         const assign = try ast.assign(self.gc.allocator, forx.variable, iter_call, .{});
-        defer ast.destroy(assign, self.gc.allocator);
+        defer ast.deinit(assign, self.gc.allocator);
 
         try while_block.append(assign);
 
         const while_body = try ast.block(self.gc.allocator, while_block, .{});
-        defer ast.destroy(while_body, self.gc.allocator);
+        defer ast.deinit(while_body, self.gc.allocator);
 
         const whilex = try ast.whilex(self.gc.allocator, condition, while_body, .{});
-        defer ast.destroy(whilex, self.gc.allocator);
+        defer ast.deinit(whilex, self.gc.allocator);
 
         try body.append(whilex);
         const block = try ast.block(self.gc.allocator, body, .{});
-        defer ast.destroy(block, self.gc.allocator);
-        return self.evalNode(env, block);
+        defer ast.deinit(block, self.gc.allocator);
+        return self.evalAst(env, block);
     }
 };

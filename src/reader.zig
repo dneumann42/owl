@@ -7,7 +7,7 @@ pub const TokenKind = enum { number, keyword, symbol, string, boolean, openParen
 pub const Token = struct {
     kind: TokenKind,
     start: usize,
-    line: usize,
+    line: u32,
 
     fn init(kind: TokenKind, start: usize) Token {
         return .{
@@ -101,10 +101,10 @@ pub const Tokenizer = struct {
     pub fn tokenize(self: Tokenizer) !std.ArrayList(Token) {
         var tokens = std.ArrayList(Token).init(self.allocator);
         var index: usize = 0;
-        var line: usize = 1;
+        var line: u32 = 1;
 
         const T = struct {
-            fn skipWS(idx: *usize, ln: *usize, c: []const u8) void {
+            fn skipWS(idx: *usize, ln: *u32, c: []const u8) void {
                 while (idx.* < c.len and std.ascii.isWhitespace(c[idx.*])) {
                     if (c[idx.*] == '\n') {
                         ln.* += 1;
@@ -360,7 +360,7 @@ pub const Reader = struct {
                     return R.fromErr(e);
                 },
             };
-            block.block.append(exp) catch {
+            block.node.block.append(exp) catch {
                 return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to append expression");
             };
         }
@@ -404,7 +404,7 @@ pub const Reader = struct {
 
         var operator_match = false;
         for (operators) |operator| {
-            if (std.mem.eql(u8, symbol.symbol, operator)) {
+            if (std.mem.eql(u8, symbol.node.symbol, operator)) {
                 operator_match = true;
                 break;
             }
@@ -671,7 +671,7 @@ pub const Reader = struct {
         self.index += 1;
         switch (self.readSymbol(false)) {
             .ok => |s| {
-                return R.o(ast.use(self.allocator, s.symbol, .{}) catch {
+                return R.o(ast.use(self.allocator, s.node.symbol, .{}) catch {
                     return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate definition");
                 });
             },
@@ -799,14 +799,14 @@ pub const Reader = struct {
             return R.noMatch("Not an if");
         }
 
-        var elseBranch: ?*ast.Ast = null;
+        var otherwise: ?*ast.Ast = null;
         var branches = std.ArrayList(ast.Branch).init(self.allocator);
         var first = true;
 
         while (self.index < self.tokens.items.len) {
             if (self.tokenMatches("else")) |_| {
                 self.index += 1;
-                elseBranch = switch (self.readBlockTillEnd()) {
+                otherwise = switch (self.readBlockTillEnd()) {
                     .err => |e| {
                         return R.fromErr(e);
                     },
@@ -870,7 +870,7 @@ pub const Reader = struct {
             }
         }
 
-        return R.o(ast.ifx(self.allocator, branches, elseBranch, .{}) catch {
+        return R.o(ast.ifx(self.allocator, branches, otherwise, .{}) catch {
             return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate if");
         });
     }
@@ -1191,7 +1191,7 @@ pub const Reader = struct {
             return R.noMatch("Not a dictionary literal");
         }
         self.index += 1;
-        var pairs = std.ArrayList(ast.KV).init(self.allocator);
+        var pairs = std.ArrayList(ast.Pair).init(self.allocator);
 
         if (self.isTokenKind(TokenKind.closeBrace)) {
             self.index += 1;
@@ -1210,10 +1210,10 @@ pub const Reader = struct {
                         return R.errMsg(ReaderErrorKind.InvalidDictionary, self.charIndex(), "Expected symbol");
                     },
                 };
-                const sym_value = ast.symAlloc(self.allocator, sym.symbol, .{}) catch {
+                const sym_value = ast.symAlloc(self.allocator, sym.node.symbol, .{}) catch {
                     return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to allocate value");
                 };
-                pairs.append(ast.KV{ .key = sym, .value = sym_value }) catch {
+                pairs.append(ast.Pair{ .a = sym, .b = sym_value }) catch {
                     return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to append dictionary key value");
                 };
             } else {
@@ -1236,7 +1236,7 @@ pub const Reader = struct {
                     },
                 };
 
-                pairs.append(ast.KV{ .key = sym, .value = value }) catch {
+                pairs.append(ast.Pair{ .a = sym, .b = value }) catch {
                     return R.errMsg(ReaderErrorKind.Error, self.charIndex(), "Failed to append dictionary key value");
                 };
             }
@@ -1364,10 +1364,10 @@ pub const Reader = struct {
         const lexeme = self.tokenizer.getLexeme(sym) orelse {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Failed to get lexeme");
         };
-        const symbol = ast.symAlloc(self.allocator, lexeme, .{ .line = sym.line }) catch {
+        const symbol = ast.symAlloc(self.allocator, lexeme, .{}) catch {
             return R.errMsg(ReaderErrorKind.Error, sym.start, "Error allocating symbol");
         };
-        self.symbols.append(symbol.symbol) catch unreachable;
+        self.symbols.append(symbol.node.symbol) catch unreachable;
         self.index += 1;
         return R.o(symbol);
     }

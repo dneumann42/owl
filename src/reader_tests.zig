@@ -47,7 +47,7 @@ test "reading programs" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].number, 1.0);
+    try testing.expectEqual(program.node.block.items[0].node.number, 1.0);
 }
 
 test "reading number literals" {
@@ -55,10 +55,10 @@ test "reading number literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].number, 31415926);
-    try testing.expectEqual(program.block.items[1].number, 1);
-    try testing.expectEqual(program.block.items[2].number, 2);
-    try testing.expectEqual(program.block.items[3].number, 3);
+    try testing.expectEqual(program.node.block.items[0].node.number, 31415926);
+    try testing.expectEqual(program.node.block.items[1].node.number, 1);
+    try testing.expectEqual(program.node.block.items[2].node.number, 2);
+    try testing.expectEqual(program.node.block.items[3].node.number, 3);
 }
 
 test "reading boolean literals" {
@@ -66,8 +66,8 @@ test "reading boolean literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].boolean, true);
-    try testing.expectEqual(program.block.items[1].boolean, false);
+    try testing.expectEqual(program.node.block.items[0].node.boolean, true);
+    try testing.expectEqual(program.node.block.items[1].node.boolean, false);
 }
 
 test "reading string literals" {
@@ -77,8 +77,8 @@ test "reading string literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqualStrings(program.block.items[0].string, "Hello, World!");
-    try testing.expectEqualStrings(program.block.items[1].string, "");
+    try testing.expectEqualStrings(program.node.block.items[0].node.string, "Hello, World!");
+    try testing.expectEqualStrings(program.node.block.items[1].node.string, "");
 }
 
 test "reading unary operators" {
@@ -102,8 +102,8 @@ test "reading unary expressions" {
     const aa_result = reader.readUnary();
     const aa = aa_result.ok;
     defer a.deinit(aa, testing.allocator);
-    try testing.expectEqualStrings(aa.unexp.op.symbol, "-");
-    try testing.expectEqual(aa.unexp.value.number, 123);
+    try testing.expectEqualStrings(aa.node.unexp.op.node.symbol, "-");
+    try testing.expectEqual(aa.node.unexp.value.node.number, 123);
 }
 
 test "reading binary expressions" {
@@ -111,16 +111,16 @@ test "reading binary expressions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqual(exp.binexp.a.number, 1);
-    try testing.expectEqualStrings(exp.binexp.op.symbol, "or");
-    try testing.expectEqual(exp.binexp.b.binexp.a.number, 2);
-    try testing.expectEqualStrings(exp.binexp.b.binexp.op.symbol, "and");
-    try testing.expectEqual(exp.binexp.b.binexp.b.number, 3);
+    const exp = program.node.block.items[0];
+    try testing.expectEqual(exp.node.binexp.a.node.number, 1);
+    try testing.expectEqualStrings(exp.node.binexp.op.node.symbol, "or");
+    try testing.expectEqual(exp.node.binexp.b.node.binexp.a.node.number, 2);
+    try testing.expectEqualStrings(exp.node.binexp.b.node.binexp.op.node.symbol, "and");
+    try testing.expectEqual(exp.node.binexp.b.node.binexp.b.node.number, 3);
 
-    const exp2 = program.block.items[1];
-    try testing.expectEqual(exp2.binexp.a.number, 4);
-    try testing.expectEqual(exp2.binexp.b.number, 5);
+    const exp2 = program.node.block.items[1];
+    try testing.expectEqual(exp2.node.binexp.a.node.number, 4);
+    try testing.expectEqual(exp2.node.binexp.b.node.number, 5);
 }
 
 test "reading function calls" {
@@ -129,10 +129,10 @@ test "reading function calls" {
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
 
-    const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.call.callable.symbol, "call");
-    try testing.expectEqual(exp.call.args.items[0].number, 1);
-    try testing.expectEqual(exp.call.args.items[1].number, 2);
+    const exp = program.node.block.items[0];
+    try testing.expectEqualStrings(exp.node.call.callable.node.symbol, "call");
+    try testing.expectEqual(exp.node.call.args.items[0].node.number, 1);
+    try testing.expectEqual(exp.node.call.args.items[1].node.number, 2);
 }
 
 test "reading dot & call expressions" {
@@ -141,22 +141,22 @@ test "reading dot & call expressions" {
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
 
-    const exp1 = program.block.items[0];
-    try testing.expectEqualStrings(exp1.dot.a.symbol, "a");
-    try testing.expectEqualStrings(exp1.dot.b.symbol, "b");
+    const exp1 = program.node.block.items[0];
+    try testing.expectEqualStrings(exp1.node.dot.a.node.symbol, "a");
+    try testing.expectEqualStrings(exp1.node.dot.b.node.symbol, "b");
 
-    const exp2 = program.block.items[1];
-    try testing.expectEqualStrings(exp2.dot.a.call.callable.symbol, "a");
-    try testing.expectEqualStrings(exp2.dot.b.symbol, "b");
+    const exp2 = program.node.block.items[1];
+    try testing.expectEqualStrings(exp2.node.dot.a.node.call.callable.node.symbol, "a");
+    try testing.expectEqualStrings(exp2.node.dot.b.node.symbol, "b");
 
-    const exp3 = program.block.items[2];
-    try testing.expectEqualStrings(exp3.call.callable.dot.a.symbol, "a");
-    try testing.expectEqualStrings(exp3.call.callable.dot.b.symbol, "b");
+    const exp3 = program.node.block.items[2];
+    try testing.expectEqualStrings(exp3.node.call.callable.node.dot.a.node.symbol, "a");
+    try testing.expectEqualStrings(exp3.node.call.callable.node.dot.b.node.symbol, "b");
 
-    const exp4 = program.block.items[3];
+    const exp4 = program.node.block.items[3];
     // try testing.expectEqualStrings(exp4.dot.a.symbol, "a");
     // try testing.expectEqualStrings(exp4.call.callable.dot.b.symbol, "b");
-    try testing.expectEqualStrings(exp4.dot.b.symbol, "c");
+    try testing.expectEqualStrings(exp4.node.dot.b.node.symbol, "c");
 }
 
 test "reading nested dot expressions" {
@@ -164,10 +164,10 @@ test "reading nested dot expressions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp1 = program.block.items[0];
-    try testing.expectEqualStrings(exp1.dot.a.dot.a.symbol, "a");
-    try testing.expectEqualStrings(exp1.dot.a.dot.b.symbol, "b");
-    try testing.expectEqualStrings(exp1.dot.b.symbol, "c");
+    const exp1 = program.node.block.items[0];
+    try testing.expectEqualStrings(exp1.node.dot.a.node.dot.a.node.symbol, "a");
+    try testing.expectEqualStrings(exp1.node.dot.a.node.dot.b.node.symbol, "b");
+    try testing.expectEqualStrings(exp1.node.dot.b.node.symbol, "c");
 }
 
 test "reading empty functions" {
@@ -175,8 +175,8 @@ test "reading empty functions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.func.sym.?.symbol, "a");
+    const exp = program.node.block.items[0];
+    try testing.expectEqualStrings(exp.node.func.sym.?.node.symbol, "a");
 }
 
 test "reading function definitions" {
@@ -184,14 +184,14 @@ test "reading function definitions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqualStrings(exp.func.sym.?.symbol, "add-1");
-    try testing.expectEqualStrings(exp.func.args.items[0].symbol, "y");
-    const binexp = exp.func.body.block.items[0];
-    try testing.expectEqualStrings(binexp.binexp.a.symbol, "y");
-    try testing.expectEqualStrings(binexp.binexp.op.symbol, "+");
-    try testing.expectEqual(binexp.binexp.b.number, 1);
+    try testing.expectEqualStrings(exp.node.func.sym.?.node.symbol, "add-1");
+    try testing.expectEqualStrings(exp.node.func.args.items[0].node.symbol, "y");
+    const binexp = exp.node.func.body.node.block.items[0];
+    try testing.expectEqualStrings(binexp.node.binexp.a.node.symbol, "y");
+    try testing.expectEqualStrings(binexp.node.binexp.op.node.symbol, "+");
+    try testing.expectEqual(binexp.node.binexp.b.node.number, 1);
 }
 
 test "reading lambdas" {
@@ -199,14 +199,14 @@ test "reading lambdas" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.func.sym, null);
-    try testing.expectEqualStrings(exp.func.args.items[0].symbol, "y");
-    const binexp = exp.func.body;
-    try testing.expectEqualStrings(binexp.binexp.a.symbol, "y");
-    try testing.expectEqualStrings(binexp.binexp.op.symbol, "+");
-    try testing.expectEqual(binexp.binexp.b.number, 1);
+    try testing.expectEqual(exp.node.func.sym, null);
+    try testing.expectEqualStrings(exp.node.func.args.items[0].node.symbol, "y");
+    const binexp = exp.node.func.body;
+    try testing.expectEqualStrings(binexp.node.binexp.a.node.symbol, "y");
+    try testing.expectEqualStrings(binexp.node.binexp.op.node.symbol, "+");
+    try testing.expectEqual(binexp.node.binexp.b.node.number, 1);
 }
 
 test "reading definitions" {
@@ -214,9 +214,9 @@ test "reading definitions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.definition.left.symbol, "x");
-    try testing.expectEqual(exp.definition.right.number, 10);
+    const exp = program.node.block.items[0];
+    try testing.expectEqualStrings(exp.node.definition.a.node.symbol, "x");
+    try testing.expectEqual(exp.node.definition.b.node.number, 10);
 }
 
 test "reading assignment" {
@@ -224,9 +224,9 @@ test "reading assignment" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqualStrings(exp.assignment.left.symbol, "x");
-    try testing.expectEqual(exp.assignment.right.number, 10);
+    const exp = program.node.block.items[0];
+    try testing.expectEqualStrings(exp.node.assignment.a.node.symbol, "x");
+    try testing.expectEqual(exp.node.assignment.b.node.number, 10);
 }
 
 test "reading do blocks" {
@@ -234,8 +234,8 @@ test "reading do blocks" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expect(exp.block.items.len == 1);
+    const exp = program.node.block.items[0];
+    try testing.expect(exp.node.block.items.len == 1);
 }
 
 test "reading if" {
@@ -243,12 +243,12 @@ test "reading if" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.ifx.elseBranch, null);
-    try testing.expectEqual(exp.ifx.branches.items.len, 1);
-    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
+    try testing.expectEqual(exp.node.ifx.otherwise, null);
+    try testing.expectEqual(exp.node.ifx.branches.items.len, 1);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].check.node.boolean, true);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].then.node.block.items[0].node.number, 1);
 }
 
 test "reading if with else" {
@@ -256,11 +256,11 @@ test "reading if with else" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
-    try testing.expectEqual(exp.ifx.branches.items.len, 1);
-    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
+    const exp = program.node.block.items[0];
+    try testing.expectEqual(exp.node.ifx.otherwise.?.node.block.items[0].node.number, 2);
+    try testing.expectEqual(exp.node.ifx.branches.items.len, 1);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].check.node.boolean, true);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].then.node.block.items[0].node.number, 1);
 }
 
 test "reading if with elif and else" {
@@ -268,13 +268,13 @@ test "reading if with elif and else" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
-    try testing.expectEqual(exp.ifx.elseBranch.?.block.items[0].number, 2);
-    try testing.expectEqual(exp.ifx.branches.items.len, 2);
-    try testing.expectEqual(exp.ifx.branches.items[0].check.boolean, true);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 1);
-    try testing.expectEqual(exp.ifx.branches.items[1].check.boolean, false);
-    try testing.expectEqual(exp.ifx.branches.items[1].then.block.items[0].number, 3);
+    const exp = program.node.block.items[0];
+    try testing.expectEqual(exp.node.ifx.otherwise.?.node.block.items[0].node.number, 2);
+    try testing.expectEqual(exp.node.ifx.branches.items.len, 2);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].check.node.boolean, true);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].then.node.block.items[0].node.number, 1);
+    try testing.expectEqual(exp.node.ifx.branches.items[1].check.node.boolean, false);
+    try testing.expectEqual(exp.node.ifx.branches.items[1].then.node.block.items[0].node.number, 3);
 }
 
 test "reading conditions" {
@@ -287,12 +287,12 @@ test "reading conditions" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.ifx.elseBranch, null);
-    try testing.expectEqual(exp.ifx.branches.items.len, 2);
-    try testing.expectEqual(exp.ifx.branches.items[0].check.binexp.a.number, 1);
-    try testing.expectEqual(exp.ifx.branches.items[0].then.block.items[0].number, 2);
+    try testing.expectEqual(exp.node.ifx.otherwise, null);
+    try testing.expectEqual(exp.node.ifx.branches.items.len, 2);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].check.node.binexp.a.node.number, 1);
+    try testing.expectEqual(exp.node.ifx.branches.items[0].then.node.block.items[0].node.number, 2);
 }
 
 test "reading dictionary literals" {
@@ -300,13 +300,13 @@ test "reading dictionary literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.dictionary.items.len, 2);
-    try testing.expectEqualStrings(exp.dictionary.items[0].key.symbol, "a");
-    try testing.expectEqual(exp.dictionary.items[0].value.number, 1);
-    try testing.expectEqualStrings(exp.dictionary.items[1].key.symbol, "b");
-    try testing.expectEqual(exp.dictionary.items[1].value.number, 2);
+    try testing.expectEqual(exp.node.dictionary.items.len, 2);
+    try testing.expectEqualStrings(exp.node.dictionary.items[0].a.node.symbol, "a");
+    try testing.expectEqual(exp.node.dictionary.items[0].b.node.number, 1);
+    try testing.expectEqualStrings(exp.node.dictionary.items[1].a.node.symbol, "b");
+    try testing.expectEqual(exp.node.dictionary.items[1].b.node.number, 2);
 }
 
 test "reading list literals" {
@@ -314,11 +314,11 @@ test "reading list literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.list.items[0].number, 1);
-    try testing.expectEqual(exp.list.items[1].number, 2);
-    try testing.expectEqual(exp.list.items[2].number, 3);
+    try testing.expectEqual(exp.node.list.items[0].node.number, 1);
+    try testing.expectEqual(exp.node.list.items[1].node.number, 2);
+    try testing.expectEqual(exp.node.list.items[2].node.number, 3);
 }
 
 test "reading empty list literals" {
@@ -326,9 +326,9 @@ test "reading empty list literals" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    const exp = program.block.items[0];
+    const exp = program.node.block.items[0];
 
-    try testing.expectEqual(exp.list.items.len, 0);
+    try testing.expectEqual(exp.node.list.items.len, 0);
 }
 
 test "blocks" {
@@ -336,7 +336,7 @@ test "blocks" {
     defer reader.deinit();
     const program = reader.read().ok;
     defer a.deinit(program, reader.allocator);
-    try testing.expectEqual(program.block.items[0].number, 1);
-    try testing.expectEqual(program.block.items[1].number, 2);
-    try testing.expectEqual(program.block.items[2].number, 3);
+    try testing.expectEqual(program.node.block.items[0].node.number, 1);
+    try testing.expectEqual(program.node.block.items[1].node.number, 2);
+    try testing.expectEqual(program.node.block.items[2].node.number, 3);
 }
