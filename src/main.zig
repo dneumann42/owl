@@ -1,4 +1,7 @@
 const std = @import("std");
+comptime {
+    _ = @import("tests/all_tests.zig");
+}
 
 const r = @import("reader.zig");
 const g = @import("gc.zig");
@@ -24,7 +27,7 @@ pub const Sushi = struct {
     }
 
     pub fn eval(self: *Sushi, code: []const u8) !*v.Value {
-        return self.evaluator.evalString(code);
+        return self.evaluator.evalString(self.evaluator.gc.environment, code);
     }
 };
 
@@ -35,22 +38,22 @@ pub fn main() !void {
         std.log.info("LEAKED", .{});
     };
 
-    const outw = std.io.getStdOut().writer();
+    // const outw = std.io.getStdOut().writer();
 
     var s = try Sushi.init(allocator);
     defer s.deinit();
 
-    const value = s.eval(
-        \\ (define (add-one x) (+ x 1))
-        \\ (echo (add-one 100) x)
-    ) catch {
-        std.log.err("{s}\n", .{s.evaluator.error_message});
-        return;
-    };
-
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    const value_string = try toString(value, &s.evaluator.gc, arena.allocator());
-    try outw.print("{s}\n", .{value_string});
+    // const value = s.eval(
+    //     \\ (define (add-one x) (+ x 1))
+    //     \\ (echo (add-one 100) x)
+    // ) catch {
+    //     std.log.err("{s}\n", .{s.evaluator.error_message});
+    //     return;
+    // };
+    //
+    // var arena = std.heap.ArenaAllocator.init(allocator);
+    // defer arena.deinit();
+    //
+    // const value_string = try toString(value, &s.evaluator.gc, arena.allocator());
+    // try outw.print("{s}\n", .{value_string});
 }

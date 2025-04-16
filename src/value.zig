@@ -39,6 +39,13 @@ pub const Environment = struct {
         while (it != null) : (it = it.?.next) {
             it.?.deinit();
         }
+        self.allocator.destroy(self);
+    }
+
+    pub fn push(self: *Environment) !*Environment {
+        const new_env = try Environment.init(self.allocator);
+        new_env.next = self;
+        return new_env;
     }
 
     pub fn find(self: Environment, key: usize) ?usize {

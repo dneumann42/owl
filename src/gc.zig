@@ -13,6 +13,8 @@ pub const Gc = struct {
     headers: [HEAP_SIZE]Header,
     symbols: std.StringHashMap(usize),
 
+    // This is the global environment, local environments
+    // point next up the stack until it hits this environment.
     environment: *Environment,
 
     const Header = struct {
@@ -33,7 +35,6 @@ pub const Gc = struct {
     pub fn deinit(self: *Gc) void {
         self.environment.deinit();
         self.symbols.deinit();
-        self.allocator.destroy(self.environment);
         for (0..self.values.len) |i| {
             const value = self.values[i];
             if (!self.headers[i].used) {
@@ -53,18 +54,12 @@ pub const Gc = struct {
         }
     }
 
-    pub fn push(self: *Gc) void {
-        _ = self;
+    pub fn find(_: *Gc, environment: *Environment, key: usize) ?usize {
+        return environment.find(key);
     }
 
-    pub fn pop() void {}
-
-    pub fn find(self: *Gc, key: usize) ?usize {
-        return self.environment.find(key);
-    }
-
-    pub fn put(self: *Gc, key: usize, value: usize) !void {
-        return self.environment.put(key, value);
+    pub fn put(_: *Gc, environment: *Environment, key: usize, value: usize) !void {
+        return environment.put(key, value);
     }
 
     fn findUnused(self: Gc) ?usize {
