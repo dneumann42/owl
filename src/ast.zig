@@ -1,12 +1,7 @@
 const std = @import("std");
-const v = @import("values.zig");
-const g = @import("gc.zig");
-const Gc = g.Gc;
-const Value = v.Value;
 
-const AstTag = enum { symbol, number, boolean, string, list, dictionary, call, func, ifx, whilex, forx, dot, binexp, unexp, block, assignment, definition, use };
-
-pub const Ast = union(AstTag) {
+pub const Node = union(enum) {
+    program: std.ArrayList(*Ast),
     symbol: []const u8, //
     number: f64,
     boolean: bool,
@@ -18,158 +13,46 @@ pub const Ast = union(AstTag) {
     ifx: If,
     whilex: While,
     forx: For,
-    dot: Dot,
+    dot: Pair,
     binexp: Binexp,
     unexp: Unexp,
-    block: std.ArrayList(*Ast),
-    assignment: Assign,
-    definition: Define,
+    assignment: Pair,
+    definition: Pair,
     use: Use,
 };
 
 pub const Meta = struct {
-    line: usize = 0,
+    line: u32 = 0,
+    column: u32 = 0,
 };
-
-pub const MetaAst = struct { node: Ast, meta: Meta };
-
+pub const Ast = struct { meta: Meta, node: Node };
 pub const Call = struct {
     callable: *Ast,
     args: std.ArrayList(*Ast),
 };
-
 pub const Use = struct { name: []const u8 };
-
-pub const Dot = struct { a: *Ast, b: *Ast };
-pub const Assign = struct { left: *Ast, right: *Ast };
-pub const Define = struct { left: *Ast, right: *Ast };
-
-pub const KV = struct { key: *Ast, value: *Ast };
-pub const Dictionary = std.ArrayList(KV);
-pub const While = struct { condition: *Ast, block: *Ast };
-pub const For = struct { variable: *Ast, iterable: *Ast, block: *Ast };
-
+pub const Pair = struct { a: *Ast, b: *Ast };
+pub const Dictionary = std.ArrayList(Pair);
+pub const While = struct { condition: *Ast, program: *Ast };
+pub const For = struct { variable: *Ast, iterable: *Ast, program: *Ast };
 pub const Func = struct {
     sym: ?*Ast,
     args: std.ArrayList(*Ast),
     body: *Ast,
-
     pub fn addArg(self: *Func, a: *Ast) !void {
         return self.args.append(a);
     }
 };
-
 pub const If = struct {
-    branches: std.ArrayList(Branch), //
-    elseBranch: ?*Ast,
+    branches: std.ArrayList(Branch),
+    otherwise: ?*Ast,
 };
-
 pub const Branch = struct { check: *Ast, then: *Ast };
-
 pub const Binexp = struct { a: *Ast, op: *Ast, b: *Ast };
-
 pub const Unexp = struct {
     op: *Ast,
     value: *Ast,
 };
-
-pub fn deinit(ast: *Ast, allocator: std.mem.Allocator) void {
-    switch (ast.*) {
-        .binexp => {
-            deinit(ast.*.binexp.a, allocator);
-            deinit(ast.*.binexp.b, allocator);
-            deinit(ast.*.binexp.op, allocator);
-        },
-        .unexp => {
-            deinit(ast.*.unexp.op, allocator);
-            deinit(ast.*.unexp.value, allocator);
-        },
-        .func => {
-            for (ast.*.func.args.items) |a| {
-                deinit(a, allocator);
-            }
-            ast.*.func.args.deinit();
-            // deinit(ast.*.func.body, allocator);
-            if (ast.*.func.sym) |s| {
-                deinit(s, allocator);
-            }
-        },
-        .call => {
-            for (ast.*.call.args.items) |a| {
-                deinit(a, allocator);
-            }
-            ast.*.call.args.deinit();
-            deinit(ast.*.call.callable, allocator);
-        },
-        .block => {
-            for (ast.block.items) |item| {
-                deinit(item, allocator);
-            }
-            ast.*.block.deinit();
-        },
-        .dot => {
-            deinit(ast.*.dot.a, allocator);
-            deinit(ast.*.dot.b, allocator);
-        },
-        .definition => {
-            deinit(ast.*.definition.left, allocator);
-            deinit(ast.*.definition.right, allocator);
-        },
-        .assignment => {
-            deinit(ast.*.assignment.left, allocator);
-            deinit(ast.*.assignment.right, allocator);
-        },
-        .ifx => {
-            if (ast.ifx.elseBranch) |el| {
-                deinit(el, allocator);
-            }
-            for (ast.ifx.branches.items) |branch| {
-                deinit(branch.check, allocator);
-                deinit(branch.then, allocator);
-            }
-            ast.ifx.branches.deinit();
-        },
-        .whilex => {
-            deinit(ast.whilex.condition, allocator);
-            deinit(ast.whilex.block, allocator);
-        },
-        .forx => {
-            deinit(ast.forx.variable, allocator);
-            deinit(ast.forx.iterable, allocator);
-            deinit(ast.forx.block, allocator);
-        },
-        .dictionary => {
-            for (ast.dictionary.items) |kv| {
-                deinit(kv.key, allocator);
-                deinit(kv.value, allocator);
-            }
-            ast.dictionary.deinit();
-        },
-        .list => {
-            for (ast.list.items) |item| {
-                deinit(item, allocator);
-            }
-            ast.list.deinit();
-        },
-        .string => |s| {
-            allocator.free(s);
-        },
-        .symbol => |s| {
-            allocator.free(s);
-        },
-        .use => |u| {
-            allocator.free(u.name);
-        },
-        .number, .boolean => {},
-    }
-
-    destroy(ast, allocator);
-}
-
-pub fn destroy(ast: *Ast, allocator: std.mem.Allocator) void {
-    const meta_ast: *MetaAst = @fieldParentPtr("node", ast);
-    allocator.destroy(meta_ast);
-}
 
 pub fn toString(node: *Ast, allocator: std.mem.Allocator) ![]const u8 {
     return toStringIdent(node, allocator, try std.fmt.allocPrint(allocator, "", .{}));
@@ -246,7 +129,7 @@ pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) er
         .dot => try lines.append(try std.fmt.allocPrint(allocator, "(.)", .{})),
         .binexp => try lines.append(try std.fmt.allocPrint(allocator, "(binexp)", .{})),
         .unexp => try lines.append(try std.fmt.allocPrint(allocator, "(unexp)", .{})),
-        .block => |ls| {
+        .program => |ls| {
             var xs = std.ArrayList([]const u8).init(allocator);
             defer xs.deinit();
             try xs.append("[|");
@@ -274,12 +157,12 @@ pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) er
         },
         .assignment => try lines.append(try std.fmt.allocPrint(allocator, "(assign)", .{})),
         .definition => |def| {
-            const left = try toString(def.left, allocator);
+            const left = try toString(def.a, allocator);
             const indent = try allocator.alloc(u8, 10 + left.len);
             for (0..indent.len) |idx| {
                 indent[idx] = ' ';
             }
-            const right = try toStringIdent(def.right, allocator, indent);
+            const right = try toStringIdent(def.b, allocator, indent);
             try lines.append(try std.fmt.allocPrint(allocator, "(define {s} {s})", .{ left, right }));
         },
         .use => |u| {
@@ -290,21 +173,14 @@ pub fn toStringIdent(node: *Ast, allocator: std.mem.Allocator, i: []const u8) er
     return std.mem.join(allocator, "\n", lines.items);
 }
 
-pub fn create(allocator: std.mem.Allocator, node: Ast, meta: Meta) !*Ast {
-    const meta_ast = try allocator.create(MetaAst);
-    meta_ast.meta = meta;
-    const ptr = &meta_ast.node;
-    ptr.* = node;
-    return ptr;
-}
-
-pub fn getAstMeta(node: *Ast) Meta {
-    const meta_ast: *MetaAst = @fieldParentPtr("node", node);
-    return meta_ast.meta;
+pub fn new(allocator: std.mem.Allocator, node: Node, meta: Meta) !*Ast {
+    const ast = try allocator.create(Ast);
+    ast.* = .{ .meta = meta, .node = node };
+    return ast;
 }
 
 pub fn sym(allocator: std.mem.Allocator, lexeme: []const u8, meta: Meta) !*Ast {
-    return create(allocator, .{ .symbol = lexeme }, meta);
+    return new(allocator, .{ .symbol = lexeme }, meta);
 }
 
 pub fn symAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
@@ -314,11 +190,11 @@ pub fn symAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
 }
 
 pub fn num(allocator: std.mem.Allocator, number: f64, meta: Meta) !*Ast {
-    return create(allocator, .{ .number = number }, meta);
+    return new(allocator, .{ .number = number }, meta);
 }
 
 pub fn str(allocator: std.mem.Allocator, lexeme: []const u8, meta: Meta) !*Ast {
-    return create(allocator, .{ .string = lexeme }, meta);
+    return new(allocator, .{ .string = lexeme }, meta);
 }
 
 pub fn strAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
@@ -328,27 +204,23 @@ pub fn strAlloc(allocator: std.mem.Allocator, s: []const u8, meta: Meta) !*Ast {
 }
 
 pub fn T(allocator: std.mem.Allocator, meta: Meta) !*Ast {
-    return create(allocator, .{ .boolean = true }, meta);
+    return new(allocator, .{ .boolean = true }, meta);
 }
 
 pub fn F(allocator: std.mem.Allocator, meta: Meta) !*Ast {
-    return create(allocator, .{ .boolean = false }, meta);
+    return new(allocator, .{ .boolean = false }, meta);
 }
 
 pub fn binexp(allocator: std.mem.Allocator, a: *Ast, op: *Ast, b: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .binexp = .{ .a = a, .b = b, .op = op } }, meta);
+    return new(allocator, .{ .binexp = .{ .a = a, .b = b, .op = op } }, meta);
 }
 
 pub fn unexp(allocator: std.mem.Allocator, op: *Ast, value: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .unexp = .{ .op = op, .value = value } }, meta);
-}
-
-pub fn block(allocator: std.mem.Allocator, xs: std.ArrayList(*Ast), meta: Meta) !*Ast {
-    return create(allocator, .{ .block = xs }, meta);
+    return new(allocator, .{ .unexp = .{ .op = op, .value = value } }, meta);
 }
 
 pub fn func(allocator: std.mem.Allocator, name: ?*Ast, args: std.ArrayList(*Ast), body: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .func = .{
+    return new(allocator, .{ .func = .{
         .sym = name,
         .args = args,
         .body = body,
@@ -356,56 +228,60 @@ pub fn func(allocator: std.mem.Allocator, name: ?*Ast, args: std.ArrayList(*Ast)
 }
 
 pub fn call(allocator: std.mem.Allocator, callable: *Ast, args: std.ArrayList(*Ast), meta: Meta) !*Ast {
-    return create(allocator, .{ .call = .{
+    return new(allocator, .{ .call = .{
         .callable = callable,
         .args = args,
     } }, meta);
 }
 
 pub fn dot(allocator: std.mem.Allocator, a: *Ast, b: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .dot = .{
+    return new(allocator, .{ .dot = .{
         .a = a,
         .b = b,
     } }, meta);
 }
 
-pub fn ifx(allocator: std.mem.Allocator, branches: std.ArrayList(Branch), elseBranch: ?*Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .ifx = .{
+pub fn ifx(allocator: std.mem.Allocator, branches: std.ArrayList(Branch), otherwise: ?*Ast, meta: Meta) !*Ast {
+    return new(allocator, .{ .ifx = .{
         .branches = branches,
-        .elseBranch = elseBranch,
+        .otherwise = otherwise,
     } }, meta);
 }
 
 pub fn whilex(allocator: std.mem.Allocator, cond: *Ast, blk: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .whilex = .{ .block = blk, .condition = cond } }, meta);
+    return new(allocator, .{ .whilex = .{ .program = blk, .condition = cond } }, meta);
 }
 
 pub fn forx(allocator: std.mem.Allocator, variable: *Ast, iterable: *Ast, blk: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .forx = .{ .variable = variable, .iterable = iterable, .block = blk } }, meta);
+    return new(allocator, .{ .forx = .{ .variable = variable, .iterable = iterable, .program = blk } }, meta);
 }
 
 pub fn define(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .definition = .{
-        .left = symbol,
-        .right = value,
+    return new(allocator, .{ .definition = .{
+        .a = symbol,
+        .b = value,
     } }, meta);
 }
 
 pub fn assign(allocator: std.mem.Allocator, symbol: *Ast, value: *Ast, meta: Meta) !*Ast {
-    return create(allocator, .{ .assignment = .{
-        .left = symbol,
-        .right = value,
+    return new(allocator, .{ .assignment = .{
+        .a = symbol,
+        .b = value,
     } }, meta);
 }
 
 pub fn use(allocator: std.mem.Allocator, name: []const u8, meta: Meta) !*Ast {
-    return create(allocator, .{ .use = .{ .name = name } }, meta);
+    return new(allocator, .{ .use = .{ .name = name } }, meta);
 }
 
-pub fn dict(allocator: std.mem.Allocator, pairs: std.ArrayList(KV), meta: Meta) !*Ast {
-    return create(allocator, .{ .dictionary = pairs }, meta);
+pub fn dict(allocator: std.mem.Allocator, pairs: std.ArrayList(Pair), meta: Meta) !*Ast {
+    return new(allocator, .{ .dictionary = pairs }, meta);
 }
 
 pub fn list(allocator: std.mem.Allocator, vals: std.ArrayList(*Ast), meta: Meta) !*Ast {
-    return create(allocator, .{ .list = vals }, meta);
+    return new(allocator, .{ .list = vals }, meta);
+}
+
+pub fn program(allocator: std.mem.Allocator, meta: Meta) !*Ast {
+    return new(allocator, .{ .program = std.ArrayList(*Ast).init(allocator) }, meta);
 }
