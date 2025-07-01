@@ -1,36 +1,43 @@
 -- Turns things into readable strings
 local fmt = string.format
-local lua_tostring = tostring
-local function tostring(value, seen, indent)
+
+local function tostr(value, seen)
+  if type(value) == "string" then
+    return fmt("%q", value)
+  end
   if type(value) ~= "table" then
-    return lua_tostring(value)
+    return tostring(value)
   end
 
   if seen[value] then
     return seen[value]
   end
 
-  local pad = string.rep(' ', indent)
+  if value.tag == "Symbol" then
+    return ":" .. value[1]
+  end
+
+  if value.tag == "Number" then
+    return tostring(value[1])
+  end
 
   local lines = {}
   for k, v in pairs(value) do
-    local key = tostring(k, seen, 0)
-    local val = tostring(v, seen, 0)
-    if type(k) == 'string' then
-      key = fmt('"%s"', key)
+    local key = tostr(k, seen)
+    local val = tostr(v, seen)
+
+    if type(k) == "number" then
+      table.insert(lines, fmt("%s,", val))
+    else
+      table.insert(lines, fmt("[ %s ] = %s,", key, val))
     end
-    table.insert(lines, fmt("[ %s ] = %s,", key, val))
   end
-  for i = 1, #lines do
-    lines[i] = pad .. lines[i]
-  end
-  return fmt("{ %s }", table.concat(lines, "\n"))
+
+  return fmt("{ %s }", table.concat(lines, " "))
 end
 
-return setmetatable({
-
-}, {
-  __call = function(v)
-    return tostring(v, {}, 0)
+return setmetatable({}, {
+  __call = function(_, v)
+    return tostr(v, {})
   end,
 })
