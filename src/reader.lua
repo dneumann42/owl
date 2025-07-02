@@ -49,11 +49,23 @@ local function dot_call(_, ...)
   return node
 end
 
+local function do_block(_, ...)
+  local xs = { ... }
+  print("HERE: ", repr(xs))
+  return ""
+end
+
+local function keyword(_, ...)
+  local xs = { ... }
+  print(repr(xs))
+  return ""
+end
+
 local OwlSyntax = {
   "Script",
   Script      = Ct((s0 * V "Comment" ^ 0 * V "Expr") ^ 0) / script,
   Comment     = P ";" ^ 1 * (-P "\n" * P(1)) ^ 0 * P "\n" * s0,
-  Expr        = V "DotCall" + V "BinExpr" * V "Comment" ^ 0,
+  Expr        = V "Do" + V "DotCall" + V "BinExpr" * V "Comment" ^ 0,
   BinExpr     = (V "Value" * V "BinOp" * V "Expr") / binexp,
   BinOp       = tok "+" + tok "-" + tok "*" + tok "/",
 
@@ -66,9 +78,15 @@ local OwlSyntax = {
     return { tag = "DotSuffix", xs[2] }
   end,
 
+  Do          = C(P "do" * s1 * (V "Expr" * s0) ^ 0 * P "end") / do_block,
+  Bar         = P "|" * s0 * V "Expr",
+  Pair        = P ":" * s0 * V "Expr" * s1 * V "Expr",
+
   Value       = (V "Number" + V "Symbol" + V "Group") * s0,
   Group       = P "(" * V "Expr" * P ")",
   Number      = C(digit ^ 0 * (P "." * digit ^ 1) + digit ^ 1) / tonumber,
+
+  Keyword     = C(P "~" * V "Symbol") / keyword,
 
   Symbol      = C(V "SymbolStart" * V "SymbolRest" ^ 0) / symbol,
   SymbolStart = alpha + P "_" + P "$" + P "*" + P "+",

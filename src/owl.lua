@@ -1,25 +1,27 @@
 local read = require("src.reader")
-local repr = require("src.repr")
-local tester = require("src.tester")
 
-local reader_test = {}
+local _ = [[
 
-function reader_test.dot_call()
-  local n = read("a.b(1, 2)")[1]
-  tester.assert_equal({
-    tag = "Call",
-    { tag = "Dot",           { tag = "Symbol", "a" }, { tag = "Symbol", "b" }, },
-    { { tag = "Number", 1 }, { tag = "Number", 2 } }
-  }, n)
+cond
+  : 1 == 2 do
+    print("Hello")
+  end
+  : 2 == 3 print("World")
+else
+  123
 end
 
-function reader_test.call_dot()
-  local n = read("b(1, 2).a")[1]
-  tester.assert_equal({
-    tag = "Dot",
-    { tag = "Call",   { tag = "Symbol", "b" }, { { tag = "Number", 1 }, { tag = "Number", 2 } } },
-    { tag = "Symbol", "a" },
-  }, n)
+{ : hello ~World,
+  : test  1 + 2 }
+
+if #t 
+| print("Hello, World") 
+| print("Not true") 
 end
 
-tester.run_tests(reader_test)
+def add fn(a) 1 + a
+def sub fun(a, b)
+  a + b
+end
+
+]]
