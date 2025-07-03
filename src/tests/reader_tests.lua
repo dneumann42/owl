@@ -34,4 +34,58 @@ function reader_test.do_block()
   tester.assert_equal({ tag = "Do", num(1), num(2), num(3) }, n)
 end
 
+function reader_test.if_block()
+  local n = read([[
+    if 1
+    | 2
+    | 3
+    end
+  ]])[1]
+  tester.assert_equal({ tag = "If", cond = num(1), ifTrue = num(2), ifFalse = num(3) }, n)
+  local n1 = read([[
+    if 1
+    | 2
+    end
+  ]])[1]
+  tester.assert_equal({ tag = "If", cond = num(1), ifTrue = num(2), ifFalse = nil }, n1)
+end
+
+function reader_test.define()
+  local n = read("def hello 100")[1]
+  tester.assert_equal({ tag = "Define", name = sym "hello", value = num(100) }, n)
+end
+
+function reader_test.lambda()
+  local n = read("fn(a, b) a + b")[1]
+  tester.assert_equal(
+    { tag = "Lambda", params = { sym "a", sym "b", tag = "Parameters" }, body = { tag = "BinExpr", sym "a", sym "+", sym "b" } },
+    n)
+
+  local n2 = read([[
+    fn(a, b) do
+      a + b
+    end
+  ]])[1]
+  tester.assert_equal(
+    {
+      tag = "Lambda",
+      params = {
+        tag = "Parameters",
+        sym "a",
+        sym "b"
+      },
+      body = {
+        tag = "Do",
+        {
+          tag = "BinExpr",
+          sym "a",
+          sym "+",
+          sym "b"
+        }
+      },
+    },
+    n2
+  )
+end
+
 tester.run_tests(reader_test)

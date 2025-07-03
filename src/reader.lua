@@ -11,8 +11,12 @@ local s1           = locale.space ^ 1
 local repr         = require("src.repr")
 local alnum, alpha = locale.alnum, locale.alpha
 
+local function symbol(s)
+  return { tag = "Symbol", s }
+end
+
 local function tok(s)
-  return C(P(s)) * s0
+  return C(P(s)) / symbol * s0
 end
 
 local function binexp(left, op, right)
@@ -22,18 +26,6 @@ end
 local function script(o)
   o.tag = "Script"
   return o
-end
-
-local function symbol(s)
-  return { tag = "Symbol", s }
-end
-
-local function call(_, ident, args)
-  return { tag = "Call", ident, args }
-end
-
-local function dot(_, a, _, b)
-  return { tag = "Dot", a, b }
 end
 
 local function dot_call(_, ...)
@@ -51,8 +43,14 @@ end
 
 local function do_block(_, ...)
   local xs = { ... }
-  print("HERE: ", repr(xs))
-  return ""
+  xs.tag = "Do"
+  return xs
+end
+
+
+local function if_block(_, cond, ifTrue, ifFalse)
+  local xs = { tag = "If", cond = cond, ifTrue = ifTrue, ifFalse = ifFalse }
+  return xs
 end
 
 local function keyword(_, ...)
@@ -61,24 +59,49 @@ local function keyword(_, ...)
   return ""
 end
 
+local function define(_, ...)
+  local xs = { ... }
+  return {
+    tag = "Define",
+    name = xs[1],
+    value = xs[2],
+  }
+end
+
+local function lambda(_, ...)
+  local xs = { ... }
+  return {
+    tag = "Lambda",
+    params = xs[1],
+    body = xs[2]
+  }
+end
+
 local OwlSyntax = {
   "Script",
   Script      = Ct((s0 * V "Comment" ^ 0 * V "Expr") ^ 0) / script,
   Comment     = P ";" ^ 1 * (-P "\n" * P(1)) ^ 0 * P "\n" * s0,
-  Expr        = V "Do" + V "DotCall" + V "BinExpr" * V "Comment" ^ 0,
+  Expr        = V "Lambda" + V "Do" + V "If" + V "Define" + V "BinExpr" + V "DotCall" * V "Comment" ^ 0,
   BinExpr     = (V "Value" * V "BinOp" * V "Expr") / binexp,
   BinOp       = tok "+" + tok "-" + tok "*" + tok "/",
 
   DotCall     = C(V "Value" * V "Suffix" ^ 0) / dot_call,
   Suffix      = V "CallSuffix" + V "DotSuffix",
-  CallSuffix  = Ct(P("(") * (V "Expr" * s0 * (P(",") * s0 * V "Expr") ^ 0) ^ -1 * P(")")) / function(x)
+  CallSuffix  = Ct(P("(") * s0 * (V "Expr" * s0 * (P(",") * s0 * V "Expr" * s0) ^ 0) ^ -1 * P(")")) / function(x)
     return { tag = "CallSuffix", x }
   end,
   DotSuffix   = Ct(tok(".") * V "Symbol") / function(xs)
     return { tag = "DotSuffix", xs[2] }
   end,
+  Parameters  = Ct(P("(") * s0 * (V "Symbol" * s0 * (P(",") * s0 * V "Symbol" * s0) ^ 0) ^ -1 * P(")")) / function(x)
+    x.tag = "Parameters"
+    return x
+  end,
 
-  Do          = C(P "do" * s1 * (V "Expr" * s0) ^ 0 * P "end") / do_block,
+  Do          = C(P "do" * s1 * (V "Expr" ^ 0) * P "end") / do_block,
+  If          = C(P "if" * s1 * V "Expr" * V "Bar" * V "Bar" ^ -1 * P "end") / if_block,
+  Define      = C(P "def" * s1 * V "Symbol" * s1 * V "Expr") / define,
+  Lambda      = C(P "fn" * s0 * V "Parameters" * s0 * V "Expr") / lambda,
   Bar         = P "|" * s0 * V "Expr",
   Pair        = P ":" * s0 * V "Expr" * s1 * V "Expr",
 
@@ -88,7 +111,8 @@ local OwlSyntax = {
 
   Keyword     = C(P "~" * V "Symbol") / keyword,
 
-  Symbol      = C(V "SymbolStart" * V "SymbolRest" ^ 0) / symbol,
+  Reserved    = P "do" + P "end" + P "if" + P "def" + P "fn",
+  Symbol      = (C(V "SymbolStart" * V "SymbolRest" ^ 0) - V "Reserved") / symbol,
   SymbolStart = alpha + P "_" + P "$" + P "*" + P "+",
   SymbolRest  = alnum + P "_" + P ">" + P "<" + P "-" + P "$" + P "*" + P "+",
 }
