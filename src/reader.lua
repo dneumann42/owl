@@ -15,6 +15,10 @@ local function symbol(s)
   return { tag = "Symbol", s }
 end
 
+local function number(n)
+  return { tag = "Number", n }
+end
+
 local function tok(s)
   return C(P(s)) / symbol * s0
 end
@@ -107,7 +111,7 @@ local OwlSyntax = {
 
   Value       = (V "Number" + V "Symbol" + V "Group") * s0,
   Group       = P "(" * V "Expr" * P ")",
-  Number      = C(digit ^ 0 * (P "." * digit ^ 1) + digit ^ 1) / tonumber,
+  Number      = C(digit ^ 0 * (P "." * digit ^ 1) + digit ^ 1) / number,
 
   Keyword     = C(P "~" * V "Symbol") / keyword,
 
