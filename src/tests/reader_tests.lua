@@ -88,4 +88,18 @@ function reader_test.lambda()
   )
 end
 
+function reader_test.do_expr()
+  local n = read([[
+    do
+      1 + 2
+      3
+    end
+  ]])[1]
+  tester.assert_equal(n, {
+    tag = "Do",
+    { tag = "BinExpr", num(1), sym '+', num(2) },
+    num(3),
+  })
+end
+
 tester.run_tests(reader_test)
