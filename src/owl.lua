@@ -4,7 +4,10 @@ local Compiler = require("src.compiler")
 local fmt = string.format
 
 local function eval(code)
-  local Env = {}
+  local Env = {
+    echo = print,
+    type = type,
+  }
 
   local comp = Compiler:new()
   local node = read(code)

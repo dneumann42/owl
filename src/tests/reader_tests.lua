@@ -8,6 +8,17 @@ local function dot(a, b) return { tag = "Dot", a, b } end
 local function call(a, b) return { tag = "Call", a, b } end
 local function num(n) return { tag = "Number", n } end
 local function sym(s) return { tag = "Symbol", s } end
+local function str(s) return { tag = "String", s } end
+
+function reader_test.call()
+  local n = read("a(1, 2)")[1]
+  tester.assert_equal(call(sym("a"), { num(1), num(2) }), n)
+end
+
+function reader_test.hello_world()
+  local n = read('print("Hello, World!")')[1]
+  tester.assert_equal(call(sym("print"), { str("Hello, World!") }), n)
+end
 
 function reader_test.dot_call()
   local n = read("a.b(1, 2)")[1]
@@ -100,6 +111,13 @@ function reader_test.do_expr()
     { tag = "BinExpr", num(1), sym '+', num(2) },
     num(3),
   })
+end
+
+function reader_test.strings()
+  local r = read [[
+    "Hello, World"
+  ]]
+  tester.assert_equal({ tag = "String", "Hello, World" }, r[1])
 end
 
 tester.run_tests(reader_test)

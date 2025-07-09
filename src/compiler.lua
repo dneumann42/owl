@@ -51,6 +51,24 @@ end
 
 function Compiler:Call_to_lua(node)
   assert(node.tag == 'Call')
+  local stmts = {}
+
+  local call, call_stmts = Compiler:Node_to_lua(node[1])
+  for i = 1, #call_stmts do
+    insert(stmts, call_stmts[i])
+  end
+
+  local args = node[2]
+  local params = {}
+  for i = 1, #args do
+    local a, ae = Compiler:Node_to_lua(args[i])
+    for j = 1, #ae do
+      insert(stmts, ae[j])
+    end
+    insert(params, a)
+  end
+
+  return fmt("%s(%s)", call, table.concat(params, ", ")), stmts
 end
 
 function Compiler:Dot_to_lua(node)
@@ -127,14 +145,41 @@ function Compiler:Lambda_to_lua(node)
   assert(node.tag == 'Lambda')
 end
 
+function Compiler:String_to_lua(node)
+  return fmt("[[%s]]", node[1]), {}
+end
+
+function Compiler:While_to_lua(node)
+  assert(node.tag == "While")
+  local stmts = {}
+  local cond, cond_stmts = Compiler:Node_to_lua(node.cond)
+  for i = 1, #cond_stmts do
+    insert(stmts, cond_stmts[i])
+  end
+  local body, body_stmts = Compiler:Node_to_lua(node.body)
+
+  local var = Compiler:next_var()
+  insert(stmts, "while " .. cond .. " do")
+  for i = 1, #body_stmts do
+    insert(stmts, body_stmts[i])
+  end
+  insert(stmts, var .. " = " .. body)
+  insert(stmts, "end")
+  return var, stmts
+end
+
 function Compiler:Node_to_lua(node)
-  return Compiler[node.tag .. "_to_lua"](Compiler, node)
+  local fname = node.tag .. "_to_lua"
+  assert(Compiler[fname] ~= nil, "Invalid node tag: " .. node.tag)
+  return Compiler[fname](Compiler, node)
 end
 
 function Compiler:to_lua(node)
   local expr, stmts = Compiler:Node_to_lua(node)
   table.insert(stmts, "return " .. expr)
-  return table.concat(stmts, "\n")
+  local lua = table.concat(stmts, "\n")
+  print(lua)
+  return lua
 end
 
 return Compiler

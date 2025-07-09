@@ -81,17 +81,35 @@ local function lambda(_, ...)
   }
 end
 
+local function while_expr(_, ...)
+  local xs = { ... }
+  return {
+    tag = "While",
+    cond = xs[1],
+    body = xs[2]
+  }
+end
+
 local OwlSyntax = {
   "Script",
   Script      = Ct((s0 * V "Comment" ^ 0 * V "Expr") ^ 0) / script,
   Comment     = P ";" ^ 1 * (-P "\n" * P(1)) ^ 0 * P "\n" * s0,
-  Expr        = V "Lambda" + V "Do" + V "If" + V "Define" + V "BinExpr" + V "DotCall" * V "Comment" ^ 0,
+  Expr        = (
+    V "Lambda" +
+    V "Do" +
+    V "If" +
+    V "While" +
+    V "Define" +
+    V "BinExpr" +
+    V "DotCall" +
+    V "Value"
+  ) * V "Comment" ^ 0,
   BinExpr     = (V "Value" * V "BinOp" * V "Expr") / binexp,
   BinOp       = tok "+" + tok "-" + tok "*" + tok "/",
 
-  DotCall     = C(V "Value" * V "Suffix" ^ 0) / dot_call,
+  DotCall     = C(V "Value" * V "Suffix" ^ 1) / dot_call,
   Suffix      = V "CallSuffix" + V "DotSuffix",
-  CallSuffix  = Ct(P("(") * s0 * (V "Expr" * s0 * (P(",") * s0 * V "Expr" * s0) ^ 0) ^ -1 * P(")")) / function(x)
+  CallSuffix  = Ct(P("(") * s0 * V "Expr" * s0 * (P(",") * s0 * V "Expr" * s0) ^ 0 * P(")")) / function(x)
     return { tag = "CallSuffix", x }
   end,
   DotSuffix   = Ct(tok(".") * V "Symbol") / function(xs)
@@ -102,18 +120,22 @@ local OwlSyntax = {
     return x
   end,
 
-  Do          = C(P "do" * s1 * (V "Expr" ^ 0) * P "end") / do_block,
+  Do          = C(P "do" * s1 * V "Expr" ^ 0 * P "end") / do_block,
   If          = C(P "if" * s1 * V "Expr" * V "Bar" * V "Bar" ^ -1 * P "end") / if_block,
   Define      = C(P "def" * s1 * V "Symbol" * s1 * V "Expr") / define,
   Lambda      = C(P "fn" * s0 * V "Parameters" * s0 * V "Expr") / lambda,
+  While       = C(P "while" * s0 * V "Expr" * V "Do") / while_expr,
   Bar         = P "|" * s0 * V "Expr",
   Pair        = P ":" * s0 * V "Expr" * s1 * V "Expr",
 
-  Value       = (V "Number" + V "Symbol" + V "Group") * s0,
+  Value       = (V "String" + V "Number" + V "Symbol" + V "Group") * s0,
   Group       = P "(" * V "Expr" * P ")",
   Number      = C(digit ^ 0 * (P "." * digit ^ 1) + digit ^ 1) / number,
 
   Keyword     = C(P "~" * V "Symbol") / keyword,
+  String      = C(P '"' * (P(1) - P '"') ^ 0 * P '"') / function(s)
+    return { tag = "String", s:sub(2, #s - 1) }
+  end,
 
   Reserved    = P "do" + P "end" + P "if" + P "def" + P "fn",
   Symbol      = (C(V "SymbolStart" * V "SymbolRest" ^ 0) - V "Reserved") / symbol,
