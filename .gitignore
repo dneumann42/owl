@@ -59,3 +59,6 @@ raylib/
 
 *.dot
 *.svg
+
+owl
+tests/testLexer
