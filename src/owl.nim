@@ -36,17 +36,17 @@ type
     Record
 
   Exp* = object
-    case kind: ExpKind
+    case kind*: ExpKind
     of Nothing:
       discard
     of Symbol:
-      symbol: string
+      symbol*: string
     of Number:
-      number: float64
+      number*: float64
     of Boolean:
-      isTrue: bool
+      isTrue*: bool
     of List:
-      items: seq[Exp]
+      items*: seq[Exp]
     of Record:
       rec: Table[Exp, Exp]
 
@@ -172,9 +172,9 @@ proc num*(s: SomeNumber): Exp =
     let n = s.toFloat().float64
   Exp(kind: Number, number: n)
 
-const True = Exp(kind: Boolean, isTrue: true)
-const False = Exp(kind: Boolean, isTrue: false)
-const None = Exp(kind: Nothing)
+const True* = Exp(kind: Boolean, isTrue: true)
+const False* = Exp(kind: Boolean, isTrue: false)
+const None* = Exp(kind: Nothing)
 
 proc node*(tag: string, xs: seq[Exp]): Exp =
   Exp(kind: List, items: @[sym(tag)] & xs)
@@ -182,6 +182,11 @@ proc node*(tag: string, xs: seq[Exp]): Exp =
 proc expectSymbol*(lex: var Lexer, s: string) =
   let t = lex.next()
   if t.kind != Symbol or t.symbol != s:
+    raise ParseError.newException("Expected '" & s & "' got '" & t.lexeme() & "'")
+
+proc expectOperator*(lex: var Lexer, s: string) =
+  let t = lex.next()
+  if t.kind != Op or t.operator != s:
     raise ParseError.newException("Expected '" & s & "' got '" & t.lexeme() & "'")
 
 proc expectIdent*(lex: var Lexer, s: string): string =
@@ -283,6 +288,7 @@ proc binExpr*(lex: var Lexer, minBp = 0'u8): Exp =
 
 proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+proc codeBlock*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 
 template tryMatch(lex: var Lexer, ident) =
   let (v, isV) = lex.ident()
@@ -292,36 +298,43 @@ template tryMatch(lex: var Lexer, ident) =
 proc primary*(lex: var Lexer): Exp =
   case lex.peek()
   of (kind: Number, number: @n):
-    discard lex.next()
-    return num(n)
+    discard lex.next(); return num(n)
   of (kind: Symbol, symbol: "#t"):
-    discard lex.next()
-    return True
+    discard lex.next(); return True
   of (kind: Symbol, symbol: "#f"):
-    discard lex.next()
-    return False
+    discard lex.next(); return False
   of (kind: Symbol, symbol: "none"):
-    discard lex.next()
-    return None
+    discard lex.next(); return None
   else:
     discard
 
   lex.tryMatch(list)
+  lex.tryMatch(codeBlock)
   lex.tryMatch(rec)
 
-proc bindingList*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+  if lex.peek().kind == Symbol:
+    let s = lex.peek().symbol
+    if s notin ["(", ")", "{", "}", "[", "]", ",", "@{"]:
+      discard lex.next()
+      return sym(s)
+
+  raise ParseError.newException("Unexpected token: " & lex.peek().lexeme)
+
+proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool]
 proc binding*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 
 proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "@{":
+    return (None, false)
   lex.expectSymbol("@{")
-  let (bindings, matched) = lex.bindingList()
+  let (bindings, matched) = lex.bindingList("record")
   assert(matched)
   result = (bindings, true)
   lex.expectSymbol("}")
 
-proc bindingList*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
-  result = (Exp(kind: List, items: @[]), true)
+proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool] =
+  result = (Exp(kind: List, items: @[sym(symbol)]), true)
   while lex.peek().lexeme != "}" and not lex.atEof():
     let (binding, isBinding) = lex.binding()
     assert(isBinding)
@@ -331,17 +344,21 @@ proc bindingList*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     lex.expectSymbol(",")
 
 proc binding*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
-  discard
-
+  let (key, isKey) = lex.recordKey()
+  assert(isKey)
+  lex.expectOperator("=")
+  let expr = lex.expr()
+  result = (Exp(kind: List, items: @[sym"pair", key, expr]), true)
+ 
 proc symbol*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   if lex.peek().kind != Symbol:
     return (None, false)
-  result = (lex.next.lexeme.sym(), true)
+  result = (lex.next().lexeme.sym(), true)
 
 proc number*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   if lex.peek().kind != Number:
     return (None, false)
-  result = (lex.next.number.num(), true)
+  result = (lex.next().number.num(), true)
 
 proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   let (sy, isSy) = lex.symbol()
@@ -351,6 +368,19 @@ proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   if isSn:
     return (sn, true)
   raise ParseError.newException("Invalid record key " & $lex.peek())
+
+proc codeBlock*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "{":
+    return (None, false)
+  lex.expectSymbol("{")
+  var blk = Exp(kind: List, items: @[sym"do"])
+  while lex.peek().lexeme != "}" and not lex.atEof():
+    let exp = lex.expr()
+    blk.items.add(exp)
+    if lex.peek().lexeme == "}":
+      break
+  result = (blk, true)
+  lex.expectSymbol("}")
 
 proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   if lex.peek().lexeme != "[":
@@ -362,6 +392,7 @@ proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     if lex.peek().lexeme == "]":
       break
     lex.expectSymbol(",")
+  discard lex.next()
 
 proc module*(lex: var Lexer): Exp =
   result = Exp(kind: List)
@@ -369,5 +400,6 @@ proc module*(lex: var Lexer): Exp =
     result.items.add(lex.expr())
 
 when isMainModule:
-  var lex = Lexer.init("@{ x = 100 }")
-  echo list(lex).exp
+  var lex = Lexer.init("{}")
+  echo lex
+  echo codeBlock(lex).exp

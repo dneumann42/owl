@@ -15,10 +15,10 @@ Primary     = Number
             | PipeExpr
             | Ident
 List        = "[" (Expr ("," Expr)*)? "]"
-Map         = "@{" BindingList? "}"
+Record      = "@{" BindingList? "}"
 BindingList = Binding (Sep Binding)*
 Binding     = MapKey "=" Expr
-MapKey      = Ident | String | Number
+RecordKey   = Ident | String | Number
 Sep         = "," | TERMINATOR+
 Block       = "{" Expr* "}"
 IfExp       = "if" "(" Exp ")" Block ("else" Block)?
