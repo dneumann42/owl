@@ -22,15 +22,14 @@ RecordKey   = Ident | String | Number
 Sep         = "," | TERMINATOR+
 Block       = "{" Expr* "}"
 IfExp       = "if" "(" Exp ")" Block ("else" Block)?
-FnExp       = "fn" "(" ParamList? ")" Block
-ParamList   = Ident ("," Ident)*
+FnExp       = "fn" "(" ArgList? ")" Block
+ArgList     = Expr ("," Expr)*
 DefExp      = "def" DefHead "=" Exp
             | "def" DefHead Block
             | "def" "{" BindingList "}" "in" Exp
-DefHead     = Ident "(" ParamList? ")" | Ident
-MacroExpr   = "macro" Ident "(" ParamList? ")" "=>" Expr
+DefHead     = Ident "(" ArgList? ")" | Ident
+MacroExpr   = "macro" Ident "(" ArgList? ")" "=>" Expr
 PipeExpr    = "pipe" "(" Expr ")" PipeChain 
 PipeChain   = ("|>" Call)+ 
 Call        = Ident "(" ArgList? ")" 
-ArgList     = Expr ("," Expr)*
 ```

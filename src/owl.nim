@@ -162,6 +162,8 @@ proc lexeme*(t: Token): string =
   of Eof:
     "<eof>"
 
+proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+
 proc sym*(s: string): Exp =
   Exp(kind: Symbol, symbol: s)
 
@@ -323,6 +325,7 @@ proc primary*(lex: var Lexer): Exp =
 proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool]
 proc binding*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+proc argList*(lex: var Lexer): tuple[exp: Exp, matched: bool]
 
 proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "@{":
@@ -393,6 +396,14 @@ proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
       break
     lex.expectSymbol(",")
   discard lex.next()
+
+proc argList*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+  discard
+
+proc call*(lex: var Lexer):  tuple[exp: Exp, matched: bool] =
+  let (ident, isSym) = lex.symbol()
+  if not isSym:
+    return (None, false)
 
 proc module*(lex: var Lexer): Exp =
   result = Exp(kind: List)
