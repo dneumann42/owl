@@ -87,7 +87,7 @@ proc parseBlock(src: string): Exp =
 suite "record parsing":
   test "empty record":
     let e = parseRec("@{ }")
-    check e == node("record", @[])
+    check e == Exp(kind: List, items: @[sym"record"])
 
   test "single pair symbol key":
     let e = parseRec("@{ a = 1 }")
@@ -99,25 +99,48 @@ suite "record parsing":
 
   test "multiple pairs with commas":
     let e = parseRec("@{ a=1, b=2, c=3 }")
-    check e == node("record", @[
-      node("pair", @[sym("a"), num(1)]),
-      node("pair", @[sym("b"), num(2)]),
-      node("pair", @[sym("c"), num(3)]),
-    ])
+    check e ==
+      node(
+        "record",
+        @[
+          node("pair", @[sym("a"), num(1)]),
+          node("pair", @[sym("b"), num(2)]),
+          node("pair", @[sym("c"), num(3)]),
+        ],
+      )
 
   test "expression values respect precedence":
     let e = parseRec("@{ a=1+2, b=3*4, c=5+6*7 }")
-    check e == node("record", @[
-      node("pair", @[sym("a"), Exp(kind: List, items: @[sym("+"), num(1), num(2)])]),
-      node("pair", @[sym("b"), Exp(kind: List, items: @[sym("*"), num(3), num(4)])]),
-      node("pair", @[sym("c"), Exp(kind: List, items: @[sym("+"), num(5), Exp(kind: List, items: @[sym("*"), num(6), num(7)])])]),
-    ])
+    check e ==
+      node(
+        "record",
+        @[
+          node("pair", @[sym("a"), Exp(kind: List, items: @[sym("+"), num(1), num(2)])]),
+          node("pair", @[sym("b"), Exp(kind: List, items: @[sym("*"), num(3), num(4)])]),
+          node(
+            "pair",
+            @[
+              sym("c"),
+              Exp(
+                kind: List,
+                items:
+                  @[
+                    sym("+"),
+                    num(5),
+                    Exp(kind: List, items: @[sym("*"), num(6), num(7)]),
+                  ],
+              ),
+            ],
+          ),
+        ],
+      )
 
   test "record with list and booleans":
     let e = parseRec("@{ xs=[1,2,3], t=#t, f=#f, n=none }")
     check e.items.len == 1 + 4
     check e.items[0] == sym("record")
-    check e.items[1] == node("pair", @[sym("xs"), Exp(kind: List, items: @[num(1), num(2), num(3)])])
+    check e.items[1] ==
+      node("pair", @[sym("xs"), Exp(kind: List, items: @[num(1), num(2), num(3)])])
     check e.items[2] == node("pair", @[sym("t"), True])
     check e.items[3] == node("pair", @[sym("f"), False])
     check e.items[4] == node("pair", @[sym("n"), None])
@@ -143,22 +166,26 @@ suite "code block parsing":
     let e = parseBlock("{ @{a=1, b=2} }")
     check e.items.len == 2
     check e.items[0] == sym("do")
-    check e.items[1] == node("record", @[
-      node("pair", @[sym("a"), num(1)]),
-      node("pair", @[sym("b"), num(2)])
-    ])
+    check e.items[1] ==
+      node(
+        "record",
+        @[node("pair", @[sym("a"), num(1)]), node("pair", @[sym("b"), num(2)])],
+      )
 
   test "block respects operator precedence":
     let e = parseBlock("{ 1+2*3 }")
-    check e == node("do", @[
-      Exp(kind: List, items: @[
-        sym("+"),
-        num(1),
-        Exp(kind: List, items: @[sym("*"), num(2), num(3)])
-      ])
-    ])
+    check e ==
+      node(
+        "do",
+        @[
+          Exp(
+            kind: List,
+            items:
+              @[sym("+"), num(1), Exp(kind: List, items: @[sym("*"), num(2), num(3)])],
+          )
+        ],
+      )
 
   test "block with booleans and none":
     let e = parseBlock("{ #t #f none }")
     check e == node("do", @[True, False, None])
-

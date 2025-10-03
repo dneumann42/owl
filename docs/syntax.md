@@ -10,7 +10,7 @@ Primary     = Number
             | Block
             | IfExpr
             | FnExpr
-            | DefExpr
+            | LetExpr
             | MacroExpr
             | PipeExpr
             | Ident
@@ -24,10 +24,10 @@ Block       = "{" Expr* "}"
 IfExp       = "if" "(" Exp ")" Block ("else" Block)?
 FnExp       = "fn" "(" ArgList? ")" Block
 ArgList     = Expr ("," Expr)*
-DefExp      = "def" DefHead "=" Exp
-            | "def" DefHead Block
-            | "def" "{" BindingList "}" "in" Exp
-DefHead     = Ident "(" ArgList? ")" | Ident
+LetExp      = "let" LetHead "=" Exp
+            | "let" LetHead Block
+            | "let" "{" BindingList "}" "in" Exp
+LetHead     = Ident "(" ArgList? ")" | Ident
 MacroExpr   = "macro" Ident "(" ArgList? ")" "=>" Expr
 PipeExpr    = "pipe" "(" Expr ")" PipeChain 
 PipeChain   = ("|>" Call)+ 
