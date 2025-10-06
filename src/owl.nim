@@ -261,7 +261,7 @@ proc infixPower*(op: Exp): (uint8, uint8) =
   of "*", "/":
     (3, 4)
   of ".":
-    (6, 5)
+    (5, 6)
   else:
     raise Exception.newException("Bad operator: " & op.symbol)
 
@@ -425,7 +425,7 @@ proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   let (ident, isSym) = lex.symbol()
   if not isSym:
     return (None, false)
-  if lex.next().symbol != "(":
+  if lex.peek().lexeme != "(":
     lex.index = start
     return (None, false)
   lex.expectSymbol("(")

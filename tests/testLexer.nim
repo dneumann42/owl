@@ -1,4 +1,6 @@
 import unittest
+import std/tables
+import std/sequtils
 
 import owl
 
@@ -189,3 +191,77 @@ suite "code block parsing":
   test "block with booleans and none":
     let e = parseBlock("{ #t #f none }")
     check e == node("do", @[True, False, None])
+
+suite "call and dot":
+  test "simple call":
+    var lx = Lexer.init("echo(2)")
+    let got = expr(lx)
+    let want = node("echo", @[num 2])
+    check got == want
+
+  test "multi-arg call":
+    var lx = Lexer.init("sum(1, 2, 3)")
+    let got = expr(lx)
+    let want = node("sum", @[num 1, num 2, num 3])
+    check got == want
+
+  test "nested calls":
+    var lx = Lexer.init("f(g(1), h(2,3))")
+    let got = expr(lx)
+    let want = node("f", @[
+      node("g", @[num 1]),
+      node("h", @[num 2, num 3])
+    ])
+    check got == want
+
+  test "dot chains left-assoc":
+    var lx = Lexer.init("a.b.c")
+    let got = expr(lx)
+    let want =
+      Exp(kind: List, items: @[
+        sym".",
+        Exp(kind: List, items: @[sym".", sym"a", sym"b"]),
+        sym"c"
+      ])
+    check got == want
+
+  test "dot binds tighter than +":
+    var lx = Lexer.init("a.b + c.d")
+    let got = expr(lx)
+    let want =
+      Exp(kind: List, items: @[
+        sym"+",
+        Exp(kind: List, items: @[sym".", sym"a", sym"b"]),
+        Exp(kind: List, items: @[sym".", sym"c", sym"d"])
+      ])
+    check got == want
+
+  test "call then dot with call":
+    var lx = Lexer.init("foo(1).bar(2)")
+    let got = expr(lx)
+    let want =
+      Exp(kind: List, items: @[
+        sym".",
+        node("foo", @[num 1]),
+        node("bar", @[num 2])
+      ])
+    check got == want
+
+  test "mixed chain with calls":
+    var lx = Lexer.init("f(1).g.h(2,3).k")
+    let got = expr(lx)
+    let want =
+      Exp(kind: List, items: @[
+        sym".",
+        Exp(kind: List, items: @[
+          sym".",
+          Exp(kind: List, items: @[
+            sym".",
+            node("f", @[num 1]),
+            sym"g"
+          ]),
+          node("h", @[num 2, num 3])
+        ]),
+        sym"k"
+      ])
+    check got == want
