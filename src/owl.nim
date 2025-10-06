@@ -425,7 +425,7 @@ proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   let (ident, isSym) = lex.symbol()
   if not isSym:
     return (None, false)
-  if ident.symbol != "(":
+  if lex.next().symbol != "(":
     lex.index = start
     return (None, false)
   lex.expectSymbol("(")
@@ -487,5 +487,6 @@ proc module*(lex: var Lexer): Exp =
     result.items.add(lex.expr())
 
 when isMainModule:
-  var lex = Lexer.init("let { x = 100, y = 20 } in echo(x)")
+  var lex = Lexer.init("echo(2)")
+  echo lex.tokens
   echo expr(lex)

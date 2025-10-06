@@ -1,6 +1,6 @@
 ```ebnf
 Module      = Expr*
-Exp         = BinExp ;; Pratt expr
+Expr        = BinExp ;; Pratt expr
 Primary     = Number
             | String
             | #t | #f | none
