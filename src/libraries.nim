@@ -67,10 +67,10 @@ proc loadCoreLibraries*(env: Env) =
       result = env.evaluate(prog)
       echo prog
 
-  env.add(sym"echo", Object(kind: ForeignFunction, ffunction: echo))
-  env.add(sym"+", Object(kind: ForeignFunction, ffunction: `owl +`))
-  env.add(sym"-", Object(kind: ForeignFunction, ffunction: `owl -`))
-  env.add(sym"*", Object(kind: ForeignFunction, ffunction: `owl *`))
-  env.add(sym"/", Object(kind: ForeignFunction, ffunction: `owl /`))
-  env.add(sym"do", Object(kind: ForeignFunction, ffunction: `owl do`))
-  env.add(sym"while", Object(kind: ForeignFunction, ffunction: `owl while`))
+  env.add(sym"echo", ffunc echo)
+  env.add(sym"+", ffunc `owl +`)
+  env.add(sym"-", ffunc `owl -`)
+  env.add(sym"*", ffunc `owl *`)
+  env.add(sym"/", ffunc `owl /`)
+  env.add(sym"do", ffunc `owl do`)
+  env.add(sym"while", ffunc `owl while`)

@@ -158,6 +158,9 @@ proc num*(s: SomeNumber): Object =
     let n = s.toFloat().float64
   Object(kind: Number, number: n)
 
+proc ffunc*(fn: proc(env: Env, args: seq[Object]): Object {.gcsafe, nimcall.}): Object =
+    Object(kind: ForeignFunction, ffunction: fn)
+
 proc toBool*(o: Object): Object =
   if o.kind == Nothing or (o.kind == Number and o.number == 0.0):
     return Object(kind: Boolean, isTrue: false)

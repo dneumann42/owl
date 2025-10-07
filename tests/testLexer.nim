@@ -265,3 +265,123 @@ suite "call and dot":
         sym"k"
       ])
     check got == want
+
+suite "Lexer (comparisons)":
+  test "multi-char and single-char operators":
+    let lx = Lexer.init("== != <= >= < >")
+    check lx.tokens.len == 6
+    assertOp(lx[0], "==")
+    assertOp(lx[1], "!=")
+    assertOp(lx[2], "<=")
+    assertOp(lx[3], ">=")
+    assertOp(lx[4], "<")
+    assertOp(lx[5], ">")
+    assertEof(lx[6])
+
+suite "comparison parsing":
+  test "relational looser than dot and * and + chain":
+    var lx = Lexer.init("1 + 2 * 3 == 7")
+    let got = expr(lx)
+    let want =
+      Object(kind: List, items: @[
+        sym"==",
+        Object(kind: List, items: @[
+          sym"+",
+          num 1,
+          Object(kind: List, items: @[sym"*", num 2, num 3])
+        ]),
+        num 7
+      ])
+    check got == want
+
+  test "equality lowest: 1 < 2 == #t":
+    var lx = Lexer.init("1 < 2 == #t")
+    let got = expr(lx)
+    let want =
+      Object(kind: List, items: @[
+        sym"==",
+        Object(kind: List, items: @[sym"<", num 1, num 2]),
+        True
+      ])
+    check got == want
+
+  test "relational lower than +":
+    var lx = Lexer.init("1 + 2 < 4")
+    let got = expr(lx)
+    let want =
+      Object(kind: List, items: @[
+        sym"<",
+        Object(kind: List, items: @[sym"+", num 1, num 2]),
+        num 4
+      ])
+    check got == want
+
+  test "all relational variants":
+    for (src, op) in [("1 < 2", "<"), ("1 <= 2", "<="), ("2 > 1", ">"), ("2 >= 1", ">=")]:
+      var lx = Lexer.init(src)
+      let g = expr(lx)
+      check g.items.len == 3
+      check g.items[0] == sym(op)
+
+  test "equality forms":
+    for (src, op) in [("1 == 1", "=="), ("1 != 2", "!=")]:
+      var lx = Lexer.init(src)
+      let g = expr(lx)
+      check g.items.len == 3
+      check g.items[0] == sym(op)
+
+  test "dot binds tighter than equality":
+    var lx = Lexer.init("a.b == c.d")
+    let got = expr(lx)
+    let want =
+      Object(kind: List, items: @[
+        sym"==",
+        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
+        Object(kind: List, items: @[sym".", sym"c", sym"d"])
+      ])
+    check got == want
+
+  test "left-assoc equality chain":
+    var lx = Lexer.init("1 == 2 == 3")
+    let got = expr(lx)
+    let want =
+      Object(kind: List, items: @[
+        sym"==",
+        Object(kind: List, items: @[sym"==", num 1, num 2]),
+        num 3
+      ])
+    check got == want
+
+suite "record parsing (comparisons)":
+  test "record values with comparisons respect precedence":
+    let e = parseRec("@{ a=1<2, b=1+2<4, c=a.b==c.d }")
+    check e ==
+      node("record", @[
+        Object(kind: List, items: @[sym"pair", sym"a",
+          Object(kind: List, items: @[sym"<", num 1, num 2])]),
+        Object(kind: List, items: @[sym"pair", sym"b",
+          Object(kind: List, items: @[
+            sym"<",
+            Object(kind: List, items: @[sym"+", num 1, num 2]),
+            num 4
+          ])]),
+        Object(kind: List, items: @[sym"pair", sym"c",
+          Object(kind: List, items: @[
+            sym"==",
+            Object(kind: List, items: @[sym".", sym"a", sym"b"]),
+            Object(kind: List, items: @[sym".", sym"c", sym"d"])
+          ])])
+      ])
+
+suite "code block parsing (comparisons)":
+  test "block equality lowest":
+    let e = parseBlock("{ 1 < 2 == #t }")
+    check e ==
+      node("do", @[
+        Object(kind: List, items: @[
+          sym"==",
+          Object(kind: List, items: @[sym"<", num 1, num 2]),
+          True
+        ])
+      ])
+
