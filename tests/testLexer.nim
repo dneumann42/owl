@@ -385,3 +385,103 @@ suite "code block parsing (comparisons)":
         ])
       ])
 
+proc parseExpr(src: string): Object =
+  var lx = Lexer.init(src)
+  expr(lx)
+
+suite "functions and lambdas":
+  test "lambda: empty params, simple body":
+    let got = parseExpr("fn() 42")
+    let want =
+      node("lambda", @[
+        Object(kind: List, items: @[]),
+        num 42
+      ])
+    check got == want
+
+  test "lambda: single param, identifier body":
+    let got = parseExpr("fn(x) x")
+    let want =
+      node("lambda", @[
+        Object(kind: List, items: @[sym "x"]),
+        sym "x"
+      ])
+    check got == want
+
+  test "lambda: multi-params, body respects precedence":
+    let got = parseExpr("fn(x, y) x + y * 2")
+    let want =
+      node("lambda", @[
+        Object(kind: List, items: @[sym "x", sym "y"]),
+        Object(kind: List, items: @[
+          sym "+",
+          sym "x",
+          Object(kind: List, items: @[sym "*", sym "y", num 2])
+        ])
+      ])
+    check got == want
+
+  test "fn def: empty params, single expr block":
+    let got = parseExpr("fn id() { 1 }")
+    let want =
+      node("fun", @[
+        sym "id",
+        Object(kind: List, items: @[]),
+        node("do", @[num 1])
+      ])
+    check got == want
+
+  test "fn def: one param, simple body":
+    let got = parseExpr("fn inc(x) { x + 1 }")
+    let want =
+      node("fun", @[
+        sym "inc",
+        Object(kind: List, items: @[sym "x"]),
+        node("do", @[
+          Object(kind: List, items: @[sym "+", sym "x", num 1])
+        ])
+      ])
+    check got == want
+
+  test "fn def: two params, binary in body":
+    let got = parseExpr("fn add(a, b) { a + b }")
+    let want =
+      node("fun", @[
+        sym "add",
+        Object(kind: List, items: @[sym "a", sym "b"]),
+        node("do", @[
+          Object(kind: List, items: @[sym "+", sym "a", sym "b"])
+        ])
+      ])
+    check got == want
+
+  test "fn def: record in body":
+    let got = parseExpr("fn make(x, y) { @{a=x, b=y} }")
+    let want =
+      node("fun", @[
+        sym "make",
+        Object(kind: List, items: @[sym "x", sym "y"]),
+        node("do", @[
+          node("record", @[
+            node("pair", @[sym "a", sym "x"]),
+            node("pair", @[sym "b", sym "y"])
+          ])
+        ])
+      ])
+    check got == want
+
+  test "lambda nested in expression context":
+    let got = parseExpr("[fn(x) x, fn() 0]")
+    let want =
+      Object(kind: List, items: @[
+        node("lambda", @[
+          Object(kind: List, items: @[sym "x"]),
+          sym "x"
+        ]),
+        node("lambda", @[
+          Object(kind: List, items: @[]),
+          num 0
+        ])
+      ])
+    check got == want
+

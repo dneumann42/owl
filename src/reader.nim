@@ -197,6 +197,9 @@ proc list*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
 template tryMatch(lex: var Lexer, ident) =
   let (v, isV) = lex.ident()
@@ -224,6 +227,8 @@ proc primary*(lex: var Lexer): Object =
   lex.tryMatch(codeBlock)
   lex.tryMatch(rec)
   lex.tryMatch(letExp)
+  lex.tryMatch(fnExpr)
+  lex.tryMatch(fnDefn)
   lex.tryMatch(call)
 
   if lex.peek().kind == Symbol:
@@ -234,10 +239,63 @@ proc primary*(lex: var Lexer): Object =
 
   raise ParseError.newException("Unexpected token: " & lex.peek().lexeme)
 
+proc symbol*(lex: var Lexer): tuple[exp: Object, matched: bool]
+
+proc paramList*(lex: var Lexer): tuple[params: Object, matched: bool] =
+  result = (Object(kind: List, items: @[]), true)
+  while lex.peek().lexeme != ")":
+    let (p, ok) = lex.symbol()
+    if not ok:
+      return (None, false)
+    result.params.items.add(p)
+    if lex.peek().lexeme == ")":
+      break
+    lex.expectSymbol(",")
+
+proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fn":
+    return (None, false)
+  let save = lex.index
+  lex.expectSymbol("fn")
+  if lex.peek().kind != Symbol or lex.peek().symbol != "(":
+    lex.index = save
+    return (None, false)
+  lex.expectSymbol("(")
+  let (params, ok) = lex.paramList()
+  if not ok:
+    lex.index = save
+    return (None, false)
+  lex.expectSymbol(")")
+  let body = lex.expr()
+  (Object(kind: List, items: @[sym"lambda", params, body]), true)
+
+proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fn":
+    return (None, false)
+  let save = lex.index
+  lex.expectSymbol("fn")
+  let (fname, okName) = lex.symbol()
+  if not okName:
+    lex.index = save
+    return (None, false)
+  if lex.peek().kind != Symbol or lex.peek().symbol != "(":
+    lex.index = save
+    return (None, false)
+  lex.expectSymbol("(")
+  let (params, ok) = lex.paramList()
+  if not ok:
+    lex.index = save
+    return (None, false)
+  lex.expectSymbol(")")
+  let (blk, isBlk) = lex.codeBlock()
+  if not isBlk:
+    lex.index = save
+    return (None, false)
+  (Object(kind: List, items: @[sym"fun", fname, params, blk]), true)
+
 proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: bool]
 proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
 proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "@{":

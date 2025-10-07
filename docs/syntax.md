@@ -1,6 +1,6 @@
 ```ebnf
 Module      = Expr*
-Expr        = BinExp ;; Pratt expr
+Expr        = BinExpr ;; Pratt expr
 Primary     = Number
             | String
             | #t | #f | none
@@ -10,6 +10,8 @@ Primary     = Number
             | Block
             | IfExpr
             | FnExpr
+            | FnDefn
+            | WhileExpr
             | LetExpr
             | MacroExpr
             | PipeExpr
@@ -21,12 +23,14 @@ Binding     = MapKey "=" Expr
 RecordKey   = Ident | String | Number
 Sep         = "," | TERMINATOR+
 Block       = "{" Expr* "}"
-IfExp       = "if" "(" Exp ")" Block ("else" Block)?
-FnExp       = "fn" "(" ArgList? ")" Block
+IfExpr      = "if" "(" Expr ")" Block ("else" Block)?
+FnExpr      = "fn" "(" ArgList? ")" Expr
+FnDefn      = "fn" Ident "(" ArgList? ")" Block
+WhileExpr   = "while" Expr Block
 ArgList     = Expr ("," Expr)*
-LetExp      = "let" LetHead "=" Exp
+LetExpr     = "let" LetHead "=" Expr
             | "let" LetHead Block
-            | "let" "{" BindingList "}" "in" Exp
+            | "let" "{" BindingList "}" "in" Expr
 LetHead     = Ident "(" ArgList? ")" | Ident
 MacroExpr   = "macro" Ident "(" ArgList? ")" "=>" Expr
 PipeExpr    = "pipe" "(" Expr ")" PipeChain 
