@@ -74,13 +74,13 @@ suite "Lexer":
     expect Exception:
       discard Lexer.init("@")
 
-proc parseRec(src: string): Exp =
+proc parseRec(src: string): Object =
   var lex = Lexer.init(src)
   let (e, m) = rec(lex)
   doAssert m
   e
 
-proc parseBlock(src: string): Exp =
+proc parseBlock(src: string): Object =
   var lex = Lexer.init(src)
   let (e, m) = codeBlock(lex)
   doAssert m
@@ -89,7 +89,7 @@ proc parseBlock(src: string): Exp =
 suite "record parsing":
   test "empty record":
     let e = parseRec("@{ }")
-    check e == Exp(kind: List, items: @[sym"record"])
+    check e == Object(kind: List, items: @[sym"record"])
 
   test "single pair symbol key":
     let e = parseRec("@{ a = 1 }")
@@ -117,19 +117,19 @@ suite "record parsing":
       node(
         "record",
         @[
-          node("pair", @[sym("a"), Exp(kind: List, items: @[sym("+"), num(1), num(2)])]),
-          node("pair", @[sym("b"), Exp(kind: List, items: @[sym("*"), num(3), num(4)])]),
+          node("pair", @[sym("a"), Object(kind: List, items: @[sym("+"), num(1), num(2)])]),
+          node("pair", @[sym("b"), Object(kind: List, items: @[sym("*"), num(3), num(4)])]),
           node(
             "pair",
             @[
               sym("c"),
-              Exp(
+              Object(
                 kind: List,
                 items:
                   @[
                     sym("+"),
                     num(5),
-                    Exp(kind: List, items: @[sym("*"), num(6), num(7)]),
+                    Object(kind: List, items: @[sym("*"), num(6), num(7)]),
                   ],
               ),
             ],
@@ -142,7 +142,7 @@ suite "record parsing":
     check e.items.len == 1 + 4
     check e.items[0] == sym("record")
     check e.items[1] ==
-      node("pair", @[sym("xs"), Exp(kind: List, items: @[num(1), num(2), num(3)])])
+      node("pair", @[sym("xs"), Object(kind: List, items: @[num(1), num(2), num(3)])])
     check e.items[2] == node("pair", @[sym("t"), True])
     check e.items[3] == node("pair", @[sym("f"), False])
     check e.items[4] == node("pair", @[sym("n"), None])
@@ -161,8 +161,8 @@ suite "code block parsing":
     check e.items.len == 1 + 3
     check e.items[0] == sym("do")
     check e.items[1] == num(1)
-    check e.items[2] == Exp(kind: List, items: @[sym("+"), num(2), num(3)])
-    check e.items[3] == Exp(kind: List, items: @[num(4), num(5)])
+    check e.items[2] == Object(kind: List, items: @[sym("+"), num(2), num(3)])
+    check e.items[3] == Object(kind: List, items: @[num(4), num(5)])
 
   test "nested record inside block":
     let e = parseBlock("{ @{a=1, b=2} }")
@@ -180,10 +180,10 @@ suite "code block parsing":
       node(
         "do",
         @[
-          Exp(
+          Object(
             kind: List,
             items:
-              @[sym("+"), num(1), Exp(kind: List, items: @[sym("*"), num(2), num(3)])],
+              @[sym("+"), num(1), Object(kind: List, items: @[sym("*"), num(2), num(3)])],
           )
         ],
       )
@@ -218,9 +218,9 @@ suite "call and dot":
     var lx = Lexer.init("a.b.c")
     let got = expr(lx)
     let want =
-      Exp(kind: List, items: @[
+      Object(kind: List, items: @[
         sym".",
-        Exp(kind: List, items: @[sym".", sym"a", sym"b"]),
+        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
         sym"c"
       ])
     check got == want
@@ -229,10 +229,10 @@ suite "call and dot":
     var lx = Lexer.init("a.b + c.d")
     let got = expr(lx)
     let want =
-      Exp(kind: List, items: @[
+      Object(kind: List, items: @[
         sym"+",
-        Exp(kind: List, items: @[sym".", sym"a", sym"b"]),
-        Exp(kind: List, items: @[sym".", sym"c", sym"d"])
+        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
+        Object(kind: List, items: @[sym".", sym"c", sym"d"])
       ])
     check got == want
 
@@ -240,7 +240,7 @@ suite "call and dot":
     var lx = Lexer.init("foo(1).bar(2)")
     let got = expr(lx)
     let want =
-      Exp(kind: List, items: @[
+      Object(kind: List, items: @[
         sym".",
         node("foo", @[num 1]),
         node("bar", @[num 2])
@@ -251,11 +251,11 @@ suite "call and dot":
     var lx = Lexer.init("f(1).g.h(2,3).k")
     let got = expr(lx)
     let want =
-      Exp(kind: List, items: @[
+      Object(kind: List, items: @[
         sym".",
-        Exp(kind: List, items: @[
+        Object(kind: List, items: @[
           sym".",
-          Exp(kind: List, items: @[
+          Object(kind: List, items: @[
             sym".",
             node("f", @[num 1]),
             sym"g"

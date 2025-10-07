@@ -1,6 +1,10 @@
-import std/[strutils, sequtils, tables, hashes]
+import std/[strutils, tables, sequtils]
 
 import fusion/matching
+
+import objects, evaluation
+export objects, evaluation
+
 {.experimental: "caseStmtMacros".}
 
 type
@@ -27,118 +31,6 @@ type
     index*: int
     noMatch*: bool
 
-  ExpKind* = enum
-    Nothing
-    Symbol
-    Number
-    Boolean
-    List
-    Record
-
-  Exp* = object
-    case kind*: ExpKind
-    of Nothing:
-      discard
-    of Symbol:
-      symbol*: string
-    of Number:
-      number*: float64
-    of Boolean:
-      isTrue*: bool
-    of List:
-      items*: seq[Exp]
-    of Record:
-      rec: Table[Exp, Exp]
-
-proc hash*(exp: Exp): Hash =
-  case exp.kind
-  of Nothing:
-    hash(0)
-  of Symbol:
-    hash(exp.symbol)
-  of Number:
-    hash(exp.number)
-  of Boolean:
-    hash(exp.isTrue)
-  of List:
-    hash(exp.items)
-  of Record:
-    hash(exp.rec)
-
-proc `==`*(a, b: Exp): bool =
-  if a.kind != b.kind:
-    return false
-  case a.kind
-  of Nothing:
-    true
-  of Symbol:
-    a.symbol == b.symbol
-  of Number:
-    a.number == b.number
-  of Boolean:
-    a.isTrue == b.isTrue
-  of List:
-    if a.items.len != b.items.len:
-      return false
-    for i in 0 ..< a.items.len:
-      if a.items[i] != b.items[i]:
-        return false
-    true
-  of Record:
-    if a.rec.len != b.rec.len:
-      return false
-    for k, v in a.rec:
-      if not b.rec.hasKey(k):
-        return false
-      if b.rec[k] != v:
-        return false
-    true
-
-const MaxWidth = 60
-
-proc formatExp(e: Exp, indent: int, col: int): string =
-  case e.kind
-  of Symbol:
-    ":" & e.symbol
-  of Number:
-    let i = int64(e.number)
-    if e.number == float64(i):
-      $i
-    else:
-      $e.number
-  of List:
-    var parts: seq[string]
-    for it in e.items:
-      parts.add(formatExp(it, indent + 2, col + 2))
-    let oneLine = "(" & parts.join(" ") & ")"
-    if oneLine.len + col <= MaxWidth:
-      oneLine
-    else:
-      let ind = " ".repeat(indent)
-      "(\n" & parts.mapIt(ind & it).join("\n") & "\n" & " ".repeat(indent - 2) & ")"
-  of Boolean:
-    if e.isTrue: "#t" else: "#f"
-  of Nothing:
-    "Nothing"
-  of Record:
-    if e.rec.len == 0:
-      "{}"
-    else:
-      var kvs: seq[string]
-      for k, v in e.rec:
-        kvs.add(
-          formatExp(k, indent + 2, col + 2) & " = " & formatExp(v, indent + 2, col + 2)
-        )
-      let oneLine = "{" & kvs.join(", ") & "}"
-      if oneLine.len + col <= MaxWidth:
-        oneLine
-      else:
-        let ind = " ".repeat(indent)
-        "{\n" & kvs.mapIt(ind & it).join(",\n") & "\n" & " ".repeat(indent - 2) & "}"
-
-proc `$`*(e: Exp): string =
-  formatExp(e, 2, 0)
-
 proc `[]`*(lex: Lexer, idx: int): Token =
   if idx >= lex.tokens.len:
     return Token(kind: Eof)
@@ -162,24 +54,7 @@ proc lexeme*(t: Token): string =
   of Eof:
     "<eof>"
 
-proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-
-proc sym*(s: string): Exp =
-  Exp(kind: Symbol, symbol: s)
-
-proc num*(s: SomeNumber): Exp =
-  when s is SomeFloat:
-    let n = s.float64
-  else:
-    let n = s.toFloat().float64
-  Exp(kind: Number, number: n)
-
-const True* = Exp(kind: Boolean, isTrue: true)
-const False* = Exp(kind: Boolean, isTrue: false)
-const None* = Exp(kind: Nothing)
-
-proc node*(tag: string, xs: seq[Exp]): Exp =
-  Exp(kind: List, items: @[sym(tag)] & xs)
+proc call*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
 proc expectSymbol*(lex: var Lexer, s: string) =
   let t = lex.next()
@@ -252,7 +127,7 @@ proc init*(T: typedesc[Lexer], str: string): T =
       inc index
     result.tokens.add(Token(kind: Symbol, symbol: str[start ..< index]))
 
-proc infixPower*(op: Exp): (uint8, uint8) =
+proc infixPower*(op: Object): (uint8, uint8) =
   if op.kind != Symbol:
     raise Exception.newException("Expected symbol")
   case op.symbol
@@ -265,40 +140,40 @@ proc infixPower*(op: Exp): (uint8, uint8) =
   else:
     raise Exception.newException("Bad operator: " & op.symbol)
 
-proc binExpr*(lex: var Lexer, minBp = 0'u8): Exp
-proc primary*(lex: var Lexer): Exp
+proc binExpr*(lex: var Lexer, minBp = 0'u8): Object
+proc primary*(lex: var Lexer): Object
 
-proc expr*(lex: var Lexer): Exp =
+proc expr*(lex: var Lexer): Object =
   lex.binExpr()
 
-proc binExpr*(lex: var Lexer, minBp = 0'u8): Exp =
+proc binExpr*(lex: var Lexer, minBp = 0'u8): Object =
   var left = lex.primary()
 
   while true:
     let look = lex[lex.index]
     if look.kind != Op:
       break
-    let op = Exp(kind: Symbol, symbol: look.operator)
+    let op = Object(kind: Symbol, symbol: look.operator)
     let (lBp, rBp) = infixPower(op)
     if lBp < minBp:
       break
     discard lex.next()
     let right = lex.binExpr(rBp)
-    left = Exp(kind: List, items: @[op, left, right])
+    left = Object(kind: List, items: @[op, left, right])
 
   result = left
 
-proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-proc codeBlock*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-proc letExp*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+proc list*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
 template tryMatch(lex: var Lexer, ident) =
   let (v, isV) = lex.ident()
   if isV:
     return v
 
-proc primary*(lex: var Lexer): Exp =
+proc primary*(lex: var Lexer): Object =
   case lex.peek()
   of (kind: Number, number: @n):
     discard lex.next()
@@ -329,12 +204,12 @@ proc primary*(lex: var Lexer): Exp =
 
   raise ParseError.newException("Unexpected token: " & lex.peek().lexeme)
 
-proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool]
-proc binding*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool]
-proc argList*(lex: var Lexer): tuple[exp: Exp, matched: bool]
+proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: bool]
+proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
-proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "@{":
     return (None, false)
   lex.expectSymbol("@{")
@@ -349,9 +224,9 @@ proc rec*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   result = (bindings, true)
   lex.expectSymbol("}")
 
-proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool] =
-  result = (Exp(kind: List, items: @[sym(symbol)]), true)
-  var xs = newSeq[Exp]()
+proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: bool] =
+  result = (Object(kind: List, items: @[sym(symbol)]), true)
+  var xs = newSeq[Object]()
   while lex.peek().lexeme != "}" and not lex.atEof():
     let (binding, isBinding) = lex.binding()
     assert(isBinding)
@@ -359,26 +234,26 @@ proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Exp, matched: bool
     if lex.peek().lexeme == "}":
       break
     lex.expectSymbol(",")
-  result.exp.items.add(Exp(kind: List, items: xs))
+  result.exp.items.add(Object(kind: List, items: xs))
 
-proc binding*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let (key, isKey) = lex.recordKey()
   assert(isKey)
   lex.expectOperator("=")
   let expr = lex.expr()
-  result = (Exp(kind: List, items: @[sym"pair", key, expr]), true)
+  result = (Object(kind: List, items: @[sym"pair", key, expr]), true)
 
-proc symbol*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc symbol*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex.peek().kind != Symbol:
     return (None, false)
   result = (lex.next().lexeme.sym(), true)
 
-proc number*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc number*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex.peek().kind != Number:
     return (None, false)
   result = (lex.next().number.num(), true)
 
-proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let (sy, isSy) = lex.symbol()
   if isSy:
     return (sy, true)
@@ -387,11 +262,11 @@ proc recordKey*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     return (sn, true)
   raise ParseError.newException("Invalid record key " & $lex.peek())
 
-proc codeBlock*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "{":
     return (None, false)
   lex.expectSymbol("{")
-  var blk = Exp(kind: List, items: @[sym"do"])
+  var blk = Object(kind: List, items: @[sym"do"])
   while lex.peek().lexeme != "}" and not lex.atEof():
     let exp = lex.expr()
     blk.items.add(exp)
@@ -400,11 +275,11 @@ proc codeBlock*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   result = (blk, true)
   lex.expectSymbol("}")
 
-proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc list*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex.peek().lexeme != "[":
     return (None, false)
   discard lex.next()
-  result = (Exp(kind: List), true)
+  result = (Object(kind: List), true)
   while lex.peek().lexeme != "]" and not lex.atEof():
     result.exp.items.add(lex.expr())
     if lex.peek().lexeme == "]":
@@ -412,15 +287,15 @@ proc list*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     lex.expectSymbol(",")
   discard lex.next()
 
-proc argList*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
-  result = (Exp(kind: List, items: @[]), true)
+proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+  result = (Object(kind: List, items: @[]), true)
   while lex.peek().lexeme != ")":
     result.exp.items.add(lex.expr())
     if lex.peek().lexeme == ")":
       return
     lex.expectSymbol(",")
 
-proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc call*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let start = lex.index
   let (ident, isSym) = lex.symbol()
   if not isSym:
@@ -436,7 +311,7 @@ proc call*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   args.items.insert(ident, 0)
   return (args, true)
 
-proc letHead*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc letHead*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let start = lex.index
   let (ident, isSym) = lex.symbol()
   if not isSym or ident.symbol == "{":
@@ -452,7 +327,7 @@ proc letHead*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
   args.items.insert(ident, 0)
   return (args, true)
 
-proc letExp*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
+proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex[lex.index].lexeme != "let":
     return (None, false)
   lex.expectSymbol("let")
@@ -468,7 +343,7 @@ proc letExp*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     return (bindings, true)
   elif isHead and lex.peek().lexeme == "=":
     lex.expectOperator("=")
-    return (Exp(kind: List, items: @[sym"let", head, lex.expr()]), true)
+    return (Object(kind: List, items: @[sym"let", head, lex.expr()]), true)
   elif isHead and lex.peek().lexeme == "{":
     discard lex.next()
     let (bindings, matched) = lex.bindingList("let")
@@ -478,15 +353,24 @@ proc letExp*(lex: var Lexer): tuple[exp: Exp, matched: bool] =
     let (blk, isBlk) = lex.codeBlock()
     if not isBlk:
       raise ParseError.newException("Failed to parse block")
-    var le = Exp(kind: List, items: @[sym"let", head, bindings, blk])
+    var le = Object(kind: List, items: @[sym"let", head, bindings, blk])
     return (le, true)
 
-proc module*(lex: var Lexer): Exp =
-  result = Exp(kind: List)
+proc module*(lex: var Lexer): Object =
+  result = Object(kind: List)
   while not lex.atEof():
     result.items.add(lex.expr())
 
 when isMainModule:
-  var lex = Lexer.init("echo(2)")
-  echo lex.tokens
-  echo expr(lex)
+  var lex = Lexer.init("echo(2 + 3)")
+  var ev = Evaluator(
+    root: Env.new()
+  ) 
+
+  proc owlEcho(env: Env, xs: seq[Object]): Object {.gcsafe, nimcall.} =
+    echo xs.mapIt($env.evaluate(it)).join("")
+
+  ev.root.add(sym"echo", Object(kind: ForeignFunction, ffunction: owlEcho))
+  let exp = expr(lex)
+  let res = ev.evaluate(exp)
+  echo res
