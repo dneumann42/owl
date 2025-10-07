@@ -42,7 +42,7 @@ type
     next*: Env
 
 proc new*(T: typedesc[Env]): T =
-    T(scope: Object(kind: Record, rec: initTable[Object, Object]()))
+  T(scope: Object(kind: Record, rec: initTable[Object, Object]()))
 
 proc hash*(exp: Object): Hash =
   case exp.kind
@@ -146,7 +146,7 @@ proc `$`*(e: Object): string {.gcsafe.} =
 
 proc `$`*(es: seq[Object]): string {.gcsafe.} =
   for e in es:
-    result &= formatObj(e, 2, 0)
+    result &= "@[" & formatObj(e, 2, 0) & "]"
 
 proc sym*(s: string): Object =
   Object(kind: Symbol, symbol: s)
@@ -158,6 +158,12 @@ proc num*(s: SomeNumber): Object =
     let n = s.toFloat().float64
   Object(kind: Number, number: n)
 
+proc toBool*(o: Object): Object =
+  if o.kind == Nothing or (o.kind == Number and o.number == 0.0):
+    return Object(kind: Boolean, isTrue: false)
+  else:
+    return Object(kind: Boolean, isTrue: true)
+
 let True* = Object(kind: Boolean, isTrue: true)
 let False* = Object(kind: Boolean, isTrue: false)
 let None* = Object(kind: Nothing)
@@ -168,24 +174,26 @@ proc node*(tag: string, xs: seq[Object]): Object =
 # Environment API
 
 ## Returns Nothing if not found
+
 proc find*(env: Env, sym: Object): Object {.gcsafe.} =
-  if env.scope.rec.hasKey(sym):
-    return env.scope.rec[sym]
-  if not env.scope.rec.hasKey(sym) and not env.next.isNil:
-    return env.next.find(sym)
+  {.cast(gcsafe).}:
+    if env.scope.rec.hasKey(sym):
+      return env.scope.rec[sym]
+    if not env.scope.rec.hasKey(sym) and not env.next.isNil:
+      return env.next.find(sym)
 
 proc has*(env: Env, sym: Object): bool {.gcsafe.} =
-  if env.scope.kind != Record:
-    raise CatchableError.newException("Unable to index object '" & $env.scope & "'")
-  if env.scope.rec.hasKey(sym):
-    return true
-  if not env.scope.rec.hasKey(sym) and not env.next.isNil:
-    return env.next.has(sym)
+  {.cast(gcsafe).}:
+    if env.scope.kind != Record:
+      raise CatchableError.newException("Unable to index object '" & $env.scope & "'")
+    if env.scope.rec.hasKey(sym):
+      return true
+    if not env.scope.rec.hasKey(sym) and not env.next.isNil:
+      return env.next.has(sym)
 
 proc add*(env: Env, key, val: Object) {.gcsafe.} =
-  env.scope.rec[key] = val
+  {.cast(gcsafe).}:
+    env.scope.rec[key] = val
 
 proc `[]=`*(env: Env, key, val: Object) {.gcsafe.} =
   env.add(key, val)
-
-

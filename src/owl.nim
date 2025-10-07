@@ -2,8 +2,8 @@ import std/[strutils, tables, sequtils]
 
 import fusion/matching
 
-import objects, evaluation
-export objects, evaluation
+import objects, evaluation, libraries
+export objects, evaluation, libraries
 
 {.experimental: "caseStmtMacros".}
 
@@ -362,15 +362,10 @@ proc module*(lex: var Lexer): Object =
     result.items.add(lex.expr())
 
 when isMainModule:
-  var lex = Lexer.init("echo(2 + 3)")
-  var ev = Evaluator(
-    root: Env.new()
-  ) 
-
-  proc owlEcho(env: Env, xs: seq[Object]): Object {.gcsafe, nimcall.} =
-    echo xs.mapIt($env.evaluate(it)).join("")
-
-  ev.root.add(sym"echo", Object(kind: ForeignFunction, ffunction: owlEcho))
-  let exp = expr(lex)
-  let res = ev.evaluate(exp)
+  var lex = Lexer.init("""while(#t, echo(1))""")
+  var ev = Evaluator(root: Env.new())
+  ev.root.loadCoreLibraries()
+  var parsed = lex.expr()
+  echo parsed
+  let res = ev.evaluate(parsed)
   echo res
