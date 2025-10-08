@@ -22,7 +22,18 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
     # TODO: catch this after parsing in a new pass, so its raised before evaluation
     raise EvalError.newException("Unexpected empty list.")
-  var first = ev.evaluateSymbol(items[0])
+
+  let sym = items[0]
+
+  case $sym
+  of ":fun":
+    discard
+  of ":lambda":
+    discard
+  else:
+    discard
+
+  var first = ev.evaluateSymbol(sym)
 
   if first.kind == ForeignFunction:
     let args = collect:

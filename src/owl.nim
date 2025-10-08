@@ -9,9 +9,7 @@ export objects, evaluation, libraries, reader
 
 when isMainModule:
   var lex = Lexer.init("""
-    while #t {
-    
-    }
+    fn add1(a) { a + 1 }
   """)
   var ev = Evaluator(root: Env.new())
   ev.root.loadCoreLibraries()
