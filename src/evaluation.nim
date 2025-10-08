@@ -27,7 +27,9 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
 
   case $sym
   of ":fun":
-    discard
+    let id = items[1]
+    return
+      ev.add(id, Func(scope: ev, name: $id, params: items[2].items, body: items[3]))
   of ":lambda":
     discard
   else:

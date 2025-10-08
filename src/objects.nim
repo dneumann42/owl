@@ -11,11 +11,11 @@ type
     Function
     ForeignFunction
 
-  Func* = object
+  Func* = ref object
     scope*: Env
     name*: string
     params*: seq[Object]
-    body*: ref Object
+    body*: Object
 
   Object* = object
     case kind*: ObjectKind
@@ -32,12 +32,12 @@ type
     of Record:
       rec*: Table[Object, Object]
     of Function:
-      function*: ref Func = nil
+      function*: Func = nil
     of ForeignFunction:
       ffunction*: proc(env: Env, args: seq[Object]): Object {.gcsafe, nimcall.}
 
   Env* = ref object
-    functions*: Table[string, Func]
+    functions*: Table[Object, Func]
     scope*: Object
     next*: Env
 
@@ -159,7 +159,7 @@ proc num*(s: SomeNumber): Object =
   Object(kind: Number, number: n)
 
 proc ffunc*(fn: proc(env: Env, args: seq[Object]): Object {.gcsafe, nimcall.}): Object =
-    Object(kind: ForeignFunction, ffunction: fn)
+  Object(kind: ForeignFunction, ffunction: fn)
 
 proc toBool*(o: Object): Object =
   if o.kind == Nothing or (o.kind == Number and o.number == 0.0):
@@ -197,6 +197,12 @@ proc has*(env: Env, sym: Object): bool {.gcsafe.} =
 proc add*(env: Env, key, val: Object) {.gcsafe.} =
   {.cast(gcsafe).}:
     env.scope.rec[key] = val
+
+proc add*(env: Env, key: Object, val: Func): Object {.gcsafe, discardable.} =
+  {.cast(gcsafe).}:
+    result = Object(kind: Function, function: val)
+    env.functions[key] = val
+    env.scope.rec[key] = result
 
 proc `[]=`*(env: Env, key, val: Object) {.gcsafe.} =
   env.add(key, val)
