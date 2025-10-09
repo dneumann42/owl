@@ -1,4 +1,4 @@
-import std/[strutils, tables, sequtils]
+import std/[strutils, tables]
 
 import fusion/matching
 
@@ -91,9 +91,9 @@ proc init*(T: typedesc[Lexer], str: string): T =
   proc chr(): char =
     str[index]
 
-  proc nextChr(): char = 
-    if index + 1 < str.len(): 
-      str[index + 1] 
+  proc nextChr(): char =
+    if index + 1 < str.len():
+      str[index + 1]
     else:
       '\0'
 
@@ -149,7 +149,7 @@ proc init*(T: typedesc[Lexer], str: string): T =
       raise Exception.newException("Invalid character '" & chr() & "'")
 
     inc index
-    while not atEof() and (chr() in IdentChars + { '-', '*', '+', '$', '_' }):
+    while not atEof() and (chr() in IdentChars + {'-', '*', '+', '$', '_'}):
       inc index
     result.tokens.add(Token(kind: Symbol, symbol: str[start ..< index]))
 
@@ -448,4 +448,3 @@ proc module*(lex: var Lexer): Object =
   result = Object(kind: List, items: @[sym"do"])
   while not lex.atEof():
     result.items.add(lex.expr())
-

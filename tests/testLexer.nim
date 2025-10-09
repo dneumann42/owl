@@ -1,5 +1,4 @@
 import unittest
-import std/tables
 import std/sequtils
 
 import owl
@@ -19,9 +18,56 @@ proc assertOp(t: Token, s: string) =
 proc assertEof(t: Token) =
   check t.kind == Eof
 
+proc L(src: string): Lexer =
+  Lexer.init(src)
+
+proc E(src: string): Object =
+  var lx = L(src)
+  expr(lx)
+
+proc R(src: string): Object =
+  var lx = L(src)
+  let (e, m) = rec(lx)
+  doAssert m
+  e
+
+proc B(src: string): Object =
+  var lx = L(src)
+  let (e, m) = codeBlock(lx)
+  doAssert m
+  e
+
+template list(xs: varargs[Object]): Object =
+  Object(kind: List, items: @xs)
+
+proc bin(op: string, a, b: Object): Object =
+  list(sym op, a, b)
+
+proc dot(a, b: Object): Object =
+  list(sym".", a, b)
+
+proc call(name: string; args: varargs[Object]): Object =
+  node(name, @args)
+
+proc params(xs: varargs[Object]): Object =
+  list(xs)
+
+proc recPairs(ps: openArray[Object]): Object =
+  node("record", @ps)
+
+proc pair(k, v: Object): Object =
+  node("pair", @[k, v])
+
+proc chainDot(xs: openArray[Object]): Object =
+  doAssert xs.len >= 2
+  var acc = dot(xs[0], xs[1])
+  for i in 2 ..< xs.len:
+    acc = dot(acc, xs[i])
+  acc
+
 suite "Lexer":
   test "basic tokens":
-    var lx = Lexer.init("100 + hello")
+    var lx = L("100 + hello")
     check lx.tokens.len == 3
     assertNumber(lx[0], 100)
     assertOp(lx[1], "+")
@@ -29,7 +75,7 @@ suite "Lexer":
     assertEof(lx[3])
 
   test "whitespace and sequencing":
-    let lx = Lexer.init("  a * b   +  23   -c ")
+    let lx = L("  a * b   +  23   -c ")
     check lx.tokens.len == 7
     assertSymbol(lx[0], "a")
     assertOp(lx[1], "*")
@@ -41,7 +87,7 @@ suite "Lexer":
     assertEof(lx[7])
 
   test "peek/next flow":
-    var lx = Lexer.init("foo + bar")
+    var lx = L("foo + bar")
     var t = lx.next()
     assertSymbol(t, "foo")
     t = lx.peek()
@@ -57,7 +103,7 @@ suite "Lexer":
     assertEof(t)
 
   test "numbers":
-    let lx = Lexer.init("0 007 42 9001")
+    let lx = L("0 007 42 9001")
     check lx.tokens.len == 4
     assertNumber(lx[0], 0)
     assertNumber(lx[1], 7)
@@ -65,210 +111,123 @@ suite "Lexer":
     assertNumber(lx[3], 9001)
 
   test "index out of range gives Eof":
-    let lx = Lexer.init("x")
+    let lx = L("x")
     assertSymbol(lx[0], "x")
     assertEof(lx[1])
     assertEof(lx[100])
 
-  test "invalid character raises":
-    expect Exception:
-      discard Lexer.init("@")
-
-proc parseRec(src: string): Object =
-  var lex = Lexer.init(src)
-  let (e, m) = rec(lex)
-  doAssert m
-  e
-
-proc parseBlock(src: string): Object =
-  var lex = Lexer.init(src)
-  let (e, m) = codeBlock(lex)
-  doAssert m
-  e
-
 suite "record parsing":
   test "empty record":
-    let e = parseRec("@{ }")
-    check e == Object(kind: List, items: @[sym"record"])
+    let e = R("@{ }")
+    check e == list(sym"record")
 
   test "single pair symbol key":
-    let e = parseRec("@{ a = 1 }")
-    check e == node("record", @[node("pair", @[sym("a"), num(1)])])
+    let e = R("@{ a = 1 }")
+    check e == recPairs(@[pair(sym"a", num 1)])
 
   test "single pair numeric key":
-    let e = parseRec("@{ 1 = 2 }")
-    check e == node("record", @[node("pair", @[num(1), num(2)])])
+    let e = R("@{ 1 = 2 }")
+    check e == recPairs(@[pair(num 1, num 2)])
 
   test "multiple pairs with commas":
-    let e = parseRec("@{ a=1, b=2, c=3 }")
-    check e ==
-      node(
-        "record",
-        @[
-          node("pair", @[sym("a"), num(1)]),
-          node("pair", @[sym("b"), num(2)]),
-          node("pair", @[sym("c"), num(3)]),
-        ],
-      )
+    let e = R("@{ a=1, b=2, c=3 }")
+    check e == recPairs(@[
+      pair(sym"a", num 1),
+      pair(sym"b", num 2),
+      pair(sym"c", num 3)
+    ])
 
   test "expression values respect precedence":
-    let e = parseRec("@{ a=1+2, b=3*4, c=5+6*7 }")
-    check e ==
-      node(
-        "record",
-        @[
-          node("pair", @[sym("a"), Object(kind: List, items: @[sym("+"), num(1), num(2)])]),
-          node("pair", @[sym("b"), Object(kind: List, items: @[sym("*"), num(3), num(4)])]),
-          node(
-            "pair",
-            @[
-              sym("c"),
-              Object(
-                kind: List,
-                items:
-                  @[
-                    sym("+"),
-                    num(5),
-                    Object(kind: List, items: @[sym("*"), num(6), num(7)]),
-                  ],
-              ),
-            ],
-          ),
-        ],
-      )
+    let e = R("@{ a=1+2, b=3*4, c=5+6*7 }")
+    check e == recPairs(@[
+      pair(sym"a", bin("+", num 1, num 2)),
+      pair(sym"b", bin("*", num 3, num 4)),
+      pair(sym"c", bin("+", num 5, bin("*", num 6, num 7)))
+    ])
 
   test "record with list and booleans":
-    let e = parseRec("@{ xs=[1,2,3], t=#t, f=#f, n=none }")
+    let e = R("@{ xs=[1,2,3], t=#t, f=#f, n=none }")
     check e.items.len == 1 + 4
-    check e.items[0] == sym("record")
-    check e.items[1] ==
-      node("pair", @[sym("xs"), Object(kind: List, items: @[num(1), num(2), num(3)])])
-    check e.items[2] == node("pair", @[sym("t"), True])
-    check e.items[3] == node("pair", @[sym("f"), False])
-    check e.items[4] == node("pair", @[sym("n"), None])
+    check e.items[0] == sym"record"
+    check e.items[1] == pair(sym"xs", list(num 1, num 2, num 3))
+    check e.items[2] == pair(sym"t", True)
+    check e.items[3] == pair(sym"f", False)
+    check e.items[4] == pair(sym"n", None)
 
 suite "code block parsing":
   test "empty block":
-    let e = parseBlock("{}")
-    check e == node("do", @[])
+    check B("{}") == node("do", @[])
 
   test "numbers sequence":
-    let e = parseBlock("{ 1 2 3 }")
-    check e == node("do", @[num(1), num(2), num(3)])
+    check B("{ 1 2 3 }") == node("do", @[num 1, num 2, num 3])
 
   test "mixed expressions and list":
-    let e = parseBlock("{ 1 2+3 [4,5] }")
+    let e = B("{ 1 2+3 [4,5] }")
     check e.items.len == 1 + 3
-    check e.items[0] == sym("do")
-    check e.items[1] == num(1)
-    check e.items[2] == Object(kind: List, items: @[sym("+"), num(2), num(3)])
-    check e.items[3] == Object(kind: List, items: @[num(4), num(5)])
+    check e.items[0] == sym"do"
+    check e.items[1] == num 1
+    check e.items[2] == bin("+", num 2, num 3)
+    check e.items[3] == list(num 4, num 5)
 
   test "nested record inside block":
-    let e = parseBlock("{ @{a=1, b=2} }")
+    let e = B("{ @{a=1, b=2} }")
     check e.items.len == 2
-    check e.items[0] == sym("do")
-    check e.items[1] ==
-      node(
-        "record",
-        @[node("pair", @[sym("a"), num(1)]), node("pair", @[sym("b"), num(2)])],
-      )
+    check e.items[0] == sym"do"
+    check e.items[1] == recPairs(@[pair(sym"a", num 1), pair(sym"b", num 2)])
 
   test "block respects operator precedence":
-    let e = parseBlock("{ 1+2*3 }")
-    check e ==
-      node(
-        "do",
-        @[
-          Object(
-            kind: List,
-            items:
-              @[sym("+"), num(1), Object(kind: List, items: @[sym("*"), num(2), num(3)])],
-          )
-        ],
-      )
+    check B("{ 1+2*3 }") == node("do", @[
+      bin("+", num 1, bin("*", num 2, num 3))
+    ])
 
   test "block with booleans and none":
-    let e = parseBlock("{ #t #f none }")
-    check e == node("do", @[True, False, None])
+    check B("{ #t #f none }") == node("do", @[True, False, None])
 
 suite "call and dot":
   test "simple call":
-    var lx = Lexer.init("echo(2)")
-    let got = expr(lx)
-    let want = node("echo", @[num 2])
+    let got = E("echo(2)")
+    let want = call("echo", num 2)
     check got == want
 
   test "multi-arg call":
-    var lx = Lexer.init("sum(1, 2, 3)")
-    let got = expr(lx)
-    let want = node("sum", @[num 1, num 2, num 3])
+    let got = E("sum(1, 2, 3)")
+    let want = call("sum", num 1, num 2, num 3)
     check got == want
 
   test "nested calls":
-    var lx = Lexer.init("f(g(1), h(2,3))")
-    let got = expr(lx)
-    let want = node("f", @[
-      node("g", @[num 1]),
-      node("h", @[num 2, num 3])
-    ])
+    let got = E("f(g(1), h(2,3))")
+    let want = call("f", call("g", num 1), call("h", num 2, num 3))
     check got == want
 
   test "dot chains left-assoc":
-    var lx = Lexer.init("a.b.c")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym".",
-        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
-        sym"c"
-      ])
+    let got = E("a.b.c")
+    let want = chainDot([sym"a", sym"b", sym"c"])
     check got == want
 
   test "dot binds tighter than +":
-    var lx = Lexer.init("a.b + c.d")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"+",
-        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
-        Object(kind: List, items: @[sym".", sym"c", sym"d"])
-      ])
+    let got = E("a.b + c.d")
+    let want = bin("+", dot(sym"a", sym"b"), dot(sym"c", sym"d"))
     check got == want
 
   test "call then dot with call":
-    var lx = Lexer.init("foo(1).bar(2)")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym".",
-        node("foo", @[num 1]),
-        node("bar", @[num 2])
-      ])
+    let got = E("foo(1).bar(2)")
+    let want = dot(call("foo", num 1), call("bar", num 2))
     check got == want
 
   test "mixed chain with calls":
-    var lx = Lexer.init("f(1).g.h(2,3).k")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym".",
-        Object(kind: List, items: @[
-          sym".",
-          Object(kind: List, items: @[
-            sym".",
-            node("f", @[num 1]),
-            sym"g"
-          ]),
-          node("h", @[num 2, num 3])
-        ]),
-        sym"k"
-      ])
+    let got = E("f(1).g.h(2,3).k")
+    let want = dot(
+      dot(
+        dot(call("f", num 1), sym"g"),
+        call("h", num 2, num 3)
+      ),
+      sym"k"
+    )
     check got == want
 
 suite "Lexer (comparisons)":
   test "multi-char and single-char operators":
-    let lx = Lexer.init("== != <= >= < >")
+    let lx = L("== != <= >= < >")
     check lx.tokens.len == 6
     assertOp(lx[0], "==")
     assertOp(lx[1], "!=")
@@ -280,208 +239,117 @@ suite "Lexer (comparisons)":
 
 suite "comparison parsing":
   test "relational looser than dot and * and + chain":
-    var lx = Lexer.init("1 + 2 * 3 == 7")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"==",
-        Object(kind: List, items: @[
-          sym"+",
-          num 1,
-          Object(kind: List, items: @[sym"*", num 2, num 3])
-        ]),
-        num 7
-      ])
+    let got = E("1 + 2 * 3 == 7")
+    let want = bin("==", bin("+", num 1, bin("*", num 2, num 3)), num 7)
     check got == want
 
   test "equality lowest: 1 < 2 == #t":
-    var lx = Lexer.init("1 < 2 == #t")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"==",
-        Object(kind: List, items: @[sym"<", num 1, num 2]),
-        True
-      ])
+    let got = E("1 < 2 == #t")
+    let want = bin("==", bin("<", num 1, num 2), True)
     check got == want
 
   test "relational lower than +":
-    var lx = Lexer.init("1 + 2 < 4")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"<",
-        Object(kind: List, items: @[sym"+", num 1, num 2]),
-        num 4
-      ])
+    let got = E("1 + 2 < 4")
+    let want = bin("<", bin("+", num 1, num 2), num 4)
     check got == want
 
   test "all relational variants":
     for (src, op) in [("1 < 2", "<"), ("1 <= 2", "<="), ("2 > 1", ">"), ("2 >= 1", ">=")]:
-      var lx = Lexer.init(src)
-      let g = expr(lx)
+      let g = E(src)
       check g.items.len == 3
       check g.items[0] == sym(op)
 
   test "equality forms":
     for (src, op) in [("1 == 1", "=="), ("1 != 2", "!=")]:
-      var lx = Lexer.init(src)
-      let g = expr(lx)
+      let g = E(src)
       check g.items.len == 3
       check g.items[0] == sym(op)
 
   test "dot binds tighter than equality":
-    var lx = Lexer.init("a.b == c.d")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"==",
-        Object(kind: List, items: @[sym".", sym"a", sym"b"]),
-        Object(kind: List, items: @[sym".", sym"c", sym"d"])
-      ])
+    let got = E("a.b == c.d")
+    let want = bin("==", dot(sym"a", sym"b"), dot(sym"c", sym"d"))
     check got == want
 
   test "left-assoc equality chain":
-    var lx = Lexer.init("1 == 2 == 3")
-    let got = expr(lx)
-    let want =
-      Object(kind: List, items: @[
-        sym"==",
-        Object(kind: List, items: @[sym"==", num 1, num 2]),
-        num 3
-      ])
+    let got = E("1 == 2 == 3")
+    let want = bin("==", bin("==", num 1, num 2), num 3)
     check got == want
 
 suite "record parsing (comparisons)":
   test "record values with comparisons respect precedence":
-    let e = parseRec("@{ a=1<2, b=1+2<4, c=a.b==c.d }")
-    check e ==
-      node("record", @[
-        Object(kind: List, items: @[sym"pair", sym"a",
-          Object(kind: List, items: @[sym"<", num 1, num 2])]),
-        Object(kind: List, items: @[sym"pair", sym"b",
-          Object(kind: List, items: @[
-            sym"<",
-            Object(kind: List, items: @[sym"+", num 1, num 2]),
-            num 4
-          ])]),
-        Object(kind: List, items: @[sym"pair", sym"c",
-          Object(kind: List, items: @[
-            sym"==",
-            Object(kind: List, items: @[sym".", sym"a", sym"b"]),
-            Object(kind: List, items: @[sym".", sym"c", sym"d"])
-          ])])
-      ])
+    let e = R("@{ a=1<2, b=1+2<4, c=a.b==c.d }")
+    check e == recPairs(@[
+      pair(sym"a", bin("<", num 1, num 2)),
+      pair(sym"b", bin("<", bin("+", num 1, num 2), num 4)),
+      pair(sym"c", bin("==", dot(sym"a", sym"b"), dot(sym"c", sym"d")))
+    ])
 
 suite "code block parsing (comparisons)":
   test "block equality lowest":
-    let e = parseBlock("{ 1 < 2 == #t }")
-    check e ==
-      node("do", @[
-        Object(kind: List, items: @[
-          sym"==",
-          Object(kind: List, items: @[sym"<", num 1, num 2]),
-          True
-        ])
-      ])
-
-proc parseExpr(src: string): Object =
-  var lx = Lexer.init(src)
-  expr(lx)
+    check B("{ 1 < 2 == #t }") == node("do", @[
+      bin("==", bin("<", num 1, num 2), True)
+    ])
 
 suite "functions and lambdas":
   test "lambda: empty params, simple body":
-    let got = parseExpr("fun() 42")
-    let want =
-      node("lambda", @[
-        Object(kind: List, items: @[]),
-        num 42
-      ])
+    let got = E("fun() 42")
+    let want = node("lambda", @[params(), num 42])
     check got == want
 
   test "lambda: single param, identifier body":
-    let got = parseExpr("fun(x) x")
-    let want =
-      node("lambda", @[
-        Object(kind: List, items: @[sym "x"]),
-        sym "x"
-      ])
+    let got = E("fun(x) x")
+    let want = node("lambda", @[params(sym"x"), sym"x"])
     check got == want
 
   test "lambda: multi-params, body respects precedence":
-    let got = parseExpr("fun(x, y) x + y * 2")
-    let want =
-      node("lambda", @[
-        Object(kind: List, items: @[sym "x", sym "y"]),
-        Object(kind: List, items: @[
-          sym "+",
-          sym "x",
-          Object(kind: List, items: @[sym "*", sym "y", num 2])
-        ])
-      ])
+    let got = E("fun(x, y) x + y * 2")
+    let want = node("lambda", @[
+      params(sym"x", sym"y"),
+      bin("+", sym"x", bin("*", sym"y", num 2))
+    ])
     check got == want
 
   test "fun def: empty params, single expr block":
-    let got = parseExpr("fun id() { 1 }")
-    let want =
-      node("fun", @[
-        sym "id",
-        Object(kind: List, items: @[]),
-        node("do", @[num 1])
-      ])
+    let got = E("fun id() { 1 }")
+    let want = node("fun", @[sym"id", params(), node("do", @[num 1])])
     check got == want
 
   test "fun def: one param, simple body":
-    let got = parseExpr("fun inc(x) { x + 1 }")
-    let want =
-      node("fun", @[
-        sym "inc",
-        Object(kind: List, items: @[sym "x"]),
-        node("do", @[
-          Object(kind: List, items: @[sym "+", sym "x", num 1])
-        ])
-      ])
+    let got = E("fun inc(x) { x + 1 }")
+    let want = node("fun", @[
+      sym"inc",
+      params(sym"x"),
+      node("do", @[bin("+", sym"x", num 1)])
+    ])
     check got == want
 
   test "fun def: two params, binary in body":
-    let got = parseExpr("fun add(a, b) { a + b }")
-    let want =
-      node("fun", @[
-        sym "add",
-        Object(kind: List, items: @[sym "a", sym "b"]),
-        node("do", @[
-          Object(kind: List, items: @[sym "+", sym "a", sym "b"])
-        ])
-      ])
+    let got = E("fun add(a, b) { a + b }")
+    let want = node("fun", @[
+      sym"add",
+      params(sym"a", sym"b"),
+      node("do", @[bin("+", sym"a", sym"b")])
+    ])
     check got == want
 
   test "fun def: record in body":
-    let got = parseExpr("fun make(x, y) { @{a=x, b=y} }")
-    let want =
-      node("fun", @[
-        sym "make",
-        Object(kind: List, items: @[sym "x", sym "y"]),
-        node("do", @[
-          node("record", @[
-            node("pair", @[sym "a", sym "x"]),
-            node("pair", @[sym "b", sym "y"])
-          ])
+    let got = E("fun make(x, y) { @{a=x, b=y} }")
+    let want = node("fun", @[
+      sym"make",
+      params(sym"x", sym"y"),
+      node("do", @[
+        recPairs(@[
+          pair(sym"a", sym"x"),
+          pair(sym"b", sym"y")
         ])
       ])
+    ])
     check got == want
 
   test "lambda nested in expression context":
-    let got = parseExpr("[fun(x) x, fun() 0]")
-    let want =
-      Object(kind: List, items: @[
-        node("lambda", @[
-          Object(kind: List, items: @[sym "x"]),
-          sym "x"
-        ]),
-        node("lambda", @[
-          Object(kind: List, items: @[]),
-          num 0
-        ])
-      ])
+    let got = E("[fun(x) x, fun() 0]")
+    let want = list(
+      node("lambda", @[params(sym"x"), sym"x"]),
+      node("lambda", @[params(), num 0])
+    )
     check got == want
-

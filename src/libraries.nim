@@ -1,4 +1,4 @@
-import std/[tables, sugar, sequtils, strutils]
+import std/[tables, sequtils]
 
 import objects, evaluation
 

@@ -1,7 +1,3 @@
-import std/[strutils, tables, sequtils]
-
-import fusion/matching
-
 import objects, evaluation, libraries, reader
 export objects, evaluation, libraries, reader
 

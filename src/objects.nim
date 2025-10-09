@@ -144,10 +144,6 @@ proc formatObj(e: Object, indent: int, col: int): string {.gcsafe.} =
 proc `$`*(e: Object): string {.gcsafe.} =
   formatObj(e, 2, 0)
 
-proc `$`*(es: seq[Object]): string {.gcsafe.} =
-  for e in es:
-    result &= "@[" & formatObj(e, 2, 0) & "]"
-
 proc sym*(s: string): Object =
   Object(kind: Symbol, symbol: s)
 

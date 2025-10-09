@@ -38,7 +38,6 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
       result = ev.evaluate(items[i])
     return
   of ":let":
-    echo items
     return Object(kind: Nothing)
   else:
     discard
