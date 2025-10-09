@@ -17,6 +17,7 @@ proc evaluateSymbol*(ev: Env, sym: Object): Object {.gcsafe.} =
   return ev.find(sym)
 
 proc evaluate*(ev: Env, o: Object): Object {.gcsafe.}
+proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.}
 
 proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
@@ -31,21 +32,38 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
     return
       ev.add(id, Func(scope: ev, name: $id, params: items[2].items, body: items[3]))
   of ":lambda":
-    discard
+    return Object(kind: Function, function: Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]))
+  of ":do":
+    for i in 1 ..< items.len:
+      result = ev.evaluate(items[i])
+    return
+  of ":let":
+    echo items
+    return Object(kind: Nothing)
   else:
     discard
 
   var first = ev.evaluateSymbol(sym)
 
+  let params = collect:
+    for x in items[1 ..^ 1]:
+      ev.evaluate(x)
+  
   if first.kind == ForeignFunction:
-    let args = collect:
-      for x in items[1 ..^ 1]:
-        ev.evaluate(x)
-    result = first.ffunction(ev, args)
-    return
+    return first.ffunction(ev, params)
 
-  if first.kind != Function:
-    raise EvalError.newException("Expected function to call, but got '" & $first & "'")
+  if first.kind == Function:
+    return ev.evaluate(first.function, params)
+
+  raise EvalError.newException("Expected function to call, but got '" & $first & "'")
+
+proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.} =
+  let env = ev.push()
+  for i in 0 ..< fn.params.len:
+    let key = fn.params[i]
+    let value = params[i]
+    env.add(key, value)
+  result = env.evaluate(fn.body)
 
 proc evaluate*(ev: Env, o: Object): Object {.gcsafe.} =
   case o.kind

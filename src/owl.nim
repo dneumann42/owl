@@ -10,15 +10,12 @@ export objects, evaluation, libraries, reader
 when isMainModule:
   var lex = Lexer.init(
     """
-    { 
-    fn add1(a) { a + 1 }
-    add1(1) 
-    }
+    let x = 100
   """
   )
   var ev = Evaluator(root: Env.new())
   ev.root.loadCoreLibraries()
-  var parsed = lex.expr()
+  var parsed = lex.module()
   echo parsed
   let res = ev.evaluate(parsed)
-  echo "RESULT:", res
+  echo "RESULT: ", res

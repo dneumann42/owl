@@ -29,7 +29,7 @@ suite "Lexer":
     assertEof(lx[3])
 
   test "whitespace and sequencing":
-    let lx = Lexer.init("  a*b   +  23   -c ")
+    let lx = Lexer.init("  a * b   +  23   -c ")
     check lx.tokens.len == 7
     assertSymbol(lx[0], "a")
     assertOp(lx[1], "*")
@@ -391,7 +391,7 @@ proc parseExpr(src: string): Object =
 
 suite "functions and lambdas":
   test "lambda: empty params, simple body":
-    let got = parseExpr("fn() 42")
+    let got = parseExpr("fun() 42")
     let want =
       node("lambda", @[
         Object(kind: List, items: @[]),
@@ -400,7 +400,7 @@ suite "functions and lambdas":
     check got == want
 
   test "lambda: single param, identifier body":
-    let got = parseExpr("fn(x) x")
+    let got = parseExpr("fun(x) x")
     let want =
       node("lambda", @[
         Object(kind: List, items: @[sym "x"]),
@@ -409,7 +409,7 @@ suite "functions and lambdas":
     check got == want
 
   test "lambda: multi-params, body respects precedence":
-    let got = parseExpr("fn(x, y) x + y * 2")
+    let got = parseExpr("fun(x, y) x + y * 2")
     let want =
       node("lambda", @[
         Object(kind: List, items: @[sym "x", sym "y"]),
@@ -421,8 +421,8 @@ suite "functions and lambdas":
       ])
     check got == want
 
-  test "fn def: empty params, single expr block":
-    let got = parseExpr("fn id() { 1 }")
+  test "fun def: empty params, single expr block":
+    let got = parseExpr("fun id() { 1 }")
     let want =
       node("fun", @[
         sym "id",
@@ -431,8 +431,8 @@ suite "functions and lambdas":
       ])
     check got == want
 
-  test "fn def: one param, simple body":
-    let got = parseExpr("fn inc(x) { x + 1 }")
+  test "fun def: one param, simple body":
+    let got = parseExpr("fun inc(x) { x + 1 }")
     let want =
       node("fun", @[
         sym "inc",
@@ -443,8 +443,8 @@ suite "functions and lambdas":
       ])
     check got == want
 
-  test "fn def: two params, binary in body":
-    let got = parseExpr("fn add(a, b) { a + b }")
+  test "fun def: two params, binary in body":
+    let got = parseExpr("fun add(a, b) { a + b }")
     let want =
       node("fun", @[
         sym "add",
@@ -455,8 +455,8 @@ suite "functions and lambdas":
       ])
     check got == want
 
-  test "fn def: record in body":
-    let got = parseExpr("fn make(x, y) { @{a=x, b=y} }")
+  test "fun def: record in body":
+    let got = parseExpr("fun make(x, y) { @{a=x, b=y} }")
     let want =
       node("fun", @[
         sym "make",
@@ -471,7 +471,7 @@ suite "functions and lambdas":
     check got == want
 
   test "lambda nested in expression context":
-    let got = parseExpr("[fn(x) x, fn() 0]")
+    let got = parseExpr("[fun(x) x, fun() 0]")
     let want =
       Object(kind: List, items: @[
         node("lambda", @[

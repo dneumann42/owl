@@ -149,7 +149,7 @@ proc init*(T: typedesc[Lexer], str: string): T =
       raise Exception.newException("Invalid character '" & chr() & "'")
 
     inc index
-    while not atEof() and chr() in IdentChars:
+    while not atEof() and (chr() in IdentChars + { '-', '*', '+', '$', '_' }):
       inc index
     result.tokens.add(Token(kind: Symbol, symbol: str[start ..< index]))
 
@@ -253,10 +253,10 @@ proc paramList*(lex: var Lexer): tuple[params: Object, matched: bool] =
     lex.expectSymbol(",")
 
 proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool] =
-  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fn":
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fun":
     return (None, false)
   let save = lex.index
-  lex.expectSymbol("fn")
+  lex.expectSymbol("fun")
   if lex.peek().kind != Symbol or lex.peek().symbol != "(":
     lex.index = save
     return (None, false)
@@ -270,10 +270,10 @@ proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   (Object(kind: List, items: @[sym"lambda", params, body]), true)
 
 proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool] =
-  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fn":
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fun":
     return (None, false)
   let save = lex.index
-  lex.expectSymbol("fn")
+  lex.expectSymbol("fun")
   let (fname, okName) = lex.symbol()
   if not okName:
     lex.index = save
@@ -445,7 +445,7 @@ proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool] =
     return (le, true)
 
 proc module*(lex: var Lexer): Object =
-  result = Object(kind: List)
+  result = Object(kind: List, items: @[sym"do"])
   while not lex.atEof():
     result.items.add(lex.expr())
 

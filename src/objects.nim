@@ -206,3 +206,7 @@ proc add*(env: Env, key: Object, val: Func): Object {.gcsafe, discardable.} =
 
 proc `[]=`*(env: Env, key, val: Object) {.gcsafe.} =
   env.add(key, val)
+
+proc push*(env: Env): Env =
+  result = Env.new()
+  result.next = env
