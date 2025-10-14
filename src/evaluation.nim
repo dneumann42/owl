@@ -18,6 +18,7 @@ proc evaluateSymbol*(ev: Env, sym: Object): Object {.gcsafe.} =
 
 proc evaluate*(ev: Env, o: Object): Object {.gcsafe.}
 proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.}
+proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.}
 
 proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
@@ -38,7 +39,7 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
       result = ev.evaluate(items[i])
     return
   of ":let":
-    return Object(kind: Nothing)
+    return ev.evaluateLet(Object(kind: List, items: items))
   else:
     discard
 
@@ -55,6 +56,23 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
     return ev.evaluate(first.function, params)
 
   raise EvalError.newException("Expected function to call, but got '" & $first & "'")
+
+proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.} =
+  if xs.items[1].kind == Symbol:
+    let sym = xs.items[1]
+    let value = ev.evaluate(xs.items[2])
+    ev[sym] = value
+    return value
+  elif xs.items[1].kind == List:
+    let ev = ev.push()
+    for pair in xs.items[1].items:
+      if pair.kind != List or pair.items[0].kind != Symbol or pair.items[0].symbol != "pair":
+        raise EvalError.newException("Invalid let binding, expected pair")
+      let sym = pair.items[1]
+      let value = ev.evaluate(pair.items[2])
+      ev[sym] = value
+    return ev.evaluate(xs.items[2])
+  raise EvalError.newException("Invalid let binding")
 
 proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.} =
   let env = ev.push()

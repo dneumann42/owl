@@ -29,7 +29,6 @@ FnDefn      = "fn" Ident "(" ArgList? ")" Block
 WhileExpr   = "while" Expr Block
 ArgList     = Expr ("," Expr)*
 LetExpr     = "let" LetHead "=" Expr
-            | "let" LetHead Block
             | "let" "{" BindingList "}" "in" Expr
 LetHead     = Ident "(" ArgList? ")" | Ident
 MacroExpr   = "macro" Ident "(" ArgList? ")" "=>" Expr
