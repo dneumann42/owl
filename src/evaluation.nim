@@ -25,9 +25,9 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
     # TODO: catch this after parsing in a new pass, so its raised before evaluation
     raise EvalError.newException("Unexpected empty list.")
 
-  let sym = items[0]
+  let callable = items[0]
 
-  case $sym
+  case $callable
   of ":fun":
     let id = items[1]
     return
@@ -43,7 +43,7 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   else:
     discard
 
-  var first = ev.evaluateSymbol(sym)
+  var first = ev.evaluate(callable)
 
   let params = collect:
     for x in items[1 ..^ 1]:

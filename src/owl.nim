@@ -7,8 +7,7 @@ when isMainModule:
   var lex = Lexer.init(
     """
   let add = fun(x) fun(y) x + y
-  let a1 = add(1)
-  a1(2)
+  add(1)(2)
   """
   )
   var ev = Evaluator(root: Env.new())

@@ -62,3 +62,4 @@ raylib/
 
 owl
 tests/testLexer
+tests/testEvaluation

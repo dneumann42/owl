@@ -54,7 +54,7 @@ proc lexeme*(t: Token): string =
   of Eof:
     "<eof>"
 
-proc call*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc call*(lex: var Lexer, left: Object): Object
 
 proc expectSymbol*(lex: var Lexer, s: string) =
   let t = lex.next()
@@ -178,20 +178,18 @@ proc expr*(lex: var Lexer): Object =
 
 proc binExpr*(lex: var Lexer, minBp = 0'u8): Object =
   var left = lex.primary()
-
+  left = lex.call(left)
   while true:
     let look = lex[lex.index]
-    if look.kind != Op:
-      break
+    if look.kind != Op: break
     let op = Object(kind: Symbol, symbol: look.operator)
     let (lBp, rBp) = infixPower(op)
-    if lBp < minBp:
-      break
+    if lBp < minBp: break
     discard lex.next()
-    let right = lex.binExpr(rBp)
+    var right = lex.binExpr(rBp)
+    right = lex.call(right)
     left = Object(kind: List, items: @[op, left, right])
-
-  result = left
+  left
 
 proc list*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool]
@@ -229,7 +227,6 @@ proc primary*(lex: var Lexer): Object =
   lex.tryMatch(letExp)
   lex.tryMatch(fnExpr)
   lex.tryMatch(fnDefn)
-  lex.tryMatch(call)
 
   if lex.peek().kind == Symbol:
     let s = lex.peek().symbol
@@ -383,21 +380,17 @@ proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool] =
       return
     lex.expectSymbol(",")
 
-proc call*(lex: var Lexer): tuple[exp: Object, matched: bool] =
-  let start = lex.index
-  let (ident, isSym) = lex.symbol()
-  if not isSym:
-    return (None, false)
-  if lex.peek().lexeme != "(":
-    lex.index = start
-    return (None, false)
-  lex.expectSymbol("(")
-  var (args, isArgs) = lex.argList()
-  if not isArgs:
-    raise ParseError.newException("Failed to parse arguments")
-  lex.expectSymbol(")")
-  args.items.insert(ident, 0)
-  return (args, true)
+proc call*(lex: var Lexer, left: Object): Object =
+  result = left
+  while lex.peek().kind == Symbol and lex.peek().symbol == "(":
+    lex.expectSymbol("(")
+    let (args, ok) = lex.argList()
+    if not ok:
+      raise ParseError.newException("Failed to parse arguments")
+    lex.expectSymbol(")")
+    var xs = @[result]
+    for a in args.items: xs.add(a)
+    result = Object(kind: List, items: xs)
 
 proc letHead*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let start = lex.index
