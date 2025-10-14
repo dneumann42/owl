@@ -1,4 +1,6 @@
-import std/[strutils, sequtils, tables, hashes, tables]
+import std/[strutils, sequtils, tables, hashes]
+
+export hashes, tables
 
 type
   ObjectKind* = enum

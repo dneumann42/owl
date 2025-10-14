@@ -19,6 +19,7 @@ proc evaluateSymbol*(ev: Env, sym: Object): Object {.gcsafe.} =
 proc evaluate*(ev: Env, o: Object): Object {.gcsafe.}
 proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.}
 proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.}
+proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.}
 
 proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
@@ -40,6 +41,8 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
     return
   of ":let":
     return ev.evaluateLet(Object(kind: List, items: items))
+  of ":record":
+    return ev.evaluateRecDefinition(Object(kind: List, items: items))
   else:
     discard
 
@@ -56,6 +59,17 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
     return ev.evaluate(first.function, params)
 
   raise EvalError.newException("Expected function to call, but got '" & $first & "'")
+
+proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.} =
+  result = Object(kind: Record)
+  for i in 1 ..< xs.items.len:
+    let pair = xs.items[i]
+    if pair.kind != List or pair.items[0].kind != Symbol or pair.items[0].symbol != "pair":
+      raise EvalError.newException("Invalid let binding, expected pair")
+    let sym = pair.items[1]
+    let value = ev.evaluate(pair.items[2])
+    {.cast(gcsafe).}:
+      result.rec[sym] = value
 
 proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.} =
   if xs.items[1].kind == Symbol:
