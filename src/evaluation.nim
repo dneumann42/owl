@@ -31,7 +31,7 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   of ":fun":
     let id = items[1]
     return
-      ev.add(id, Func(scope: ev, name: $id, params: items[2].items, body: items[3]))
+      ev.add(id, Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3]))
   of ":lambda":
     return Object(kind: Function, function: Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]))
   of ":do":
@@ -75,7 +75,7 @@ proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.} =
   raise EvalError.newException("Invalid let binding")
 
 proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.} =
-  let env = ev.push()
+  let env = fn.scope
   for i in 0 ..< fn.params.len:
     let key = fn.params[i]
     let value = params[i]

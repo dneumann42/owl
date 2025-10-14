@@ -6,9 +6,9 @@ export objects, evaluation, libraries, reader
 when isMainModule:
   var lex = Lexer.init(
     """
-    let { x = 1, y = x + 1 } in 
-    let { z = x + 2 } in 
-    x + y + z
+  let add = fun(x) fun(y) x + y
+  let a1 = add(1)
+  a1(2)
   """
   )
   var ev = Evaluator(root: Env.new())

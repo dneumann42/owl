@@ -24,8 +24,8 @@ RecordKey   = Ident | String | Number
 Sep         = "," | TERMINATOR+
 Block       = "{" Expr* "}"
 IfExpr      = "if" "(" Expr ")" Block ("else" Block)?
-FnExpr      = "fn" "(" ArgList? ")" Expr
-FnDefn      = "fn" Ident "(" ArgList? ")" Block
+FnExpr      = "fun" "(" ArgList? ")" Expr
+FnDefn      = "fun" Ident "(" ArgList? ")" Block
 WhileExpr   = "while" Expr Block
 ArgList     = Expr ("," Expr)*
 LetExpr     = "let" LetHead "=" Expr
