@@ -130,14 +130,20 @@ suite "Evaluator":
   test "foreign functions receive raw args without double evaluation":
     var ev = Evaluator(root: Env.new())
     var evalCount = 0
+    var capturedLen = 0
+    var capturedKind = Nothing
+    var capturedNumber = 0.0
 
     proc bump(env: Env, args: seq[Object]): Object {.gcsafe.} =
       inc evalCount
       Object(kind: Number, number: float64(evalCount))
 
     proc capture(env: Env, args: seq[Object]): Object {.gcsafe.} =
-      for arg in args:
-        discard env.evaluate(arg)
+      capturedLen = args.len
+      if args.len > 0:
+        capturedKind = args[0].kind
+        if capturedKind == Number:
+          capturedNumber = args[0].number
       Object(kind: Nothing)
 
     ev.root.add(s("bump"), ffunc bump)
@@ -150,3 +156,6 @@ suite "Evaluator":
 
     discard ev.root.evaluate(prog)
     check evalCount == 1
+    check capturedLen == 1
+    check capturedKind == Number
+    check capturedNumber == 1.0

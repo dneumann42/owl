@@ -1,4 +1,4 @@
-import std/[tables, sequtils]
+import std/tables
 
 import objects, evaluation
 
@@ -27,33 +27,33 @@ proc init*(T: typedesc[Module], name: Object | string): T =
 
 proc loadCoreLibraries*(env: Env) =
   proc echo(env: Env, xs: seq[Object]): Object {.gcsafe.} =
-    for x in xs.mapIt($env.evaluate(it)):
+    for x in xs:
       stdout.write($x)
     stdout.write("\n")
 
   proc `owl +`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
     result = Object(kind: Number, number: 0.0)
     for v in xs:
-      var n = env.evaluate(v)
-      result.number += n.number
+      result.number += v.number
 
   proc `owl -`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
+    if xs.len == 0:
+      return Object(kind: Number, number: 0.0)
     result = Object(kind: Number, number: xs[0].number)
     for i in 1 ..< xs.len:
-      var n = env.evaluate(xs[i])
-      result.number -= n.number
+      result.number -= xs[i].number
 
   proc `owl *`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
     result = Object(kind: Number, number: 1.0)
     for v in xs:
-      var n = env.evaluate(v)
-      result.number *= n.number
+      result.number *= v.number
 
   proc `owl /`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
+    if xs.len == 0:
+      raise EvalError.newException("Division requires at least one argument")
     result = Object(kind: Number, number: xs[0].number)
     for i in 1 ..< xs.len:
-      var n = env.evaluate(xs[i])
-      result.number /= n.number
+      result.number /= xs[i].number
 
   proc `owl do`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
     for x in xs:

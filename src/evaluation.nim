@@ -45,6 +45,8 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
       result = ev.evaluate(items[i])
     return
   of ":quote":
+    if items.len != 2:
+      raise EvalError.newException("quote expects a single expression")
     return items[1]
   of ":let":
     return ev.evaluateLet(Object(kind: List, items: items))
@@ -57,10 +59,7 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
 
   let params = collect:
     for x in items[1 ..^ 1]:
-      if x.kind == List and $x.items[0] == ":quote":
-        x
-      else:
-        ev.evaluate(x)
+      ev.evaluate(x)
 
   if first.kind == ForeignFunction:
     return first.ffunction(ev, params)
