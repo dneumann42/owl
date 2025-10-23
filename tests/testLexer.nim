@@ -46,7 +46,7 @@ proc bin(op: string, a, b: Object): Object =
 proc dot(a, b: Object): Object =
   list(sym".", a, b)
 
-proc call(name: string; args: varargs[Object]): Object =
+proc call(name: string, args: varargs[Object]): Object =
   node(name, @args)
 
 proc params(xs: varargs[Object]): Object =
@@ -131,25 +131,26 @@ suite "record parsing":
 
   test "multiple pairs with commas":
     let e = R("@{ a=1, b=2, c=3 }")
-    check e == recPairs(@[
-      pair(sym"a", num 1),
-      pair(sym"b", num 2),
-      pair(sym"c", num 3)
-    ])
+    check e == recPairs(
+      @[pair(sym"a", num 1), pair(sym"b", num 2), pair(sym"c", num 3)]
+    )
 
   test "expression values respect precedence":
     let e = R("@{ a=1+2, b=3*4, c=5+6*7 }")
-    check e == recPairs(@[
-      pair(sym"a", bin("+", num 1, num 2)),
-      pair(sym"b", bin("*", num 3, num 4)),
-      pair(sym"c", bin("+", num 5, bin("*", num 6, num 7)))
-    ])
+    check e ==
+      recPairs(
+        @[
+          pair(sym"a", bin("+", num 1, num 2)),
+          pair(sym"b", bin("*", num 3, num 4)),
+          pair(sym"c", bin("+", num 5, bin("*", num 6, num 7))),
+        ]
+      )
 
   test "record with list and booleans":
     let e = R("@{ xs=[1,2,3], t=#t, f=#f, n=none }")
     check e.items.len == 1 + 4
     check e.items[0] == sym"record"
-    check e.items[1] == pair(sym"xs", list(num 1, num 2, num 3))
+    check e.items[1] == pair(sym"xs", list(sym"quote", list(num 1, num 2, num 3)))
     check e.items[2] == pair(sym"t", True)
     check e.items[3] == pair(sym"f", False)
     check e.items[4] == pair(sym"n", None)
@@ -167,7 +168,7 @@ suite "code block parsing":
     check e.items[0] == sym"do"
     check e.items[1] == num 1
     check e.items[2] == bin("+", num 2, num 3)
-    check e.items[3] == list(num 4, num 5)
+    check e.items[3] == list(sym"quote", list(num 4, num 5))
 
   test "nested record inside block":
     let e = B("{ @{a=1, b=2} }")
@@ -176,9 +177,7 @@ suite "code block parsing":
     check e.items[1] == recPairs(@[pair(sym"a", num 1), pair(sym"b", num 2)])
 
   test "block respects operator precedence":
-    check B("{ 1+2*3 }") == node("do", @[
-      bin("+", num 1, bin("*", num 2, num 3))
-    ])
+    check B("{ 1+2*3 }") == node("do", @[bin("+", num 1, bin("*", num 2, num 3))])
 
   test "block with booleans and none":
     check B("{ #t #f none }") == node("do", @[True, False, None])
@@ -199,6 +198,11 @@ suite "call and dot":
     let want = call("f", call("g", num 1), call("h", num 2, num 3))
     check got == want
 
+  test "quote shorthand expression":
+    let got = E("'foo")
+    let want = node("quote", @[sym"foo"])
+    check got == want
+
   test "dot chains left-assoc":
     let got = E("a.b.c")
     let want = chainDot([sym"a", sym"b", sym"c"])
@@ -216,13 +220,7 @@ suite "call and dot":
 
   test "mixed chain with calls":
     let got = E("f(1).g.h(2,3).k")
-    let want = dot(
-      dot(
-        dot(call("f", num 1), sym"g"),
-        call("h", num 2, num 3)
-      ),
-      sym"k"
-    )
+    let want = dot(dot(dot(call("f", num 1), sym"g"), call("h", num 2, num 3)), sym"k")
     check got == want
 
 suite "Lexer (comparisons)":
@@ -254,7 +252,9 @@ suite "comparison parsing":
     check got == want
 
   test "all relational variants":
-    for (src, op) in [("1 < 2", "<"), ("1 <= 2", "<="), ("2 > 1", ">"), ("2 >= 1", ">=")]:
+    for (src, op) in [
+      ("1 < 2", "<"), ("1 <= 2", "<="), ("2 > 1", ">"), ("2 >= 1", ">=")
+    ]:
       let g = E(src)
       check g.items.len == 3
       check g.items[0] == sym(op)
@@ -278,17 +278,18 @@ suite "comparison parsing":
 suite "record parsing (comparisons)":
   test "record values with comparisons respect precedence":
     let e = R("@{ a=1<2, b=1+2<4, c=a.b==c.d }")
-    check e == recPairs(@[
-      pair(sym"a", bin("<", num 1, num 2)),
-      pair(sym"b", bin("<", bin("+", num 1, num 2), num 4)),
-      pair(sym"c", bin("==", dot(sym"a", sym"b"), dot(sym"c", sym"d")))
-    ])
+    check e ==
+      recPairs(
+        @[
+          pair(sym"a", bin("<", num 1, num 2)),
+          pair(sym"b", bin("<", bin("+", num 1, num 2), num 4)),
+          pair(sym"c", bin("==", dot(sym"a", sym"b"), dot(sym"c", sym"d"))),
+        ]
+      )
 
 suite "code block parsing (comparisons)":
   test "block equality lowest":
-    check B("{ 1 < 2 == #t }") == node("do", @[
-      bin("==", bin("<", num 1, num 2), True)
-    ])
+    check B("{ 1 < 2 == #t }") == node("do", @[bin("==", bin("<", num 1, num 2), True)])
 
 suite "functions and lambdas":
   test "lambda: empty params, simple body":
@@ -303,10 +304,9 @@ suite "functions and lambdas":
 
   test "lambda: multi-params, body respects precedence":
     let got = E("fun(x, y) x + y * 2")
-    let want = node("lambda", @[
-      params(sym"x", sym"y"),
-      bin("+", sym"x", bin("*", sym"y", num 2))
-    ])
+    let want = node(
+      "lambda", @[params(sym"x", sym"y"), bin("+", sym"x", bin("*", sym"y", num 2))]
+    )
     check got == want
 
   test "fun def: empty params, single expr block":
@@ -316,40 +316,36 @@ suite "functions and lambdas":
 
   test "fun def: one param, simple body":
     let got = E("fun inc(x) { x + 1 }")
-    let want = node("fun", @[
-      sym"inc",
-      params(sym"x"),
-      node("do", @[bin("+", sym"x", num 1)])
-    ])
+    let want =
+      node("fun", @[sym"inc", params(sym"x"), node("do", @[bin("+", sym"x", num 1)])])
     check got == want
 
   test "fun def: two params, binary in body":
     let got = E("fun add(a, b) { a + b }")
-    let want = node("fun", @[
-      sym"add",
-      params(sym"a", sym"b"),
-      node("do", @[bin("+", sym"a", sym"b")])
-    ])
+    let want = node(
+      "fun",
+      @[sym"add", params(sym"a", sym"b"), node("do", @[bin("+", sym"a", sym"b")])],
+    )
     check got == want
 
   test "fun def: record in body":
     let got = E("fun make(x, y) { @{a=x, b=y} }")
-    let want = node("fun", @[
-      sym"make",
-      params(sym"x", sym"y"),
-      node("do", @[
-        recPairs(@[
-          pair(sym"a", sym"x"),
-          pair(sym"b", sym"y")
-        ])
-      ])
-    ])
+    let want = node(
+      "fun",
+      @[
+        sym"make",
+        params(sym"x", sym"y"),
+        node("do", @[recPairs(@[pair(sym"a", sym"x"), pair(sym"b", sym"y")])]),
+      ],
+    )
     check got == want
 
   test "lambda nested in expression context":
     let got = E("[fun(x) x, fun() 0]")
     let want = list(
-      node("lambda", @[params(sym"x"), sym"x"]),
-      node("lambda", @[params(), num 0])
+      sym"quote",
+      list(
+        node("lambda", @[params(sym"x"), sym"x"]), node("lambda", @[params(), num 0])
+      ),
     )
     check got == want

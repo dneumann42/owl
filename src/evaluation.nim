@@ -31,14 +31,21 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   case $callable
   of ":fun":
     let id = items[1]
-    return
-      ev.add(id, Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3]))
+    return ev.add(
+      id, Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3])
+    )
   of ":lambda":
-    return Object(kind: Function, function: Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]))
+    return Object(
+      kind: Function,
+      function:
+        Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]),
+    )
   of ":do":
     for i in 1 ..< items.len:
       result = ev.evaluate(items[i])
     return
+  of ":quote":
+    return items[1]
   of ":let":
     return ev.evaluateLet(Object(kind: List, items: items))
   of ":record":
@@ -50,8 +57,11 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
 
   let params = collect:
     for x in items[1 ..^ 1]:
-      ev.evaluate(x)
-  
+      if x.kind == List and $x.items[0] == ":quote":
+        x
+      else:
+        ev.evaluate(x)
+
   if first.kind == ForeignFunction:
     return first.ffunction(ev, params)
 
@@ -64,7 +74,8 @@ proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.} =
   result = Object(kind: Record)
   for i in 1 ..< xs.items.len:
     let pair = xs.items[i]
-    if pair.kind != List or pair.items[0].kind != Symbol or pair.items[0].symbol != "pair":
+    if pair.kind != List or pair.items[0].kind != Symbol or
+        pair.items[0].symbol != "pair":
       raise EvalError.newException("Invalid let binding, expected pair")
     let sym = pair.items[1]
     let value = ev.evaluate(pair.items[2])
@@ -80,7 +91,8 @@ proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.} =
   elif xs.items[1].kind == List:
     let ev = ev.push()
     for pair in xs.items[1].items:
-      if pair.kind != List or pair.items[0].kind != Symbol or pair.items[0].symbol != "pair":
+      if pair.kind != List or pair.items[0].kind != Symbol or
+          pair.items[0].symbol != "pair":
         raise EvalError.newException("Invalid let binding, expected pair")
       let sym = pair.items[1]
       let value = ev.evaluate(pair.items[2])

@@ -6,11 +6,10 @@ export objects, evaluation, libraries, reader
 when isMainModule:
   var lex = Lexer.init(
     """
-  let tbl = @{
-    x = 100,
-    y = 20
+  fun x(y) {
+    echo(y)
   }
-  tbl
+  x([1, 2, 3])
   """
   )
   var ev = Evaluator(root: Env.new())

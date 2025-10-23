@@ -135,6 +135,11 @@ proc init*(T: typedesc[Lexer], str: string): T =
           result.tokens.add(Token(kind: Op, operator: $ch))
       continue
 
+    if ch == '\'':
+      inc index
+      result.tokens.add(Token(kind: Symbol, symbol: "'"))
+      continue
+
     if ch in {'(', ')', '{', '}', '[', ']', ','}:
       inc index
       result.tokens.add(Token(kind: Symbol, symbol: $ch))
@@ -181,10 +186,12 @@ proc binExpr*(lex: var Lexer, minBp = 0'u8): Object =
   left = lex.call(left)
   while true:
     let look = lex[lex.index]
-    if look.kind != Op: break
+    if look.kind != Op:
+      break
     let op = Object(kind: Symbol, symbol: look.operator)
     let (lBp, rBp) = infixPower(op)
-    if lBp < minBp: break
+    if lBp < minBp:
+      break
     discard lex.next()
     var right = lex.binExpr(rBp)
     right = lex.call(right)
@@ -218,6 +225,10 @@ proc primary*(lex: var Lexer): Object =
   of (kind: Symbol, symbol: "none"):
     discard lex.next()
     return None
+  of (kind: Symbol, symbol: "'"):
+    discard lex.next()
+    let quoted = lex.expr()
+    return node("quote", @[quoted])
   else:
     discard
 
@@ -364,12 +375,14 @@ proc list*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex.peek().lexeme != "[":
     return (None, false)
   discard lex.next()
-  result = (Object(kind: List), true)
+  result = (Object(kind: List, items: @[sym"quote"]), true)
+  var list = Object(kind: List, items: @[])
   while lex.peek().lexeme != "]" and not lex.atEof():
-    result.exp.items.add(lex.expr())
+    list.items.add(lex.expr())
     if lex.peek().lexeme == "]":
       break
     lex.expectSymbol(",")
+  result.exp.items.add(list)
   discard lex.next()
 
 proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool] =
@@ -389,7 +402,8 @@ proc call*(lex: var Lexer, left: Object): Object =
       raise ParseError.newException("Failed to parse arguments")
     lex.expectSymbol(")")
     var xs = @[result]
-    for a in args.items: xs.add(a)
+    for a in args.items:
+      xs.add(a)
     result = Object(kind: List, items: xs)
 
 proc letHead*(lex: var Lexer): tuple[exp: Object, matched: bool] =
