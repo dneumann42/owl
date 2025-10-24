@@ -11,6 +11,7 @@ type
   ParseError* = object of CatchableError
   TokenKind* = enum
     Eof
+    String
     Symbol
     Number
     Op
@@ -21,6 +22,8 @@ type
       symbol*: string
     of Number:
       number*: float64
+    of String:
+      str*: string
     of Op:
       operator*: string
     of Eof:
@@ -45,6 +48,8 @@ proc next*(lex: var Lexer): Token =
 
 proc lexeme*(t: Token): string =
   case t.kind
+  of String:
+    t.str
   of Symbol:
     t.symbol
   of Op:
@@ -150,6 +155,17 @@ proc init*(T: typedesc[Lexer], str: string): T =
       result.tokens.add(Token(kind: Symbol, symbol: "@{"))
       continue
 
+    if ch == '\"':
+      index += 1
+      let start = index
+      while chr() != '\"':
+        index += 1
+        if atEof():
+          raise Exception.newException("Missing closing quote")
+      result.tokens.add(Token(kind: String, str: str[start ..< index]))
+      index += 1
+      continue
+
     if chr() notin IdentStartChars + {'#'}:
       raise Exception.newException("Invalid character '" & chr() & "'")
 
@@ -229,6 +245,9 @@ proc primary*(lex: var Lexer): Object =
     discard lex.next()
     let quoted = lex.expr()
     return node("quote", @[quoted])
+  of (kind: String, str: @s):
+    discard lex.next()
+    return Object(kind: String, str: s)
   else:
     discard
 

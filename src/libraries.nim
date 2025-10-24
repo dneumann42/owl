@@ -1,4 +1,4 @@
-import std/tables
+import std/[tables, os, sequtils]
 
 import objects, evaluation
 
@@ -67,6 +67,8 @@ proc loadCoreLibraries*(env: Env) =
       result = env.evaluate(prog)
       echo prog
 
+  let ps = commandLineParams().mapIt(Object(kind: String, str: it))
+  env.add(sym"args", Object(kind: List, items: ps))
   env.add(sym"echo", ffunc echo)
   env.add(sym"+", ffunc `owl +`)
   env.add(sym"-", ffunc `owl -`)

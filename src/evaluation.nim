@@ -109,7 +109,7 @@ proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.} =
 
 proc evaluate*(ev: Env, o: Object): Object {.gcsafe.} =
   case o.kind
-  of Nothing, Number, Boolean, Record, Function, ForeignFunction:
+  of Nothing, String, Number, Boolean, Record, Function, ForeignFunction:
     return o
   of Symbol:
     return ev.evaluateSymbol(o)

@@ -11,6 +11,10 @@ proc assertSymbol(t: Token, s: string) =
   check t.kind == Symbol
   check t.symbol == s
 
+proc assertString(t: Token, s: string) =
+  check t.kind == String
+  check t.str == s
+
 proc assertOp(t: Token, s: string) =
   check t.kind == Op
   check t.operator == s
@@ -65,6 +69,9 @@ proc chainDot(xs: openArray[Object]): Object =
     acc = dot(acc, xs[i])
   acc
 
+proc strObj(s: string): Object =
+  Object(kind: String, str: s)
+
 suite "Lexer":
   test "basic tokens":
     var lx = L("100 + hello")
@@ -109,6 +116,12 @@ suite "Lexer":
     assertNumber(lx[1], 7)
     assertNumber(lx[2], 42)
     assertNumber(lx[3], 9001)
+
+  test "strings":
+    let lx = L("\"hello world\"")
+    check lx.tokens.len == 1
+    assertString(lx[0], "hello world")
+    assertEof(lx[1])
 
   test "index out of range gives Eof":
     let lx = L("x")
@@ -191,6 +204,16 @@ suite "call and dot":
   test "multi-arg call":
     let got = E("sum(1, 2, 3)")
     let want = call("sum", num 1, num 2, num 3)
+    check got == want
+
+  test "string literal expression":
+    let got = E("\"hi\"")
+    let want = strObj("hi")
+    check got == want
+
+  test "call with string literal":
+    let got = E("echo(\"hi\")")
+    let want = call("echo", strObj("hi"))
     check got == want
 
   test "nested calls":

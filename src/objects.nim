@@ -6,6 +6,7 @@ type
   ObjectKind* = enum
     Nothing
     Symbol
+    String
     Number
     Boolean
     List
@@ -25,6 +26,8 @@ type
       discard
     of Symbol:
       symbol*: string
+    of String:
+      str*: string
     of Number:
       number*: float64
     of Boolean:
@@ -52,6 +55,8 @@ proc hash*(exp: Object): Hash =
     hash(0)
   of Symbol:
     hash(exp.symbol)
+  of String:
+    hash(exp.str)
   of Number:
     hash(exp.number)
   of Boolean:
@@ -71,6 +76,8 @@ proc `==`*(a, b: Object): bool =
     true
   of Symbol:
     a.symbol == b.symbol
+  of String:
+    a.str == b.str
   of Number:
     a.number == b.number
   of Boolean:
@@ -103,6 +110,8 @@ proc formatObj(e: Object, indent: int, col: int): string {.gcsafe.} =
   case e.kind
   of Symbol:
     ":" & e.symbol
+  of String:
+    e.str
   of Number:
     let i = int64(e.number)
     if e.number == float64(i):
