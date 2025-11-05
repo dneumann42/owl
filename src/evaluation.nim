@@ -25,48 +25,17 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
     # TODO: catch this after parsing in a new pass, so its raised before evaluation
     raise EvalError.newException("Unexpected empty list.")
-
   let callable = items[0]
-
-  case $callable
-  of ":fun":
-    let id = items[1]
-    return ev.add(
-      id, Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3])
-    )
-  of ":lambda":
-    return Object(
-      kind: Function,
-      function:
-        Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]),
-    )
-  of ":do":
-    for i in 1 ..< items.len:
-      result = ev.evaluate(items[i])
-    return
-  of ":quote":
-    if items.len != 2:
-      raise EvalError.newException("quote expects a single expression")
-    return items[1]
-  of ":let":
-    return ev.evaluateLet(Object(kind: List, items: items))
-  of ":record":
-    return ev.evaluateRecDefinition(Object(kind: List, items: items))
-  else:
-    discard
-
+  if ev.specialForms.hasKey($callable):
+    return ev.specialForms[$callable](ev, items)
   var first = ev.evaluate(callable)
-
   let params = collect:
     for x in items[1 ..^ 1]:
       ev.evaluate(x)
-
   if first.kind == ForeignFunction:
     return first.ffunction(ev, params)
-
   if first.kind == Function:
     return ev.evaluate(first.function, params)
-
   raise EvalError.newException("Expected function to call, but got '" & $first & "'")
 
 proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.} =

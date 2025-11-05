@@ -23,7 +23,7 @@ Binding     = MapKey "=" Expr
 RecordKey   = Ident | String | Number
 Sep         = "," | TERMINATOR+
 Block       = "{" Expr* "}"
-IfExpr      = "if" "(" Expr ")" Block ("else" Block)?
+IfExpr      = "if" Expr "then" Block ("else" Block "end")?
 FnExpr      = "fun" "(" ArgList? ")" Expr
 FnDefn      = "fun" Ident "(" ArgList? ")" Block
 WhileExpr   = "while" Expr Block

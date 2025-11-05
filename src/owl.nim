@@ -6,7 +6,7 @@ export objects, evaluation, libraries, reader
 {.experimental: "caseStmtMacros".}
 
 when isMainModule:
-  var lex = Lexer.init(readFile("scripts/cli.owl"))
+  var lex = Lexer.init(readFile("scripts/repl.owl"))
   var ev = Evaluator(root: Env.new())
   ev.root.loadCoreLibraries()
   var parsed = lex.module()

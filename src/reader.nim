@@ -166,7 +166,7 @@ proc init*(T: typedesc[Lexer], str: string): T =
       index += 1
       continue
 
-    if chr() notin IdentStartChars + {'#'}:
+    if chr() notin IdentStartChars + {'#', ':'}:
       raise Exception.newException("Invalid character '" & chr() & "'")
 
     inc index
@@ -325,9 +325,9 @@ proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool]
 proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool]
 
 proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool] =
-  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "@{":
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "{":
     return (None, false)
-  lex.expectSymbol("@{")
+  lex.expectSymbol("{")
   var (bindings, matched) = lex.bindingList("record")
   assert(matched)
 
@@ -378,30 +378,28 @@ proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   raise ParseError.newException("Invalid record key " & $lex.peek())
 
 proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool] =
-  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "{":
+  if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "do":
     return (None, false)
-  lex.expectSymbol("{")
+  lex.expectSymbol("do")
   var blk = Object(kind: List, items: @[sym"do"])
-  while lex.peek().lexeme != "}" and not lex.atEof():
+  while lex.peek().lexeme != "end" and not lex.atEof():
     let exp = lex.expr()
     blk.items.add(exp)
-    if lex.peek().lexeme == "}":
+    if lex.peek().lexeme == "end":
       break
   result = (blk, true)
-  lex.expectSymbol("}")
+  lex.expectSymbol("end")
 
 proc list*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   if lex.peek().lexeme != "[":
     return (None, false)
   discard lex.next()
-  result = (Object(kind: List, items: @[sym"quote"]), true)
-  var list = Object(kind: List, items: @[])
+  result = (Object(kind: List, items: @[sym"list"]), true)
   while lex.peek().lexeme != "]" and not lex.atEof():
-    list.items.add(lex.expr())
+    result.exp.items.add(lex.expr())
     if lex.peek().lexeme == "]":
       break
     lex.expectSymbol(",")
-  result.exp.items.add(list)
   discard lex.next()
 
 proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool] =

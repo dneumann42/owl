@@ -131,25 +131,25 @@ suite "Lexer":
 
 suite "record parsing":
   test "empty record":
-    let e = R("@{ }")
+    let e = R("{ }")
     check e == list(sym"record")
 
   test "single pair symbol key":
-    let e = R("@{ a = 1 }")
+    let e = R("{ a = 1 }")
     check e == recPairs(@[pair(sym"a", num 1)])
 
   test "single pair numeric key":
-    let e = R("@{ 1 = 2 }")
+    let e = R("{ 1 = 2 }")
     check e == recPairs(@[pair(num 1, num 2)])
 
   test "multiple pairs with commas":
-    let e = R("@{ a=1, b=2, c=3 }")
+    let e = R("{ a=1, b=2, c=3 }")
     check e == recPairs(
       @[pair(sym"a", num 1), pair(sym"b", num 2), pair(sym"c", num 3)]
     )
 
   test "expression values respect precedence":
-    let e = R("@{ a=1+2, b=3*4, c=5+6*7 }")
+    let e = R("{ a=1+2, b=3*4, c=5+6*7 }")
     check e ==
       recPairs(
         @[
@@ -160,40 +160,40 @@ suite "record parsing":
       )
 
   test "record with list and booleans":
-    let e = R("@{ xs=[1,2,3], t=#t, f=#f, n=none }")
+    let e = R("{ xs=[1,2,3], t=#t, f=#f, n=none }")
     check e.items.len == 1 + 4
     check e.items[0] == sym"record"
-    check e.items[1] == pair(sym"xs", list(sym"quote", list(num 1, num 2, num 3)))
+    check e.items[1] == pair(sym"xs", list(sym"list", num 1, num 2, num 3))
     check e.items[2] == pair(sym"t", True)
     check e.items[3] == pair(sym"f", False)
     check e.items[4] == pair(sym"n", None)
 
 suite "code block parsing":
   test "empty block":
-    check B("{}") == node("do", @[])
+    check B("do end") == node("do", @[])
 
   test "numbers sequence":
-    check B("{ 1 2 3 }") == node("do", @[num 1, num 2, num 3])
+    check B("do 1 2 3 end") == node("do", @[num 1, num 2, num 3])
 
   test "mixed expressions and list":
-    let e = B("{ 1 2+3 [4,5] }")
+    let e = B("do 1 2+3 [4,5] end")
     check e.items.len == 1 + 3
     check e.items[0] == sym"do"
     check e.items[1] == num 1
     check e.items[2] == bin("+", num 2, num 3)
-    check e.items[3] == list(sym"quote", list(num 4, num 5))
+    check e.items[3] == list(sym"list", num 4, num 5)
 
   test "nested record inside block":
-    let e = B("{ @{a=1, b=2} }")
+    let e = B("do {a=1, b=2} end")
     check e.items.len == 2
     check e.items[0] == sym"do"
     check e.items[1] == recPairs(@[pair(sym"a", num 1), pair(sym"b", num 2)])
 
   test "block respects operator precedence":
-    check B("{ 1+2*3 }") == node("do", @[bin("+", num 1, bin("*", num 2, num 3))])
+    check B("do 1+2*3 end") == node("do", @[bin("+", num 1, bin("*", num 2, num 3))])
 
   test "block with booleans and none":
-    check B("{ #t #f none }") == node("do", @[True, False, None])
+    check B("do #t #f none end") == node("do", @[True, False, None])
 
 suite "call and dot":
   test "simple call":
@@ -300,7 +300,7 @@ suite "comparison parsing":
 
 suite "record parsing (comparisons)":
   test "record values with comparisons respect precedence":
-    let e = R("@{ a=1<2, b=1+2<4, c=a.b==c.d }")
+    let e = R("{ a=1<2, b=1+2<4, c=a.b==c.d }")
     check e ==
       recPairs(
         @[
@@ -312,7 +312,8 @@ suite "record parsing (comparisons)":
 
 suite "code block parsing (comparisons)":
   test "block equality lowest":
-    check B("{ 1 < 2 == #t }") == node("do", @[bin("==", bin("<", num 1, num 2), True)])
+    check B("do 1 < 2 == #t end") ==
+      node("do", @[bin("==", bin("<", num 1, num 2), True)])
 
 suite "functions and lambdas":
   test "lambda: empty params, simple body":
@@ -333,18 +334,18 @@ suite "functions and lambdas":
     check got == want
 
   test "fun def: empty params, single expr block":
-    let got = E("fun id() { 1 }")
+    let got = E("fun id() do 1 end")
     let want = node("fun", @[sym"id", params(), node("do", @[num 1])])
     check got == want
 
   test "fun def: one param, simple body":
-    let got = E("fun inc(x) { x + 1 }")
+    let got = E("fun inc(x) do x + 1 end")
     let want =
       node("fun", @[sym"inc", params(sym"x"), node("do", @[bin("+", sym"x", num 1)])])
     check got == want
 
   test "fun def: two params, binary in body":
-    let got = E("fun add(a, b) { a + b }")
+    let got = E("fun add(a, b) do a + b end")
     let want = node(
       "fun",
       @[sym"add", params(sym"a", sym"b"), node("do", @[bin("+", sym"a", sym"b")])],
@@ -352,7 +353,7 @@ suite "functions and lambdas":
     check got == want
 
   test "fun def: record in body":
-    let got = E("fun make(x, y) { @{a=x, b=y} }")
+    let got = E("fun make(x, y) do {a=x, b=y} end")
     let want = node(
       "fun",
       @[
@@ -366,9 +367,8 @@ suite "functions and lambdas":
   test "lambda nested in expression context":
     let got = E("[fun(x) x, fun() 0]")
     let want = list(
-      sym"quote",
-      list(
-        node("lambda", @[params(sym"x"), sym"x"]), node("lambda", @[params(), num 0])
-      ),
+      sym"list",
+      node("lambda", @[params(sym"x"), sym"x"]),
+      node("lambda", @[params(), num 0]),
     )
     check got == want

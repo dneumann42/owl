@@ -41,10 +41,16 @@ type
     of ForeignFunction:
       ffunction*: proc(env: Env, args: seq[Object]): Object {.gcsafe, nimcall.}
 
+  SpecialForm* = proc(ev: Env, items: seq[Object]): Object {.gcsafe.}
+
   Env* = ref object
     functions*: Table[Object, Func]
     scope*: Object
     next*: Env
+    specialForms*: Table[string, SpecialForm]
+
+proc specialForm*(ev: Env, name: string, form: SpecialForm) =
+  ev.specialForms[name] = form
 
 proc new*(T: typedesc[Env]): T =
   T(scope: Object(kind: Record, rec: initTable[Object, Object]()))
@@ -157,6 +163,9 @@ proc `$`*(e: Object): string {.gcsafe.} =
 
 proc sym*(s: string): Object =
   Object(kind: Symbol, symbol: s)
+
+proc str*(s: string): Object =
+  Object(kind: String, str: s)
 
 proc num*(s: SomeNumber): Object =
   when s is SomeFloat:

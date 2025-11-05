@@ -1,0 +1,3 @@
+echo("Hello")
+let inp = read-line("> ")
+echo(inp)
