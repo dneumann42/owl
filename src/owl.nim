@@ -10,4 +10,5 @@ when isMainModule:
   var ev = Evaluator(root: Env.new())
   ev.root.loadCoreLibraries()
   var parsed = lex.module()
+  echo parsed
   discard ev.evaluate(parsed)

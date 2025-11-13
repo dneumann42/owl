@@ -2,7 +2,7 @@
 
 ## Default to system endianness (typically little endian)
 
-import objects, sugar
+import objects, sugar, sequtils
 
 type
   Evaluator* = object
@@ -68,6 +68,18 @@ proc specialLet*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
 proc specialRecord*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   result = ev.evaluateRecDefinition(Object(kind: List, items: items))
 
+proc specialAnd*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  result = 
+    if ev.evaluate(items[1]).toBool.isTrue:
+      ev.evaluate(items[2])
+    else:
+      Object(kind: Nothing)
+
+proc specialOr*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  let a = ev.evaluate(items[1])
+  result = 
+    if a.toBool.isTrue: a else: ev.evaluate(items[2])
+
 proc specialIf*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   assert(items.len > 0, "If expects condition, consequent and optional alternative")
   {.cast(gcsafe).}:
@@ -81,24 +93,6 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   let callable = items[0]
   if ev.specialForms.hasKey($callable):
     return ev.specialForms[$callable](ev, items)
-  elif callable.kind == Symbol:
-    case callable.symbol
-    of "fun":
-      return ev.specialFun(items)
-    of "lambda":
-      return ev.specialLambda(items)
-    of "do":
-      return ev.specialDo(items)
-    of "quote":
-      return ev.specialQuote(items)
-    of "list":
-      return ev.specialList(items)
-    of "let":
-      return ev.specialLet(items)
-    of "record":
-      return ev.specialRecord(items)
-    else:
-      discard
   var first = ev.evaluate(callable)
   let params = collect:
     for x in items[1 ..^ 1]:

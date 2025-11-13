@@ -298,6 +298,27 @@ suite "comparison parsing":
     let want = bin("==", bin("==", num 1, num 2), num 3)
     check got == want
 
+suite "logical parsing":
+  test "equality binds tighter than and":
+    let got = E("1 == 2 and #t")
+    let want = bin("and", bin("==", num 1, num 2), True)
+    check got == want
+
+  test "and binds tighter than or":
+    let got = E("#t or #f and #t")
+    let want = bin("or", True, bin("and", False, True))
+    check got == want
+
+  test "and chain is left associative":
+    let got = E("#t and #f and #t")
+    let want = bin("and", bin("and", True, False), True)
+    check got == want
+
+  test "or chain is left associative":
+    let got = E("#t or #f or #t")
+    let want = bin("or", bin("or", True, False), True)
+    check got == want
+
 suite "record parsing (comparisons)":
   test "record values with comparisons respect precedence":
     let e = R("{ a=1<2, b=1+2<4, c=a.b==c.d }")

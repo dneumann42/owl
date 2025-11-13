@@ -180,16 +180,20 @@ proc infixPower*(op: Object): (uint8, uint8) =
   if op.kind != Symbol:
     raise Exception.newException("Expected symbol")
   case op.symbol
-  of "==", "!=":
+  of "or":
     (1, 2)
-  of "<", "<=", ">", ">=":
+  of "and":
     (3, 4)
-  of "+", "-":
+  of "==", "!=":
     (5, 6)
-  of "*", "/":
+  of "<", "<=", ">", ">=":
     (7, 8)
-  of ".":
+  of "+", "-":
     (9, 10)
+  of "*", "/":
+    (11, 12)
+  of ".":
+    (13, 14)
   else:
     raise Exception.newException("Bad operator: " & op.symbol)
 
@@ -204,9 +208,14 @@ proc binExpr*(lex: var Lexer, minBp = 0'u8): Object =
   left = lex.call(left)
   while true:
     let look = lex[lex.index]
-    if look.kind != Op:
+    var opLexeme: string
+    if look.kind == Op:
+      opLexeme = look.operator
+    elif look.kind == Symbol and (look.symbol == "and" or look.symbol == "or"):
+      opLexeme = look.symbol
+    else:
       break
-    let op = Object(kind: Symbol, symbol: look.operator)
+    let op = Object(kind: Symbol, symbol: opLexeme)
     let (lBp, rBp) = infixPower(op)
     if lBp < minBp:
       break
@@ -258,6 +267,7 @@ proc primary*(lex: var Lexer): Object =
   lex.tryMatch(codeBlock)
   lex.tryMatch(rec)
   lex.tryMatch(letExp)
+  lex.tryMatch(ifExp)
   lex.tryMatch(fnExpr)
   lex.tryMatch(fnDefn)
 

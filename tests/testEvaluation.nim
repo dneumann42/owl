@@ -2,6 +2,7 @@
 import unittest
 import objects
 import evaluation
+import libraries
 
 proc s(x: string): Object =
   Object(kind: Symbol, symbol: x)
@@ -15,9 +16,13 @@ proc b(x: bool): Object =
 proc lst(xs: openArray[Object]): Object =
   Object(kind: List, items: @xs)
 
+proc evaluator(): Evaluator =
+  result = Evaluator(root: Env.new())
+  result.root.loadCoreLibraries()
+
 suite "Evaluator":
   test "let single binding sets and returns value":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let prog = lst([
       s("do"),
       lst([s("let"), s("x"), n(2)]),
@@ -28,7 +33,7 @@ suite "Evaluator":
     check res.number == 2.0
 
   test "let pair-list binds multiple names and evaluates body":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let prog = lst([
       s("let"),
       lst([
@@ -44,7 +49,7 @@ suite "Evaluator":
     check not ev.root.has(s("y"))
 
   test "fun defines a named function and calling uses param binding":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let defineId = lst([
       s("fun"),
       s("id"),
@@ -61,7 +66,7 @@ suite "Evaluator":
     check res.number == 7.0
 
   test "lambda creates a function value":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let lam = lst([
       s("lambda"),
       lst([s("x")]),
@@ -72,7 +77,7 @@ suite "Evaluator":
     check res.function.name == "<lambda>"
 
   test "do returns last expression":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let prog = lst([
       s("do"),
       b(true),
@@ -83,13 +88,13 @@ suite "Evaluator":
     check res.isTrue == false
 
   test "empty list raises":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let emptyCall = lst([])
     expect(EvalError):
       discard ev.root.evaluate(emptyCall)
 
   test "quote returns unevaluated list":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let prog = lst([
       s("quote"),
       lst([s("+"), n(1), n(2)]),
@@ -101,7 +106,7 @@ suite "Evaluator":
     check res.items[0].symbol == "+"
 
   test "quote symbol skips lookup":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let prog = lst([
       s("quote"),
       s("missing"),
@@ -111,7 +116,7 @@ suite "Evaluator":
     check res.symbol == "missing"
 
   test "quote nested list preserves structure":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     let inner = lst([s("*"), n(2), n(3)])
     let prog = lst([
       s("quote"),
@@ -128,7 +133,7 @@ suite "Evaluator":
     check res.items[1].symbol == "x"
 
   test "foreign functions receive raw args without double evaluation":
-    var ev = Evaluator(root: Env.new())
+    var ev = evaluator()
     var evalCount = 0
     var capturedLen = 0
     var capturedKind = Nothing

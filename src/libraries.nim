@@ -104,3 +104,5 @@ proc loadCoreLibraries*(env: Env) =
   env.specialForm(":let", specialLet)
   env.specialForm(":if", specialIf)
   env.specialForm(":record", specialRecord)
+  env.specialForm(":and", specialAnd)
+  env.specialForm(":or", specialOr)

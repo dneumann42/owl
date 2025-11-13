@@ -1,11 +1,13 @@
-echo(len(args))
-
-let x = 1 
-    and echo("ONE") 
-    or echo("TWO")
-
-if 1 then 
-    echo("ONE") 
-else 
-    echo("TWO")
+fun a(n) do
+    echo("AAA")
+    n + 1
 end
+
+let x = 1
+if x == 2 then
+    echo("TWO")
+else
+    echo("NOT TWO")
+end
+
+echo(x)
