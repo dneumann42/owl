@@ -68,6 +68,12 @@ proc specialLet*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
 proc specialRecord*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   result = ev.evaluateRecDefinition(Object(kind: List, items: items))
 
+proc specialIf*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  assert(items.len > 0, "If expects condition, consequent and optional alternative")
+  {.cast(gcsafe).}:
+    echo "IF: ", items
+  let cond = items[0]
+
 proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
     # TODO: catch this after parsing in a new pass, so its raised before evaluation

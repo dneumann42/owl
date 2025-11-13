@@ -34,6 +34,8 @@ type
     index*: int
     noMatch*: bool
 
+  ReaderResult* = tuple[exp: Object, matched: bool]
+
 proc `[]`*(lex: Lexer, idx: int): Token =
   if idx >= lex.tokens.len:
     return Token(kind: Eof)
@@ -214,13 +216,14 @@ proc binExpr*(lex: var Lexer, minBp = 0'u8): Object =
     left = Object(kind: List, items: @[op, left, right])
   left
 
-proc list*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc list*(lex: var Lexer): ReaderResult
+proc rec*(lex: var Lexer): ReaderResult
+proc codeBlock*(lex: var Lexer): ReaderResult
+proc letExp*(lex: var Lexer): ReaderResult
+proc argList*(lex: var Lexer): ReaderResult
+proc fnExpr*(lex: var Lexer): ReaderResult
+proc fnDefn*(lex: var Lexer): ReaderResult
+proc ifExp*(lex: var Lexer): ReaderResult
 
 template tryMatch(lex: var Lexer, ident) =
   let (v, isV) = lex.ident()
@@ -266,20 +269,20 @@ proc primary*(lex: var Lexer): Object =
 
   raise ParseError.newException("Unexpected token: " & lex.peek().lexeme)
 
-proc symbol*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc symbol*(lex: var Lexer): ReaderResult
 
-proc paramList*(lex: var Lexer): tuple[params: Object, matched: bool] =
+proc paramList*(lex: var Lexer): ReaderResult =
   result = (Object(kind: List, items: @[]), true)
   while lex.peek().lexeme != ")":
     let (p, ok) = lex.symbol()
     if not ok:
       return (None, false)
-    result.params.items.add(p)
+    result.exp.items.add(p)
     if lex.peek().lexeme == ")":
       break
     lex.expectSymbol(",")
 
-proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc fnExpr*(lex: var Lexer): ReaderResult =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fun":
     return (None, false)
   let save = lex.index
@@ -296,7 +299,7 @@ proc fnExpr*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   let body = lex.expr()
   (Object(kind: List, items: @[sym"lambda", params, body]), true)
 
-proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc fnDefn*(lex: var Lexer): ReaderResult =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "fun":
     return (None, false)
   let save = lex.index
@@ -320,11 +323,14 @@ proc fnDefn*(lex: var Lexer): tuple[exp: Object, matched: bool] =
     return (None, false)
   (Object(kind: List, items: @[sym"fun", fname, params, blk]), true)
 
-proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: bool]
-proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool]
-proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool]
+proc ifExp*(lex: var Lexer): ReaderResult =
+  discard
 
-proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc bindingList*(lex: var Lexer, symbol: string): ReaderResult
+proc binding*(lex: var Lexer): ReaderResult
+proc recordKey*(lex: var Lexer): ReaderResult
+
+proc rec*(lex: var Lexer): ReaderResult =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "{":
     return (None, false)
   lex.expectSymbol("{")
@@ -339,7 +345,7 @@ proc rec*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   result = (bindings, true)
   lex.expectSymbol("}")
 
-proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: bool] =
+proc bindingList*(lex: var Lexer, symbol: string): ReaderResult =
   result = (Object(kind: List, items: @[sym(symbol)]), true)
   var xs = newSeq[Object]()
   while lex.peek().lexeme != "}" and not lex.atEof():
@@ -351,24 +357,24 @@ proc bindingList*(lex: var Lexer, symbol: string): tuple[exp: Object, matched: b
     lex.expectSymbol(",")
   result.exp.items.add(Object(kind: List, items: xs))
 
-proc binding*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc binding*(lex: var Lexer): ReaderResult =
   let (key, isKey) = lex.recordKey()
   assert(isKey)
   lex.expectOperator("=")
   let expr = lex.expr()
   result = (Object(kind: List, items: @[sym"pair", key, expr]), true)
 
-proc symbol*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc symbol*(lex: var Lexer): ReaderResult =
   if lex.peek().kind != Symbol:
     return (None, false)
   result = (lex.next().lexeme.sym(), true)
 
-proc number*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc number*(lex: var Lexer): ReaderResult =
   if lex.peek().kind != Number:
     return (None, false)
   result = (lex.next().number.num(), true)
 
-proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc recordKey*(lex: var Lexer): ReaderResult =
   let (sy, isSy) = lex.symbol()
   if isSy:
     return (sy, true)
@@ -377,7 +383,7 @@ proc recordKey*(lex: var Lexer): tuple[exp: Object, matched: bool] =
     return (sn, true)
   raise ParseError.newException("Invalid record key " & $lex.peek())
 
-proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc codeBlock*(lex: var Lexer): ReaderResult =
   if lex[lex.index].kind != Symbol or lex[lex.index].symbol != "do":
     return (None, false)
   lex.expectSymbol("do")
@@ -390,7 +396,7 @@ proc codeBlock*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   result = (blk, true)
   lex.expectSymbol("end")
 
-proc list*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc list*(lex: var Lexer): ReaderResult =
   if lex.peek().lexeme != "[":
     return (None, false)
   discard lex.next()
@@ -402,7 +408,7 @@ proc list*(lex: var Lexer): tuple[exp: Object, matched: bool] =
     lex.expectSymbol(",")
   discard lex.next()
 
-proc argList*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc argList*(lex: var Lexer): ReaderResult =
   result = (Object(kind: List, items: @[]), true)
   while lex.peek().lexeme != ")":
     result.exp.items.add(lex.expr())
@@ -423,7 +429,7 @@ proc call*(lex: var Lexer, left: Object): Object =
       xs.add(a)
     result = Object(kind: List, items: xs)
 
-proc letHead*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc letHead*(lex: var Lexer): ReaderResult =
   let start = lex.index
   let (ident, isSym) = lex.symbol()
   if not isSym or ident.symbol == "{":
@@ -439,7 +445,7 @@ proc letHead*(lex: var Lexer): tuple[exp: Object, matched: bool] =
   args.items.insert(ident, 0)
   return (args, true)
 
-proc letExp*(lex: var Lexer): tuple[exp: Object, matched: bool] =
+proc letExp*(lex: var Lexer): ReaderResult =
   if lex[lex.index].lexeme != "let":
     return (None, false)
   lex.expectSymbol("let")

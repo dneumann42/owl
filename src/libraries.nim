@@ -73,6 +73,10 @@ proc loadCoreLibraries*(env: Env) =
       list.items.add(env.evaluate(xs[i]))
     result = list
 
+  proc `list - len`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
+    var list = xs[0]
+    result = num(list.items.len)
+
   proc `owl readLine`(env: Env, xs: seq[Object]): Object {.gcsafe.} =
     if xs.len > 0:
       stdout.write(xs[0])
@@ -82,7 +86,8 @@ proc loadCoreLibraries*(env: Env) =
   let ps = commandLineParams().mapIt(Object(kind: String, str: it))
   env.add(sym"args", Object(kind: List, items: ps))
   env.add(sym"echo", ffunc echo)
-  env.add(sym"list-add", ffunc `list - add`)
+  env.add(sym"add", ffunc `list - add`)
+  env.add(sym"len", ffunc `list - len`)
   env.add(sym"+", ffunc `owl +`)
   env.add(sym"-", ffunc `owl -`)
   env.add(sym"*", ffunc `owl *`)
@@ -97,4 +102,5 @@ proc loadCoreLibraries*(env: Env) =
   env.specialForm(":quote", specialQuote)
   env.specialForm(":list", specialList)
   env.specialForm(":let", specialLet)
+  env.specialForm(":if", specialIf)
   env.specialForm(":record", specialRecord)

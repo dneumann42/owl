@@ -1,4 +1,11 @@
-do
-    echo("TEST")
-    echo(1 + 3)
+echo(len(args))
+
+let x = 1 
+    and echo("ONE") 
+    or echo("TWO")
+
+if 1 then 
+    echo("ONE") 
+else 
+    echo("TWO")
 end
