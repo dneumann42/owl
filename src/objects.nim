@@ -53,7 +53,11 @@ proc specialForm*(ev: Env, name: string, form: SpecialForm) =
   ev.specialForms[name] = form
 
 proc new*(T: typedesc[Env]): T =
-  T(scope: Object(kind: Record, rec: initTable[Object, Object]()))
+  T(
+    scope: Object(kind: Record, rec: initTable[Object, Object]()),
+    functions: initTable[Object, Func](),
+    specialForms: initTable[string, SpecialForm](),
+  )
 
 proc hash*(exp: Object): Hash =
   case exp.kind
@@ -226,3 +230,4 @@ proc `[]=`*(env: Env, key, val: Object) {.gcsafe.} =
 proc push*(env: Env): Env =
   result = Env.new()
   result.next = env
+  result.specialForms = env.specialForms

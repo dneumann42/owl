@@ -1,14 +1,4 @@
-fun define-value(name) do
-    { type = 'value, name = name }
+do
+    echo("TEST")
+    echo(1 + 3)
 end
-
-fun define-flag(name) do
-    { type = 'flag, name = name }
-end
-
-let handlers = [
-    define-value("run"),
-    define-flag("ast"),
-]
-
-echo(handlers)

@@ -10,16 +10,63 @@ type
 
   EvalError* = object of CatchableError
 
+proc evaluate*(ev: Env, o: Object): Object {.gcsafe.}
+proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.}
+proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.}
+proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.}
+
 proc evaluateSymbol*(ev: Env, sym: Object): Object {.gcsafe.} =
   assert(sym.kind == Symbol)
   if not ev.has(sym):
     raise EvalError.newException("Undefined symbol '" & sym.symbol & "'")
   return ev.find(sym)
 
-proc evaluate*(ev: Env, o: Object): Object {.gcsafe.}
-proc evaluate*(ev: Env, fn: Func, params: seq[Object]): Object {.gcsafe.}
-proc evaluateLet*(ev: Env, xs: Object): Object {.gcsafe.}
-proc evaluateRecDefinition*(ev: Env, xs: Object): Object {.gcsafe.}
+proc specialFun*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  if items.len < 4:
+    raise EvalError.newException("fun requires a name, params, and body")
+  if items[1].kind != Symbol:
+    raise EvalError.newException("fun requires a symbol name")
+  if items[2].kind != List:
+    raise EvalError.newException("fun requires a parameter list")
+  let id = items[1]
+  let fn = Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3])
+  result = ev.add(id, fn)
+
+proc specialLambda*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  if items.len != 3:
+    raise EvalError.newException("lambda requires parameters and a body")
+  if items[1].kind != List:
+    raise EvalError.newException("lambda parameter list must be a list")
+  result = Object(
+    kind: Function,
+    function: Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]),
+  )
+
+proc specialDo*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  if items.len <= 1:
+    return Object(kind: Nothing)
+  for i in 1 ..< items.len:
+    result = ev.evaluate(items[i])
+
+proc specialQuote*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  if items.len != 2:
+    raise EvalError.newException("quote expects a single expression")
+  result = items[1]
+
+proc specialList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  result = Object(
+    kind: List,
+    items: collect(
+      for i in items[1 ..< items.len]:
+        ev.evaluate(i)
+    ),
+  )
+
+proc specialLet*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  result = ev.evaluateLet(Object(kind: List, items: items))
+
+proc specialRecord*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
+  result = ev.evaluateRecDefinition(Object(kind: List, items: items))
 
 proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   if items.len == 0:
@@ -28,6 +75,24 @@ proc evaluateList*(ev: Env, items: seq[Object]): Object {.gcsafe.} =
   let callable = items[0]
   if ev.specialForms.hasKey($callable):
     return ev.specialForms[$callable](ev, items)
+  elif callable.kind == Symbol:
+    case callable.symbol
+    of "fun":
+      return ev.specialFun(items)
+    of "lambda":
+      return ev.specialLambda(items)
+    of "do":
+      return ev.specialDo(items)
+    of "quote":
+      return ev.specialQuote(items)
+    of "list":
+      return ev.specialList(items)
+    of "let":
+      return ev.specialLet(items)
+    of "record":
+      return ev.specialRecord(items)
+    else:
+      discard
   var first = ev.evaluate(callable)
   let params = collect:
     for x in items[1 ..^ 1]:

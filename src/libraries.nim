@@ -91,39 +91,10 @@ proc loadCoreLibraries*(env: Env) =
   env.add(sym"while", ffunc `owl while`)
   env.add(sym"read-line", ffunc `owl readLine`)
 
-  env.specialForm(":fun") do(ev: Env, items: seq[Object]) -> Object:
-    let id = items[1]
-    ev.add(
-      id, Func(scope: ev.push(), name: $id, params: items[2].items, body: items[3])
-    )
-
-  env.specialForm(":lambda") do(ev: Env, items: seq[Object]) -> Object:
-    Object(
-      kind: Function,
-      function:
-        Func(scope: ev, name: "<lambda>", params: items[1].items, body: items[2]),
-    )
-
-  env.specialForm(":do") do(ev: Env, items: seq[Object]) -> Object:
-    for i in 1 ..< items.len:
-      result = ev.evaluate(items[i])
-
-  env.specialForm(":quote") do(ev: Env, items: seq[Object]) -> Object:
-    if items.len != 2:
-      raise EvalError.newException("quote expects a single expression")
-    result = items[1]
-
-  env.specialForm(":list") do(ev: Env, items: seq[Object]) -> Object:
-    Object(
-      kind: List,
-      items: collect(
-        for i in items[1 ..< items.len]:
-          ev.evaluate(i)
-      ),
-    )
-
-  env.specialForm(":let") do(ev: Env, items: seq[Object]) -> Object:
-    ev.evaluateLet(Object(kind: List, items: items))
-
-  env.specialForm(":record") do(ev: Env, items: seq[Object]) -> Object:
-    ev.evaluateRecDefinition(Object(kind: List, items: items))
+  env.specialForm(":fun", specialFun)
+  env.specialForm(":lambda", specialLambda)
+  env.specialForm(":do", specialDo)
+  env.specialForm(":quote", specialQuote)
+  env.specialForm(":list", specialList)
+  env.specialForm(":let", specialLet)
+  env.specialForm(":record", specialRecord)
