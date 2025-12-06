@@ -17,13 +17,13 @@ enum Owl_ObjectType {
     OWL_SYMBOL,
     OWL_STRING,
     OWL_LIST,
-    OWL_STRUCT
+    OWL_DICT
 };
 
 typedef enum Owl_ObjectType Owl_ObjectType;
 
 struct Owl_String {
-    uint8_t *data;
+    char *data;
     size_t length;
     Owl_Boolean owned;
 };
@@ -34,17 +34,17 @@ struct Owl_Object {
     Owl_ObjectType type;
     union {
         double number;
-        Owl_String *string;
-        Owl_String *symbol;
+        Owl_String string;
+        Owl_String symbol;
         Owl_Boolean boolean;
         struct {
             struct Owl_Object *value;
             struct Owl_Object *next;
         };
         struct {
-            struct Owl_Object *struct_key;
-            struct Owl_Object *struct_value;
-            struct Owl_Object *struct_next;
+            struct Owl_Object *dict_key;
+            struct Owl_Object *dict_value;
+            struct Owl_Object *dict_next;
         };
     };
 };
