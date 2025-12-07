@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-void owl_list_append(Owl_GC *gc, Owl_Object *list, Owl_Object* value) {
+void owl_list_append(Owl_GC *gc, Owl_Object *list, Owl_Object *value) {
     if (list == NULL || value == NULL) return;
     if (list->value == NULL) {
         list->value = value;
-        list->next  = NULL;
+        list->next = NULL;
         return;
     }
     Owl_Object *it = list;
@@ -21,24 +21,8 @@ void owl_list_append(Owl_GC *gc, Owl_Object *list, Owl_Object* value) {
     }
     Owl_Object *node = owl_gc_new(gc, OWL_LIST);
     node->value = value;
-    node->next  = NULL;
+    node->next = NULL;
     it->next = node;
-}
-
-void *owl_default_new([[maybe_unused]] void *state, const size_t size) {
-    return malloc(size);
-}
-
-void owl_default_del([[maybe_unused]] void *state, void *ptr) {
-    free(ptr);
-}
-
-Owl_Alloc owl_default_alloc_init() {
-    return (Owl_Alloc){
-        .state = NULL,
-        .new = owl_default_new,
-        .del = owl_default_del,
-    };
 }
 
 Owl_GC owl_gc_init(const Owl_Alloc alloc) {
@@ -48,7 +32,10 @@ Owl_GC owl_gc_init(const Owl_Alloc alloc) {
         .roots = OWL_NEW(alloc, sizeof(Owl_GC_Header*)*OWL_ROOT_COUNT),
         .root_length = 0,
         .root_capacity = OWL_ROOT_COUNT,
+        .nothing = NULL
     };
+
+    gc.nothing = owl_new_nothing(&gc);
 
     if (gc.roots == NULL) {
         fprintf(stderr, "Failed to allocate roots\n");
@@ -118,7 +105,7 @@ void owl_gc_mark_object(const Owl_Object *object) {
 }
 
 void owl_gc_mark(const Owl_GC *self) {
-    for (size_t i = 0; i < self->root_length; i ++) {
+    for (size_t i = 0; i < self->root_length; i++) {
         Owl_GC_Header *root = self->roots[i];
         if (root == NULL) continue;
         const Owl_Object *object = OWL_GC_OBJECT_FROM_HEADER(root);
@@ -130,7 +117,7 @@ void owl_gc_sweep(Owl_GC *self) {
     Owl_GC_Header **current = &self->heap;
     while (*current != NULL) {
         Owl_GC_Header *header = *current;
-        if (header->marked == F) {
+        if (header->marked == F && header->pinned == F) {
             *current = header->next;
             self->alloc.del(self->alloc.state, header);
         } else {
@@ -152,15 +139,19 @@ void owl_gc_deinit(Owl_GC *gc) {
     }
 }
 
+void owl_gc_pin(Owl_Object *object) {
+    OWL_GC_GET_HEADER(object)->pinned = T;
+}
+
 Owl_Object *owl_new_symbol(Owl_GC *self, const char *cstr) {
     Owl_Object *s = owl_gc_new(self, OWL_SYMBOL);
-    s->symbol.data = (char*)(cstr);
+    s->symbol.data = (char *) (cstr);
     s->symbol.length = strlen(cstr);
     s->symbol.owned = false;
     return s;
 }
 
-Owl_Object * owl_new_number(Owl_GC *self, const double value) {
+Owl_Object *owl_new_number(Owl_GC *self, const double value) {
     Owl_Object *n = owl_gc_new(self, OWL_NUMBER);
     n->number = value;
     return n;
@@ -171,4 +162,21 @@ Owl_Object *owl_new_list(Owl_GC *self) {
     list->next = NULL;
     list->value = NULL;
     return list;
+}
+
+Owl_Object *owl_new_nothing(Owl_GC *self) {
+    if (self->nothing == NULL) {
+        self->nothing = owl_gc_new(self, OWL_NOTHING);
+        owl_gc_pin(self->nothing);
+    }
+    return self->nothing;
+}
+
+Owl_Object *owl_new_array(Owl_GC *self, size_t length) {
+    Owl_Object *array = owl_gc_new(self, OWL_ARRAY);
+    array->array = OWL_NEW(self->alloc, sizeof(Owl_Object *) * length);
+    memset(array->array, 0, sizeof(Owl_Object *) * length);
+    array->length = length;
+    array->capacity = length;
+    return array;
 }

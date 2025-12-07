@@ -2,28 +2,12 @@
 #define OWL_GC_H
 
 #include "objects.h"
-
-struct Owl_Alloc {
-    void *state;
-
-    void *(*new)(void *state, size_t size);
-
-    void (*del)(void *state, void *ptr);
-};
-
-typedef struct Owl_Alloc Owl_Alloc;
-
-Owl_Alloc owl_default_alloc_init();
-
-#define OWL_NEW(alloc, size) \
-    alloc.new(alloc.state, (size))
-
-#define OWL_DEL(alloc, ptr) \
-    alloc.del(alloc.state, (ptr))
+#include "alloc.h"
 
 struct Owl_GC_Header {
     struct Owl_GC_Header *next;
     Owl_Boolean marked;
+    Owl_Boolean pinned;
 };
 
 typedef struct Owl_GC_Header Owl_GC_Header;
@@ -39,6 +23,9 @@ typedef struct Owl_GC_Header Owl_GC_Header;
 #define OWL_ROOT_COUNT \
     16
 
+#define OWL_IS_PINNED(o) \
+    (OWL_GC_GET_HEADER((o))->pinned == T)
+
 struct Owl_GC {
     Owl_Alloc alloc;
 
@@ -47,6 +34,8 @@ struct Owl_GC {
     size_t root_capacity;
 
     Owl_GC_Header *heap;
+
+    Owl_Object *nothing;
 };
 
 typedef struct Owl_GC Owl_GC;
@@ -57,6 +46,7 @@ Owl_GC owl_gc_init(Owl_Alloc alloc);
 void owl_gc_deinit(Owl_GC *gc);
 
 void owl_gc_add_root(Owl_GC *gc, Owl_Object *root);
+void owl_gc_pin(Owl_Object *object);
 
 Owl_Object *owl_gc_new(Owl_GC *self, Owl_ObjectType type);
 
@@ -65,8 +55,11 @@ void owl_gc_mark(const Owl_GC *self);
 void owl_gc_sweep(Owl_GC *self);
 
 // Constructors
+Owl_Object *owl_new_nothing(Owl_GC *self);
 Owl_Object *owl_new_symbol(Owl_GC *self, const char *cstr);
 Owl_Object *owl_new_number(Owl_GC *self, double value);
 Owl_Object *owl_new_list(Owl_GC *self);
+
+Owl_Object *owl_new_array(Owl_GC *self, size_t length);
 
 #endif //OWL_GC_H

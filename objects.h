@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alloc.h"
+#include "strings.h"
+
 enum Owl_Boolean {
     F = 0,
     T = 1
@@ -17,19 +20,13 @@ enum Owl_ObjectType {
     OWL_SYMBOL,
     OWL_STRING,
     OWL_LIST,
+    OWL_ARRAY,
     OWL_DICT
 };
 
 typedef enum Owl_ObjectType Owl_ObjectType;
 
-struct Owl_String {
-    char *data;
-    size_t length;
-    Owl_Boolean owned;
-};
-
-typedef struct Owl_String Owl_String;
-
+// TODO: optimize size
 struct Owl_Object {
     Owl_ObjectType type;
     union {
@@ -42,6 +39,11 @@ struct Owl_Object {
             struct Owl_Object *next;
         };
         struct {
+            struct Owl_Object **array;
+            size_t length;
+            size_t capacity;
+        };
+        struct {
             struct Owl_Object *dict_key;
             struct Owl_Object *dict_value;
             struct Owl_Object *dict_next;
@@ -50,5 +52,14 @@ struct Owl_Object {
 };
 
 typedef struct Owl_Object Owl_Object;
+
+Owl_Boolean owl_check_symbol(const Owl_Object *object, const char *sym);
+
+#define OWL_EACH(ident, list) \
+    for (Owl_Object *(ident) = (list); (ident) != NULL; (ident) = (ident)->next)
+
+Owl_String owl_string_new(Owl_Alloc alloc);
+
+Owl_String owl_object_tostring(const Owl_Object *object, Owl_Alloc alloc);
 
 #endif //OWL_OBJECTS_H

@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "evaluator.h"
 #include "gc.h"
 
 int main(const int argc, const char **argv) {
@@ -18,6 +19,8 @@ int main(const int argc, const char **argv) {
     owl_list_append(&gc, script, arithmetic);
 
     owl_gc_add_root(&gc, script);
+
+    owl_eval(&gc, script);
 
     owl_gc_mark(&gc);
     owl_gc_sweep(&gc);
