@@ -53,6 +53,16 @@ struct Owl_Object {
 
 typedef struct Owl_Object Owl_Object;
 
+struct Owl_Stack {
+    Owl_Object **data;
+    size_t length;
+    size_t capacity;
+};
+
+typedef struct Owl_Stack Owl_Stack;
+void owl_stack_push(Owl_Stack *stack, Owl_Object *object, Owl_Alloc alloc);
+Owl_Object *owl_stack_pop(Owl_Stack *stack);
+
 Owl_Boolean owl_check_symbol(const Owl_Object *object, const char *sym);
 
 #define OWL_EACH(ident, list) \

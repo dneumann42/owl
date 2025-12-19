@@ -12,7 +12,7 @@ struct Owl_Alloc {
 
 typedef struct Owl_Alloc Owl_Alloc;
 
-Owl_Alloc owl_default_alloc_init();
+Owl_Alloc owl_default_alloc_init(void);
 
 #define OWL_NEW(alloc, size) \
 alloc.new(alloc.state, (size))
@@ -20,4 +20,4 @@ alloc.new(alloc.state, (size))
 #define OWL_DEL(alloc, ptr) \
 alloc.del(alloc.state, (ptr))
 
-#endif //OWL_ALLOC_H
+#endif // OWL_ALLOC_H

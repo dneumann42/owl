@@ -109,3 +109,28 @@ Owl_String owl_object_tostring(const Owl_Object *object, Owl_Alloc alloc) {
     owl_object_tostring_impl(&out, object, alloc);
     return out;
 }
+
+void owl_stack_push(Owl_Stack *stack, Owl_Object *object, Owl_Alloc alloc) {
+    if (stack->capacity == 0) {
+        stack->capacity = 16;
+        stack->length = 0;
+        stack->data =
+            OWL_NEW(alloc, sizeof(Owl_Object) * stack->capacity);
+    }
+    if (stack->length >= stack->capacity) {
+        stack->capacity *= 2;
+        size_t new_size = sizeof(Owl_Object) * stack->capacity;
+        Owl_Object **new_data =
+            OWL_NEW(alloc, new_size);
+        memcpy(new_data, stack->data, stack->length * sizeof(Owl_Object));
+        OWL_DEL(alloc, stack->data);
+        stack->data = new_data;
+    }
+    stack->data[stack->length++] = object;
+}
+
+Owl_Object *owl_stack_pop(Owl_Stack *stack) {
+    if (stack->length <= 0)
+        return NULL;
+    return stack->data[--stack->length];
+}
