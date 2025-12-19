@@ -101,7 +101,10 @@ void owl_gc_mark_object(const Owl_Object *object) {
             owl_gc_mark_object(list->dict_next);
             break;
         }
-    }
+        case OWL_ARRAY:
+            // TODO: what should I do here?
+            break;
+        }
 }
 
 void owl_gc_mark(const Owl_GC *self) {
