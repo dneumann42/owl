@@ -1,0 +1,56 @@
+block-command if condition:
+  eval (pick (eval condition) (body-of block "then") (body-of block "else"))
+
+fun list-from nodes:
+  if (empty? nodes):
+    then:
+      list
+    else:
+      cons (eval (first nodes)) (list-from (rest nodes))
+
+block-command []:
+  list-from (statements block)
+
+fun dict-from nodes:
+  if (empty? nodes):
+    then:
+      dict
+    else:
+      define:
+        entry = (first nodes)
+      dict-put (dict-from (rest nodes)) (binding-symbol entry) (eval (binding-value entry))
+
+block-command {}:
+  dict-from (statements block)
+
+fun cond-from clauses:
+  if (empty? clauses):
+    then:
+      nothing
+    else:
+      define:
+        clause = (first clauses)
+      if (eval (command-arg clause 0)):
+        then:
+          eval (command-body clause)
+        else:
+          cond-from (rest clauses)
+
+block-command cond:
+  cond-from (statements block)
+
+fun for-each item values body:
+  if (empty? values):
+    then:
+      nothing
+    else:
+      define:
+        result = eval-with item (first values) body
+      if (empty? (rest values)):
+        then:
+          result
+        else:
+          for-each item (rest values) body
+
+block-command for item values:
+  for-each item (eval values) block

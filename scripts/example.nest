@@ -1,0 +1,7 @@
+fun world n:
+  + n 10
+
+define:
+  n = 30
+
+print "Hello, " (world n)
