@@ -1,4 +1,4 @@
-import std/[strformat, strutils, tables]
+import std/[strformat, strutils, tables, rdstdin]
 
 import environment
 import parser
@@ -36,6 +36,12 @@ proc requireSyntax(value: Value): SyntaxNode {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, &"expected syntax, got {value}")
   value.syntax
 
+proc syntaxEnvironment(value: Value, fallback: Environment): Environment {.raises: [].} =
+  if value.kind == Syntax and value.syntaxEnv != nil:
+    value.syntaxEnv
+  else:
+    fallback
+
 proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
   if value.kind != List:
     raise newException(EvaluatorError, &"expected list, got {value}")
@@ -45,6 +51,11 @@ proc requireText(value: Value): string {.raises: [EvaluatorError].} =
   if value.kind != Text:
     raise newException(EvaluatorError, &"expected text, got {value}")
   value.text
+
+proc requireStream(value: Value): StreamKind {.raises: [EvaluatorError].} =
+  if value.kind != Stream:
+    raise newException(EvaluatorError, &"expected stream, got {value}")
+  value.stream
 
 proc defineClosure(
     env: Environment,
@@ -88,6 +99,18 @@ proc funCommand(
   discard layout
   env.defineClosure(arguments, body, evaluatesArguments = true, acceptsBlock = false)
 
+proc fnCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  var parameters: seq[string]
+  for argument in arguments:
+    parameters.add argument.requireSymbol("parameter")
+  closureCommand(parameters, body, env, evaluatesArguments = true, acceptsBlock = false)
+
 proc defineCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -103,6 +126,36 @@ proc defineCommand(
     result = env.eval(node.value)
     env.define(node.bindingSymbol, result)
 
+proc setSymbol(
+    env: Environment, symbol: string, value: Value
+) {.raises: [EvaluatorError].} =
+  if not env.contains(symbol):
+    raise newException(EvaluatorError, &"cannot set unknown symbol: {symbol}")
+  env.set(symbol, value)
+
+proc setCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  if arguments.len == 2 and body.len == 0:
+    let symbol = arguments[0].requireSymbol("set target")
+    result = env.eval(arguments[1])
+    env.setSymbol(symbol, result)
+    return
+
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "set expects a symbol/value pair or a block")
+
+  result = nothing()
+  for node in body:
+    if node.kind != Binding:
+      raise newException(EvaluatorError, "set body entries must be bindings")
+    result = env.eval(node.value)
+    env.setSymbol(node.bindingSymbol, result)
+
 proc evalCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -116,9 +169,36 @@ proc evalCommand(
     let value = env.eval(argument)
     result =
       if value.kind == Syntax:
-        env.eval(value.syntax)
+        value.syntaxEnvironment(env).eval(value.syntax)
       else:
         value
+
+proc parseCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "parse expects one text value")
+  try:
+    syntaxValue(parse(env.eval(arguments[0]).requireText()), env)
+  except ParserError as error:
+    raise newException(EvaluatorError, error.msg)
+
+proc valueOfCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "value-of expects one symbol")
+  env.get(arguments[0].requireSymbol("value name"))
 
 proc printCommand(
     env: Environment,
@@ -134,6 +214,70 @@ proc printCommand(
     result = env.eval(argument)
     parts.add $result
   echo parts.join("")
+
+proc errorCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  var message = ""
+  for argument in arguments:
+    message.add $env.eval(argument)
+  raise newException(EvaluatorError, message)
+
+proc readlineCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "readline expects one input stream")
+  if env.eval(arguments[0]).requireStream() != InputStream:
+    raise newException(EvaluatorError, "readline expects an input stream")
+  var line: string
+  if readLineFromStdin("", line):
+    result = text(line)
+  else:
+    result = nothing()
+
+proc writeCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len < 1:
+    raise newException(EvaluatorError, "write expects an output stream")
+  if env.eval(arguments[0]).requireStream() != OutputStream:
+    raise newException(EvaluatorError, "write expects an output stream")
+  result = nothing()
+  if arguments.len > 1:
+    for argument in arguments[1 .. ^1]:
+      result = env.eval(argument)
+      try:
+        stdout.write($result)
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
+
+proc writeLineCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  result = writeCommand(env, arguments, layout, body)
+  try:
+    stdout.write("\n")
+  except IOError as error:
+    raise newException(EvaluatorError, error.msg)
 
 proc arithmeticCommand(op: string): NativeCommand {.raises: [].} =
   result = proc(
@@ -160,6 +304,34 @@ proc arithmeticCommand(op: string): NativeCommand {.raises: [].} =
         result = number(result.number / rhs)
       else:
         raise newException(EvaluatorError, &"unknown arithmetic operator: {op}")
+
+proc arithmeticAssignCommand(op: string): NativeCommand {.raises: [].} =
+  result = proc(
+      env: Environment,
+      arguments: seq[SyntaxNode],
+      layout: LayoutKind,
+      body: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    discard layout
+    discard body
+    if arguments.len != 2:
+      raise newException(EvaluatorError, &"{op}= expects symbol and value")
+    let symbol = arguments[0].requireSymbol("assignment target")
+    let left = env.get(symbol).requireNumber()
+    let right = env.eval(arguments[1]).requireNumber()
+    result =
+      case op
+      of "+":
+        number(left + right)
+      of "-":
+        number(left - right)
+      of "*":
+        number(left * right)
+      of "/":
+        number(left / right)
+      else:
+        raise newException(EvaluatorError, &"unknown assignment operator: {op}=")
+    env.setSymbol(symbol, result)
 
 proc compareCommand(op: string): NativeCommand {.raises: [].} =
   result = proc(
@@ -202,6 +374,19 @@ proc whenCommand(
     env.evalBlock(body)
   else:
     nothing()
+
+proc whileCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "while expects one condition")
+  result = nothing()
+  while env.eval(arguments[0]).isTruthy:
+    result = env.evalBlock(body)
 
 proc pickCommand(
     env: Environment,
@@ -338,12 +523,14 @@ proc statementsCommand(
   discard body
   if arguments.len != 1:
     raise newException(EvaluatorError, "statements expects script syntax")
-  let node = env.eval(arguments[0]).requireSyntax()
+  let syntax = env.eval(arguments[0])
+  let node = syntax.requireSyntax()
+  let sourceEnv = syntax.syntaxEnvironment(env)
   if node.kind != Script:
     raise newException(EvaluatorError, "statements expects script syntax")
   var items: seq[Value]
   for statement in node.statements:
-    items.add syntaxValue(statement)
+    items.add syntaxValue(statement, sourceEnv)
   list(items)
 
 proc bodyOfCommand(
@@ -356,15 +543,17 @@ proc bodyOfCommand(
   discard body
   if arguments.len != 2:
     raise newException(EvaluatorError, "body-of expects script syntax and tag")
-  let node = env.eval(arguments[0]).requireSyntax()
+  let syntax = env.eval(arguments[0])
+  let node = syntax.requireSyntax()
+  let sourceEnv = syntax.syntaxEnvironment(env)
   let tag = env.eval(arguments[1]).requireText()
   if node.kind != Script:
     raise newException(EvaluatorError, "body-of expects script syntax")
   for statement in node.statements:
     if statement.kind == Command and statement.callee.kind == Symbol and
         statement.callee.symbol == tag:
-      return syntaxValue(script(statement.body))
-  syntaxValue(script(@[]))
+      return syntaxValue(script(statement.body), sourceEnv)
+  syntaxValue(script(@[]), sourceEnv)
 
 proc commandArgCommand(
     env: Environment,
@@ -376,11 +565,28 @@ proc commandArgCommand(
   discard body
   if arguments.len != 2:
     raise newException(EvaluatorError, "command-arg expects command syntax and index")
-  let node = env.eval(arguments[0]).requireSyntax()
+  let syntax = env.eval(arguments[0])
+  let node = syntax.requireSyntax()
+  let sourceEnv = syntax.syntaxEnvironment(env)
   let index = env.eval(arguments[1]).requireNumber().int
   if node.kind != Command or index < 0 or index >= node.arguments.len:
     raise newException(EvaluatorError, "command-arg index out of range")
-  syntaxValue(node.arguments[index])
+  syntaxValue(node.arguments[index], sourceEnv)
+
+proc commandSymbolCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "command-symbol expects command syntax")
+  let node = env.eval(arguments[0]).requireSyntax()
+  if node.kind != Command or node.callee.kind != Symbol:
+    raise newException(EvaluatorError, "command-symbol expects command syntax with a symbol callee")
+  text(node.callee.symbol)
 
 proc commandBodyCommand(
     env: Environment,
@@ -392,10 +598,12 @@ proc commandBodyCommand(
   discard body
   if arguments.len != 1:
     raise newException(EvaluatorError, "command-body expects command syntax")
-  let node = env.eval(arguments[0]).requireSyntax()
+  let syntax = env.eval(arguments[0])
+  let node = syntax.requireSyntax()
+  let sourceEnv = syntax.syntaxEnvironment(env)
   if node.kind != Command:
     raise newException(EvaluatorError, "command-body expects command syntax")
-  syntaxValue(script(node.body))
+  syntaxValue(script(node.body), sourceEnv)
 
 proc bindingSymbolCommand(
     env: Environment,
@@ -422,10 +630,12 @@ proc bindingValueCommand(
   discard body
   if arguments.len != 1:
     raise newException(EvaluatorError, "binding-value expects binding syntax")
-  let node = env.eval(arguments[0]).requireSyntax()
+  let syntax = env.eval(arguments[0])
+  let node = syntax.requireSyntax()
+  let sourceEnv = syntax.syntaxEnvironment(env)
   if node.kind != Binding:
     raise newException(EvaluatorError, "binding-value expects binding syntax")
-  syntaxValue(node.value)
+  syntaxValue(node.value, sourceEnv)
 
 proc evalWithCommand(
     env: Environment,
@@ -437,10 +647,12 @@ proc evalWithCommand(
   discard body
   if arguments.len != 3:
     raise newException(EvaluatorError, "eval-with expects symbol, value, and body")
-  let symbolNode = env.eval(arguments[0]).requireSyntax()
+  let symbolSyntax = env.eval(arguments[0])
+  let symbolNode = symbolSyntax.requireSyntax()
   let value = env.eval(arguments[1])
-  let bodyNode = env.eval(arguments[2]).requireSyntax()
-  let local = env.child()
+  let bodySyntax = env.eval(arguments[2])
+  let bodyNode = bodySyntax.requireSyntax()
+  let local = bodySyntax.syntaxEnvironment(env).child()
   local.define(symbolNode.requireSymbol("binding symbol"), value)
   if bodyNode.kind == Script:
     local.evalBlock(bodyNode.statements)
@@ -469,9 +681,9 @@ proc callClosure(
       if command.evaluatesArguments:
         env.eval(arguments[index])
       else:
-        syntaxValue(arguments[index])
+        syntaxValue(arguments[index], env)
     local.define(parameter, value)
-  local.define("block", syntaxValue(script(body)))
+  local.define("block", syntaxValue(script(body), env))
   local.define("layout", text($layout))
   local.evalBlock(command.body)
 
@@ -502,11 +714,12 @@ proc evalCommandNode(
     env.callClosure(callee.command, node.arguments, node.layout, node.body)
 
 proc eval*(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+  ## dispatch node on its kind and evaluate, symbols that are numbers are converted here
   case node.kind
   of Script:
     result = env.evalBlock(node.statements)
   of Binding:
-    result = syntaxValue(node)
+    result = syntaxValue(node, env)
   of Command:
     result = env.evalCommandNode(node)
   of Symbol:
@@ -526,10 +739,24 @@ proc addBuiltins(env: Environment) {.raises: [].} =
   env.define("command", nativeCommand(commandCommand))
   env.define("block-command", nativeCommand(blockCommandCommand))
   env.define("fun", nativeCommand(funCommand))
+  env.define("fn", nativeCommand(fnCommand))
+  env.define("lambda", nativeCommand(fnCommand))
   env.define("define", nativeCommand(defineCommand))
+  env.define("set", nativeCommand(setCommand))
   env.define("eval", nativeCommand(evalCommand))
+  env.define("parse", nativeCommand(parseCommand))
+  env.define("value-of", nativeCommand(valueOfCommand))
   env.define("print", nativeCommand(printCommand))
+  env.define("error", nativeCommand(errorCommand))
+  env.define("stdin", stream(InputStream))
+  env.define("stdout", stream(OutputStream))
+  env.define("read", nativeCommand(readlineCommand))
+  env.define("read-line", nativeCommand(readlineCommand))
+  env.define("readline", nativeCommand(readlineCommand))
+  env.define("write", nativeCommand(writeCommand))
+  env.define("write-line", nativeCommand(writeLineCommand))
   env.define("when", nativeCommand(whenCommand))
+  env.define("while", nativeCommand(whileCommand))
   env.define("nothing", nothing())
   env.define("pick", nativeCommand(pickCommand))
   env.define("list", nativeCommand(emptyListCommand))
@@ -543,12 +770,14 @@ proc addBuiltins(env: Environment) {.raises: [].} =
   env.define("statements", nativeCommand(statementsCommand))
   env.define("body-of", nativeCommand(bodyOfCommand))
   env.define("command-arg", nativeCommand(commandArgCommand))
+  env.define("command-symbol", nativeCommand(commandSymbolCommand))
   env.define("command-body", nativeCommand(commandBodyCommand))
   env.define("binding-symbol", nativeCommand(bindingSymbolCommand))
   env.define("binding-value", nativeCommand(bindingValueCommand))
   env.define("eval-with", nativeCommand(evalWithCommand))
   for op in ["+", "-", "*", "/"]:
     env.define(op, nativeCommand(arithmeticCommand(op)))
+    env.define(op & "=", nativeCommand(arithmeticAssignCommand(op)))
   for op in ["=", "<", "<=", ">", ">="]:
     env.define(op, nativeCommand(compareCommand(op)))
 

@@ -109,6 +109,14 @@ pos = Vec3:
     check call.callee.arguments[0].symbol == "maker"
     check call.arguments[0].symbol == "arg"
 
+  test "parses compound assignment command symbols":
+    let tree = parse("+= n 1\n")
+    let call = tree.statements[0]
+    check call.kind == Command
+    check call.callee.symbol == "+="
+    check call.arguments[0].symbol == "n"
+    check call.arguments[1].symbol == "1"
+
   test "parses grouped form with layout":
     let tree = parse("""
 pos3 = (Vec3:

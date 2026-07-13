@@ -1,7 +1,7 @@
 import crow/[parser, evaluator]
 export parser
 
-let Content = readFile "scripts/example.nest"
+let Content = readFile "scripts/repl.nest"
 
 proc start() =
   var evaluator = Evaluator.init()

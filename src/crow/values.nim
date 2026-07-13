@@ -8,12 +8,17 @@ type
     Number
     Boolean
     Text
+    Stream
     List
     Dictionary
     Syntax
     Command
 
   EvaluatorError* = object of CatchableError
+
+  StreamKind* = enum
+    InputStream
+    OutputStream
 
   Environment* = ref object
     parent*: Environment
@@ -49,12 +54,15 @@ type
       boolean*: bool
     of Text:
       text*: string
+    of Stream:
+      stream*: StreamKind
     of List:
       items*: seq[Value]
     of Dictionary:
       entries*: Table[string, Value]
     of Syntax:
       syntax*: SyntaxNode
+      syntaxEnv*: Environment
     of Command:
       command*: CommandValue
 
@@ -70,14 +78,17 @@ proc boolean*(value: bool): Value {.raises: [].} =
 proc text*(value: sink string): Value {.raises: [].} =
   Value(kind: Text, text: value)
 
+proc stream*(value: StreamKind): Value {.raises: [].} =
+  Value(kind: Stream, stream: value)
+
 proc list*(items: sink seq[Value]): Value {.raises: [].} =
   Value(kind: List, items: items)
 
 proc dictionary*(entries: sink Table[string, Value]): Value {.raises: [].} =
   Value(kind: Dictionary, entries: entries)
 
-proc syntaxValue*(node: SyntaxNode): Value {.raises: [].} =
-  Value(kind: Syntax, syntax: node)
+proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].} =
+  Value(kind: Syntax, syntax: node, syntaxEnv: env)
 
 proc nativeCommand*(native: NativeCommand): Value {.raises: [].} =
   Value(kind: Command, command: CommandValue(kind: NativeCommandKind, native: native))
@@ -120,6 +131,12 @@ proc `$`*(value: Value): string {.raises: [].} =
     if value.boolean: "true" else: "false"
   of Text:
     value.text
+  of Stream:
+    case value.stream
+    of InputStream:
+      "<stdin>"
+    of OutputStream:
+      "<stdout>"
   of List:
     var parts: seq[string]
     for item in value.items:

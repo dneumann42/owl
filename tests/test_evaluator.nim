@@ -34,6 +34,41 @@ define:
     check value.kind == Number
     check value.number == 42
 
+  test "define shadows captured symbols and set mutates them":
+    let value = run("""
+fun probe:
+  define:
+    current = 1
+  fun shadow:
+    define:
+      current = 10
+    current
+  fun mutate:
+    set current 20
+    current
+  define:
+    shadowed = (shadow)
+    afterShadow = current
+    mutated = (mutate)
+  + shadowed afterShadow mutated current
+probe
+""")
+    check value.kind == Number
+    check value.number == 51
+
+  test "compound assignment commands mutate existing symbols":
+    let value = run("""
+define:
+  n = 6
++= n 4
+*= n 3
+-= n 9
+/= n 3
+n
+""")
+    check value.kind == Number
+    check value.number == 7
+
   test "fun defines closures that evaluate arguments":
     let value = run("""
 fun inc n:
@@ -42,6 +77,67 @@ inc 4
 """)
     check value.kind == Number
     check value.number == 5
+
+  test "fn creates anonymous closures":
+    let value = run("""
+define:
+  base = 10
+  lam = fn a b c:
+    + base a (* b c)
+lam 1 2 3
+""")
+    check value.kind == Number
+    check value.number == 17
+
+  test "lambda aliases fn":
+    let value = run("""
+define:
+  lam = lambda a b:
+    - a b
+lam 9 4
+""")
+    check value.kind == Number
+    check value.number == 5
+
+  test "standard streams are globals":
+    let input = run("stdin\n")
+    check input.kind == Stream
+    check input.stream == InputStream
+
+    let output = run("stdout\n")
+    check output.kind == Stream
+    check output.stream == OutputStream
+
+  test "write commands take output streams":
+    let value = run("write stdout \"\"\n")
+    check value.kind == Text
+    check value.text == ""
+
+  test "read commands require explicit streams":
+    expect EvaluatorError:
+      discard run("readline\n")
+    expect EvaluatorError:
+      discard run("read-line stdout\n")
+
+  test "not negates truthiness":
+    let value = run("""
+not (= 1 2)
+""")
+    check value.kind == Boolean
+    check value.boolean == true
+
+  test "error raises evaluator errors":
+    expect EvaluatorError:
+      discard run("error \"boom\"\n")
+
+  test "parse returns syntax evaluated in the caller environment":
+    let value = run("""
+define:
+  x = 40
+eval (parse "+ x 2")
+""")
+    check value.kind == Number
+    check value.number == 42
 
   test "command defines closures that receive raw syntax":
     let value = run("""
@@ -115,13 +211,81 @@ cond:
     check value.kind == Text
     check value.text == "world"
 
-  test "prelude defines for in crow":
+  test "prelude cond evaluates clause syntax in the caller environment":
     let value = run("""
-for n ([]:
-  1
-  2
-  3
-):
+fun check line:
+  cond:
+    when (= line "history"):
+      "ok"
+    when T:
+      "bad"
+check "history"
+""")
+    check value.kind == Text
+    check value.text == "ok"
+
+  test "prelude cond rejects invalid clauses":
+    expect EvaluatorError:
+      discard run("""
+cond:
+  nope T:
+    "bad"
+""")
+
+  test "native while loops in the current environment":
+    let value = run("""
+define:
+  n = 0
+while (< n 3):
+  define:
+    n = (+ n 1)
+n
+""")
+    check value.kind == Number
+    check value.number == 3
+
+  test "value-of returns a command without calling it":
+    let value = run("""
+fun answer:
+  42
+value-of answer
+""")
+    check value.kind == Command
+
+  test "prelude defines range iterators in crow":
+    let value = run("""
+define:
+  next = (range 1 4)
++ (next) (next) (next)
+""")
+    check value.kind == Number
+    check value.number == 6
+
+  test "prelude defines countdown iterators in crow":
+    let value = run("""
+define:
+  next = (countdown 3 0)
++ (next) (next) (next)
+""")
+    check value.kind == Number
+    check value.number == 6
+
+  test "prelude defines list and once iterators in crow":
+    let value = run("""
+define:
+  items = (iter ([]:
+    10
+    20
+  ))
+  single = (once 3)
++ (items) (items) (single)
+""")
+    check value.kind == Number
+    check value.number == 33
+
+  test "prelude defines for over iterators in crow":
+    let value = run("""
+for n (range 1 4):
   + n 10
 """)
     check value.kind == Number

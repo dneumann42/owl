@@ -30,6 +30,9 @@ fun cond-from clauses:
     else:
       define:
         clause = (first clauses)
+      when (not (= (command-symbol clause) "when")):
+        when (not (= (command-symbol clause) "|")):
+          error "cond expects when or |"
       if (eval (command-arg clause 0)):
         then:
           eval (command-body clause)
@@ -39,18 +42,68 @@ fun cond-from clauses:
 block-command cond:
   cond-from (statements block)
 
-fun for-each item values body:
-  if (empty? values):
-    then:
-      nothing
-    else:
-      define:
-        result = eval-with item (first values) body
-      if (empty? (rest values)):
-        then:
-          result
-        else:
-          for-each item (rest values) body
+fun range start stop:
+  define:
+    current = start
+  fun next:
+    if (< current stop):
+      then:
+        define:
+          value = current
+        += current 1
+        value
+      else:
+        nothing
+  value-of next
 
-block-command for item values:
-  for-each item (eval values) block
+fun countdown start stop:
+  define:
+    current = start
+  fun next:
+    if (> current stop):
+      then:
+        define:
+          value = current
+        -= current 1
+        value
+      else:
+        nothing
+  value-of next
+
+fun iter values:
+  define:
+    remaining = values
+  fun next:
+    if (empty? remaining):
+      then:
+        nothing
+      else:
+        define:
+          value = (first remaining)
+        set remaining (rest remaining)
+        value
+  value-of next
+
+fun once value:
+  define:
+    pending = true
+  fun next:
+    if pending:
+      then:
+        set pending false
+        value
+      else:
+        nothing
+  value-of next
+
+fun for-each item iterator body:
+  define:
+    value = (iterator)
+    result = nothing
+  while (not (= value nothing)):
+    set result (eval-with item value body)
+    set value (iterator)
+  result
+
+block-command for item iterator:
+  for-each item (eval iterator) block

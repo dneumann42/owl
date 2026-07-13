@@ -35,8 +35,11 @@ proc fail(message: string, line, column: int) {.raises: [ParserError].} =
 proc isSpace(c: char): bool {.raises: [].} =
   c in {' ', '\t', '\r', '\n'}
 
-proc isAtomChar(c: char): bool {.raises: [].} =
+proc isAtomStartChar(c: char): bool {.raises: [].} =
   not isSpace(c) and c notin {'"', '(', ')', ',', ':', '=', ';'}
+
+proc isAtomPartChar(c: char): bool {.raises: [].} =
+  not isSpace(c) and c notin {'"', '(', ')', ',', ':', ';'}
 
 proc add(
     tokens: var seq[Token], kind: TokenKind, lexeme: sink string, line, column: int
@@ -157,11 +160,11 @@ proc tokenize*(source: string): seq[Token] {.raises: [ParserError].} =
       advance()
       tokens.add(StringLit, value, startLine, startColumn)
     else:
-      if not isAtomChar(c):
+      if not isAtomStartChar(c):
         fail(&"unexpected character {c}", line, column)
       let start = i
       let startColumn = column
-      while i < source.len and isAtomChar(source[i]):
+      while i < source.len and isAtomPartChar(source[i]):
         advance()
       tokens.add(Atom, source[start ..< i], line, startColumn)
 
