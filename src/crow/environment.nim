@@ -1,10 +1,26 @@
 import std/[strformat, tables]
 
+import syntax
 import values
 export values
 
 proc newEnvironment*(parent: Environment = nil): Environment {.raises: [].} =
-  Environment(parent: parent, bindings: initTable[string, Value]())
+  let evaluator =
+    if parent == nil:
+      nil
+    else:
+      parent.evaluator
+  let commandCaller =
+    if parent == nil:
+      nil
+    else:
+      parent.commandCaller
+  Environment(
+    parent: parent,
+    bindings: initTable[string, Value](),
+    evaluator: evaluator,
+    commandCaller: commandCaller,
+  )
 
 proc child*(env: Environment): Environment {.raises: [].} =
   newEnvironment(env)
@@ -35,3 +51,26 @@ proc set*(env: Environment, symbol: string, value: Value) {.raises: [].} =
     env.define(symbol, value)
   else:
     owner.bindings[symbol] = value
+
+proc eval*(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+  if env.evaluator == nil:
+    raise newException(EvaluatorError, "environment has no evaluator")
+  env.evaluator(env, node)
+
+proc evalBlock*(
+    env: Environment, body: seq[SyntaxNode]
+): Value {.raises: [EvaluatorError].} =
+  result = nothing()
+  for node in body:
+    result = env.eval(node)
+
+proc call*(
+    env: Environment,
+    command: CommandValue,
+    arguments: seq[SyntaxNode] = @[],
+    layout: LayoutKind = NoLayout,
+    body: seq[SyntaxNode] = @[],
+): Value {.raises: [EvaluatorError].} =
+  if env.commandCaller == nil:
+    raise newException(EvaluatorError, "environment cannot call commands")
+  env.commandCaller(env, command, arguments, layout, body)

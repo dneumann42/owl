@@ -101,12 +101,17 @@ lam 9 4
 
   test "standard streams are globals":
     let input = run("stdin\n")
-    check input.kind == Stream
-    check input.stream == InputStream
+    check input.kind == Dictionary
+    check input.entries.hasKey("read-line")
+    check input.entries.hasKey("open")
+    check input.entries.hasKey("close")
 
     let output = run("stdout\n")
-    check output.kind == Stream
-    check output.stream == OutputStream
+    check output.kind == Dictionary
+    check output.entries.hasKey("write")
+    check output.entries.hasKey("write-line")
+    check output.entries.hasKey("open")
+    check output.entries.hasKey("close")
 
   test "write commands take output streams":
     let value = run("write stdout \"\"\n")
@@ -118,6 +123,34 @@ lam 9 4
       discard run("readline\n")
     expect EvaluatorError:
       discard run("read-line stdout\n")
+
+  test "append mutates named lists and nth reads by index":
+    let value = run("""
+define:
+  values = (list)
+append values "a"
+append values "b"
+nth values 1
+""")
+    check value.kind == Text
+    check value.text == "b"
+
+  test "assert raises when condition is false":
+    discard run("assert (= 1 1)\n")
+    expect EvaluatorError:
+      discard run("assert (= 1 2)\n")
+
+  test "with opens and closes string streams":
+    let value = run("""
+define:
+  lines = (list)
+with (open-string "a\nb\n") stream:
+  append lines (read-line stream)
+  append lines (read-line stream)
+= (nth lines 0) (nth lines 1)
+""")
+    check value.kind == Boolean
+    check value.boolean == false
 
   test "not negates truthiness":
     let value = run("""

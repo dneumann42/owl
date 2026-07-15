@@ -42,6 +42,43 @@ fun cond-from clauses:
 block-command cond:
   cond-from (statements block)
 
+fun nth values index:
+  if (= index 0):
+    then:
+      first values
+    else:
+      nth (rest values) (- index 1)
+
+fun append-value values value:
+  if (empty? values):
+    then:
+      cons value (list)
+    else:
+      cons (first values) (append-value (rest values) value)
+
+block-command append target value:
+  set (value-of target) (append-value (eval target) (eval value))
+
+fun read-line stream:
+  call (field stream "read-line")
+
+fun readline stream:
+  read-line stream
+
+fun read stream:
+  read-line stream
+
+fun write stream value:
+  call (field stream "write") value
+
+fun write-line stream value:
+  call (field stream "write-line") value
+
+fun assert condition:
+  when (not condition):
+    error "assertion failed"
+  condition
+
 fun range start stop:
   define:
     current = start

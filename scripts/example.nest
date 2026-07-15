@@ -1,0 +1,19 @@
+define:
+  lines = (list)
+
+fun append-line stream:
+  define:
+    line = (read-line stream)
+  append lines line
+
+with (open-file "a.txt" "wb") stream:
+  write-line stream "a"
+  write-line stream "b"
+  
+with (open-file "a.txt" "rb") stream:
+  append-line stream
+
+with (open-string "a\nb\n") stream:
+  append-line stream
+
+assert (= (nth lines 0) (nth lines 1))

@@ -16,5 +16,7 @@ fun repl:
     write stdout "> "
     define:
       line = (readline stdin)
+      
     handle-repl line
 repl
+

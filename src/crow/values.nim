@@ -23,6 +23,13 @@ type
   Environment* = ref object
     parent*: Environment
     bindings*: Table[string, Value]
+    evaluator*: proc(
+      env: Environment, node: SyntaxNode
+    ): Value {.closure, raises: [EvaluatorError].}
+    commandCaller*: proc(
+      env: Environment, command: CommandValue, arguments: seq[SyntaxNode],
+      layout: LayoutKind, body: seq[SyntaxNode]
+    ): Value {.closure, raises: [EvaluatorError].}
 
   NativeCommand* = proc(
     env: Environment, arguments: seq[SyntaxNode], layout: LayoutKind,
