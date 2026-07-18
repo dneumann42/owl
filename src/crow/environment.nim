@@ -28,6 +28,26 @@ proc child*(env: Environment): Environment {.raises: [].} =
 proc define*(env: Environment, symbol: string, value: Value) {.raises: [].} =
   env.bindings[symbol] = value
 
+proc defineNative*(
+    env: Environment, symbol: string, command: NativeCommand
+) {.raises: [].} =
+  env.define(symbol, nativeCommand(command))
+
+template native*(target: Environment, symbol: string, body: untyped) =
+  target.defineNative(symbol, proc(
+      env {.inject.}: Environment,
+      arguments {.inject.}: seq[SyntaxNode],
+      layout {.inject.}: LayoutKind,
+      bodyNodes {.inject.}: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    try:
+      body
+    except EvaluatorError as error:
+      raise error
+    except CatchableError as error:
+      raise newException(EvaluatorError, error.msg)
+  )
+
 proc find*(env: Environment, symbol: string): Environment {.raises: [].} =
   var current = env
   while current != nil:

@@ -1,12 +1,10 @@
 import std/[os]
-import crow/[parser, evaluator]
-export parser
-
-let ReplContent = readFile "scripts/repl.nest"
+import crow/[commands, environment, evaluator, parser, syntax, values]
+export commands, environment, evaluator, parser, syntax, values
 
 proc start() =
   let cmds = commandLineParams()
-  var content = ReplContent
+  var content = readFile "scripts/repl.nest"
   if cmds[0] == "run":
     let path = cmds[1]
     content = readFile path

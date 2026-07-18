@@ -13,8 +13,11 @@ type
     Dictionary
     Syntax
     Command
+    Native
 
   EvaluatorError* = object of CatchableError
+
+  NativeValue* = ref object of RootObj
 
   StreamKind* = enum
     InputStream
@@ -72,6 +75,8 @@ type
       syntaxEnv*: Environment
     of Command:
       command*: CommandValue
+    of Native:
+      native*: NativeValue
 
 proc nothing*(): Value {.raises: [].} =
   Value(kind: Nothing)
@@ -99,6 +104,9 @@ proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].
 
 proc nativeCommand*(native: NativeCommand): Value {.raises: [].} =
   Value(kind: Command, command: CommandValue(kind: NativeCommandKind, native: native))
+
+proc nativeValue*(native: NativeValue): Value {.raises: [].} =
+  Value(kind: Native, native: native)
 
 proc closureCommand*(
     parameters: sink seq[string], body: sink seq[SyntaxNode], captured: Environment,
@@ -158,6 +166,8 @@ proc `$`*(value: Value): string {.raises: [].} =
     $value.syntax
   of Command:
     "<command>"
+  of Native:
+    "<native>"
 
 proc parseNumber*(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =
   try:

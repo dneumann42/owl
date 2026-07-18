@@ -113,3 +113,23 @@ proc exec*(
     evaluator: var Evaluator, node: SyntaxNode
 ): Value {.raises: [EvaluatorError].} =
   evaluator.env.eval(node)
+
+proc defineNative*(
+    evaluator: var Evaluator, symbol: string, command: NativeCommand
+) {.raises: [].} =
+  evaluator.env.defineNative(symbol, command)
+
+template native*(evaluator: var Evaluator, symbol: string, body: untyped) =
+  evaluator.defineNative(symbol, proc(
+      env {.inject.}: Environment,
+      arguments {.inject.}: seq[SyntaxNode],
+      layout {.inject.}: LayoutKind,
+      bodyNodes {.inject.}: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    try:
+      body
+    except EvaluatorError as error:
+      raise error
+    except CatchableError as error:
+      raise newException(EvaluatorError, error.msg)
+  )

@@ -1,8 +1,12 @@
 import std/[tables, unittest]
 
+import crow
 import crow/evaluator
 import crow/parser
 import crow/values
+
+type ProbeNative = ref object of NativeValue
+  label: string
 
 proc run(source: string): Value =
   var evaluator = Evaluator.init()
@@ -217,6 +221,38 @@ run:
     check value.kind == Dictionary
     check value.entries["name"].text == "crow"
     check value.entries["answer"].number == 42
+
+  test "native commands receive raw syntax and choose evaluation":
+    var evaluator = Evaluator.init()
+    evaluator.native "capture":
+      doAssert arguments.len == 2
+      doAssert arguments[0].kind == Symbol
+      doAssert arguments[0].symbol == "x"
+      doAssert bodyNodes.len == 1
+      let evaluated = env.eval(arguments[1])
+      text(arguments[0].symbol & ":" & $evaluated & ":" & $layout)
+
+    let value = evaluator.exec(parse("""
+capture x (+ 20 22):
+  ignored
+"""))
+
+    check value.kind == Text
+    check value.text == "x:42:ColonLayout"
+
+  test "native values can be returned by extensions":
+    var evaluator = Evaluator.init()
+    evaluator.native "probe":
+      discard env
+      discard arguments
+      discard layout
+      discard bodyNodes
+      nativeValue(ProbeNative(label: "from-native"))
+
+    let value = evaluator.exec(parse("probe\n"))
+
+    check value.kind == Native
+    check ProbeNative(value.native).label == "from-native"
 
   test "prelude defines if in crow":
     let value = run("""
