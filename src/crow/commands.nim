@@ -291,8 +291,44 @@ proc defineValueCommand(
       nameValue.syntax
     else:
       arguments[0]
+  let name =
+    if nameValue.kind == Text:
+      nameValue.text
+    else:
+      nameNode.requireSymbol("definition name")
   let targetEnv = if env.parent == nil: env else: env.parent
-  targetEnv.define(nameNode.requireSymbol("definition name"), result)
+  targetEnv.define(name, result)
+
+proc symbolTextCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "symbol-text", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "symbol-text expects one symbol")
+  let value = env.eval(arguments[0])
+  let node =
+    if value.kind == Syntax:
+      value.syntax
+    else:
+      arguments[0]
+  text(node.requireSymbol("symbol"))
+
+proc textAppendCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "text-append", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  var parts: seq[string]
+  for argument in arguments:
+    parts.add env.eval(argument).requireText()
+  text(parts.join(""))
 
 proc recordConstructorCommand(
     env: Environment,
@@ -302,18 +338,20 @@ proc recordConstructorCommand(
 ): Value {.stdCommand: "record-constructor", raises: [EvaluatorError].} =
   discard layout
   discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "record-constructor expects fields and defaults")
+  if arguments.len != 3:
+    raise newException(EvaluatorError, "record-constructor expects name, fields, and defaults")
+
+  let recordName = env.eval(arguments[0]).requireText()
 
   var fields: seq[string]
-  for item in env.eval(arguments[0]).requireList():
+  for item in env.eval(arguments[1]).requireList():
     let field = item.requireText()
     if fields.containsField(field):
       raise newException(EvaluatorError, &"duplicate record field: {field}")
     fields.add field
 
   var defaults: seq[Value]
-  for item in env.eval(arguments[1]).requireList():
+  for item in env.eval(arguments[2]).requireList():
     if item.kind != Syntax:
       raise newException(EvaluatorError, "record defaults must be syntax values")
     defaults.add item
@@ -321,6 +359,7 @@ proc recordConstructorCommand(
   if fields.len != defaults.len:
     raise newException(EvaluatorError, "record fields/defaults length mismatch")
 
+  let typeName = recordName
   let fieldOrder = fields
   let defaultValues = defaults
   nativeCommand(proc(
@@ -352,7 +391,32 @@ proc recordConstructorCommand(
       seenOverrides.add node.bindingSymbol
       entries[node.bindingSymbol] = callEnv.eval(node.value)
 
-    record(entries, fieldOrder)
+    record(typeName, entries, fieldOrder)
+  )
+
+proc recordPredicateCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "record-predicate", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "record-predicate expects name")
+  let typeName = env.eval(arguments[0]).requireText()
+  nativeCommand(proc(
+      callEnv: Environment,
+      callArguments: seq[SyntaxNode],
+      callLayout: LayoutKind,
+      callBody: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    discard callLayout
+    discard callBody
+    if callArguments.len != 1:
+      raise newException(EvaluatorError, "record predicate expects one value")
+    let value = callEnv.eval(callArguments[0])
+    boolean(value.kind == Record and value.recordName == typeName)
   )
 
 proc setCommand(

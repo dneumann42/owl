@@ -45,9 +45,11 @@ fun record-defaults nodes:
 
 block-command record name:
   define:
+    record-name = (symbol-text name)
     fields = (record-fields (statements block))
     defaults = (record-defaults (statements block))
-  define-caller-value name (record-constructor fields defaults)
+  define-caller-value name (record-constructor record-name fields defaults)
+  define-caller-value (text-append record-name "?") (record-predicate record-name)
 
 fun cond-from clauses:
   if (empty? clauses):

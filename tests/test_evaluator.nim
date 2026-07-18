@@ -357,6 +357,20 @@ define:
     check value.kind == Number
     check value.number == 11
 
+  test "record command defines a type predicate":
+    let value = run("""
+record Vec3:
+  x = 0
+record Color:
+  x = 0
+define:
+  point = (Vec3)
+  color = (Color)
+and (Vec3? point) (not (Vec3? color)) (not (Vec3? (dict))) (not (Vec3? 1))
+""")
+    check value.kind == Boolean
+    check value.boolean == true
+
   test "record fields can be set but not added":
     let value = run("""
 record Vec3:

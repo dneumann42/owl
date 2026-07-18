@@ -194,6 +194,8 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 | =binding-value=  | syntax for a binding value                            |
 | =eval-with=      | evaluates syntax in a child scope with one binding    |
 
+=symbol-text= returns the text of a symbol syntax value. =define-caller-value= defines a value in the caller scope using either a symbol syntax value or a text name. These are intended for Crow-level commands that introduce names.
+
 ** Standard Control Flow
 =when= evaluates one condition. If it is truthy, the body evaluates in the current environment and its last value is returned. Otherwise =nothing= is returned.
 
@@ -224,6 +226,8 @@ Comparison commands evaluate their two arguments:
 
 =dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key.
 
+=text-append= evaluates text arguments and returns their concatenation.
+
 ** Streams And Resources
 =stdin= and =stdout= are dictionaries installed in the root environment. They expose command fields such as =read-line=, =write=, =write-line=, =open=, and =close=.
 
@@ -252,7 +256,7 @@ define:
 *** Dictionary
 
 *** Record
-Records are fixed-field runtime values. They read like dictionaries, but new keys cannot be added after construction. Existing fields can be updated through =set=.
+Records are fixed-field runtime values. They read like dictionaries, but new keys cannot be added after construction. Existing fields can be updated through =set=. Defining =record Name:= also defines a =Name?= predicate command that returns true only for records constructed by =Name=.
 
 #+begin_src nest
 record Vec3:
@@ -269,6 +273,7 @@ define:
     2
     3
 print (+ my-point3.x my-point2.z)
+print (Vec3? my-point)
 
 ; chaining also works (a.b.c).d
 ; new indexing syntax (a.[+ 1 2].d).z.e

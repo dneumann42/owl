@@ -72,6 +72,7 @@ type
     of Dictionary:
       entries*: Table[string, Value]
     of Record:
+      recordName*: string
       recordEntries*: Table[string, Value]
       recordFields*: seq[string]
     of Syntax:
@@ -103,8 +104,10 @@ proc list*(items: sink seq[Value]): Value {.raises: [].} =
 proc dictionary*(entries: sink Table[string, Value]): Value {.raises: [].} =
   Value(kind: Dictionary, entries: entries)
 
-proc record*(entries: sink Table[string, Value], fields: sink seq[string]): Value {.raises: [].} =
-  Value(kind: Record, recordEntries: entries, recordFields: fields)
+proc record*(
+    name: sink string, entries: sink Table[string, Value], fields: sink seq[string]
+): Value {.raises: [].} =
+  Value(kind: Record, recordName: name, recordEntries: entries, recordFields: fields)
 
 proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].} =
   Value(kind: Syntax, syntax: node, syntaxEnv: env)
