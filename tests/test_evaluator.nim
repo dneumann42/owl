@@ -222,6 +222,39 @@ run:
     check value.entries["name"].text == "crow"
     check value.entries["answer"].number == 42
 
+  test "dictionary entries can be read with dict-get and field":
+    let value = run("""
+define:
+  config = {}:
+    name = "crow"
+    answer = (+ 40 2)
++ (dict-get config "answer") (field config "answer")
+""")
+    check value.kind == Number
+    check value.number == 84
+
+  test "dictionary entries can be set by assigning dict-put result":
+    let value = run("""
+define:
+  config = (dict)
+set config (dict-put config "name" "crow")
+set config (dict-put config "answer" (+ 40 2))
+dict-get config "answer"
+""")
+    check value.kind == Number
+    check value.number == 42
+
+  test "{} block command evaluates binding values in caller scope":
+    let value = run("""
+define:
+  base = 40
+  config = {}:
+    answer = (+ base 2)
+dict-get config "answer"
+""")
+    check value.kind == Number
+    check value.number == 42
+
   test "native commands receive raw syntax and choose evaluation":
     var evaluator = Evaluator.init()
     evaluator.native "capture":

@@ -129,6 +129,24 @@ pos3 = (Vec3:
     check value.layout == ColonLayout
     check value.body.len == 2
 
+  test "parses dictionary literal command with binding entries":
+    let tree = parse("""
+config = {}:
+  name = "crow"
+  answer = (+ 40 2)
+""")
+    let value = tree.statements[0].value
+    check value.kind == Command
+    check value.callee.symbol == "{}"
+    check value.layout == ColonLayout
+    check value.body.len == 2
+    check value.body[0].kind == Binding
+    check value.body[0].bindingSymbol == "name"
+    check value.body[0].value.stringValue == "crow"
+    check value.body[1].kind == Binding
+    check value.body[1].bindingSymbol == "answer"
+    check value.body[1].value.callee.symbol == "+"
+
   test "parses grouped continuation layout":
     let tree = parse("pos = (Vec3\n  1\n  2\n  3\n)\n")
     let value = tree.statements[0].value
