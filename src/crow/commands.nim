@@ -65,15 +65,76 @@ proc requireText(value: Value): string {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, &"expected text, got {value}")
   value.text
 
+proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
+  if value.kind != Record:
+    return false
+  for field in value.recordFields:
+    if field == name:
+      return true
+  false
+
+proc containsField(fields: seq[string], name: string): bool {.raises: [].} =
+  for field in fields:
+    if field == name:
+      return true
+  false
+
 proc field(value: Value, name: string): Value {.raises: [EvaluatorError].} =
-  let entries = value.requireDictionary()
-  if not entries.hasKey(name):
-    raise newException(EvaluatorError, &"missing field: {name}")
-  entries.getOrDefault(name)
+  case value.kind
+  of Dictionary:
+    if not value.entries.hasKey(name):
+      raise newException(EvaluatorError, &"missing field: {name}")
+    value.entries.getOrDefault(name)
+  of Record:
+    if not value.recordEntries.hasKey(name):
+      raise newException(EvaluatorError, &"missing field: {name}")
+    value.recordEntries.getOrDefault(name)
+  else:
+    raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
+
+proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
+  case value.kind
+  of List:
+    let index = key.requireNumber().int
+    if index < 0 or index >= value.items.len:
+      raise newException(EvaluatorError, "list index out of range")
+    value.items[index]
+  of Dictionary, Record:
+    value.field(key.requireText())
+  else:
+    raise newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
+
+proc setFieldValue(value: Value, name: string, entry: Value): Value {.raises: [EvaluatorError].} =
+  case value.kind
+  of Dictionary:
+    result = value
+    result.entries[name] = entry
+  of Record:
+    if not value.hasRecordField(name):
+      raise newException(EvaluatorError, &"cannot add record field: {name}")
+    result = value
+    result.recordEntries[name] = entry
+  else:
+    raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
+
+proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].} =
+  case value.kind
+  of List:
+    let index = key.requireNumber().int
+    if index < 0 or index >= value.items.len:
+      raise newException(EvaluatorError, "list index out of range")
+    result = value
+    result.items[index] = entry
+  of Dictionary, Record:
+    result = value.setFieldValue(key.requireText(), entry)
+  else:
+    raise newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
 
 proc optionalField(value: Value, name: string): Value {.raises: [].} =
   if value.kind == Dictionary and value.entries.hasKey(name):
     value.entries.getOrDefault(name)
+  elif value.kind == Record and value.recordEntries.hasKey(name):
+    value.recordEntries.getOrDefault(name)
   else:
     nothing()
 
@@ -121,6 +182,22 @@ proc setTarget(
   if target.kind == Symbol:
     env.setSymbol(target.symbol, value)
     return
+
+  if target.kind == Command and target.callee.kind == Symbol and
+      target.arguments.len == 2 and target.layout == NoLayout and target.body.len == 0:
+    case target.callee.symbol
+    of "field":
+      let container = env.eval(target.arguments[0])
+      let key = env.eval(target.arguments[1]).requireText()
+      env.setTarget(target.arguments[0], container.setFieldValue(key, value))
+      return
+    of "index":
+      let container = env.eval(target.arguments[0])
+      let key = env.eval(target.arguments[1])
+      env.setTarget(target.arguments[0], container.setIndexValue(key, value))
+      return
+    else:
+      discard
 
   let targetValue = env.eval(target)
   let targetNode = targetValue.requireSyntax()
@@ -196,6 +273,87 @@ proc defineCommand(
       raise newException(EvaluatorError, "define body entries must be bindings")
     result = env.eval(node.value)
     env.define(node.bindingSymbol, result)
+
+proc defineValueCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "define-caller-value", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "define-caller-value expects name and value")
+  result = env.eval(arguments[1])
+  let nameValue = env.eval(arguments[0])
+  let nameNode =
+    if nameValue.kind == Syntax:
+      nameValue.syntax
+    else:
+      arguments[0]
+  let targetEnv = if env.parent == nil: env else: env.parent
+  targetEnv.define(nameNode.requireSymbol("definition name"), result)
+
+proc recordConstructorCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "record-constructor", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "record-constructor expects fields and defaults")
+
+  var fields: seq[string]
+  for item in env.eval(arguments[0]).requireList():
+    let field = item.requireText()
+    if fields.containsField(field):
+      raise newException(EvaluatorError, &"duplicate record field: {field}")
+    fields.add field
+
+  var defaults: seq[Value]
+  for item in env.eval(arguments[1]).requireList():
+    if item.kind != Syntax:
+      raise newException(EvaluatorError, "record defaults must be syntax values")
+    defaults.add item
+
+  if fields.len != defaults.len:
+    raise newException(EvaluatorError, "record fields/defaults length mismatch")
+
+  let fieldOrder = fields
+  let defaultValues = defaults
+  nativeCommand(proc(
+      callEnv: Environment,
+      callArguments: seq[SyntaxNode],
+      callLayout: LayoutKind,
+      callBody: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    discard callLayout
+    if callArguments.len > fieldOrder.len:
+      raise newException(EvaluatorError, "record got too many arguments")
+
+    var entries = initTable[string, Value]()
+    for index, field in fieldOrder:
+      entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(defaultValues[index].syntax)
+
+    for index, argument in callArguments:
+      entries[fieldOrder[index]] = callEnv.eval(argument)
+
+    var seenOverrides: seq[string]
+    for node in callBody:
+      if node.kind != Binding:
+        raise newException(EvaluatorError, "record overrides must be bindings")
+      if not fieldOrder.containsField(node.bindingSymbol):
+        raise newException(EvaluatorError, &"unknown record field: {node.bindingSymbol}")
+      for seen in seenOverrides:
+        if seen == node.bindingSymbol:
+          raise newException(EvaluatorError, &"duplicate record override: {seen}")
+      seenOverrides.add node.bindingSymbol
+      entries[node.bindingSymbol] = callEnv.eval(node.value)
+
+    record(entries, fieldOrder)
+  )
 
 proc setCommand(
     env: Environment,
@@ -1046,10 +1204,10 @@ proc dictPutCommand(
   if arguments.len != 3:
     raise newException(EvaluatorError, "dict-put expects dict, key, and value")
   let original = env.eval(arguments[0])
-  if original.kind != Dictionary:
-    raise newException(EvaluatorError, &"expected dictionary, got {original}")
-  result = original
-  result.entries[env.eval(arguments[1]).requireText()] = env.eval(arguments[2])
+  original.setFieldValue(
+    env.eval(arguments[1]).requireText(),
+    env.eval(arguments[2]),
+  )
 
 proc dictGetCommand(
     env: Environment,
@@ -1071,6 +1229,18 @@ proc fieldCommand(
     body: seq[SyntaxNode],
 ): Value {.stdCommand: "field", raises: [EvaluatorError].} =
   dictGetCommand(env, arguments, layout, body)
+
+proc indexCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "index", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "index expects value and key")
+  indexValue(env.eval(arguments[0]), env.eval(arguments[1]))
 
 proc statementsCommand(
     env: Environment,

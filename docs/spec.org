@@ -11,6 +11,8 @@ Single datum of a program. The [[term-lexer][lexer]] produces these tokens befor
 | ';'                   | Starts a comment                              |
 | ','                   | Comma (not used)                              |
 | '(' ')'               | Used for grouping calls                       |
+| '[' ']'               | Empty list symbol and selector index grouping |
+| '.'                   | Starts a selector                             |
 | ':'                   | Starts a code block                           |
 | '='                   | Used for assignment                           |
 | '"'                   | String start and terminal (refer to escaping) |
@@ -34,18 +36,20 @@ binding         = symbol, "=", (expr | binding_cont) .
 binding_cont    = arg_block containing exactly one argument_item .
 expr            = string | command .
 command         = callee, { argument } .
-callee          = symbol | "=" | group .
-argument        = symbol | string | group .
-argument_item   = symbol | "=" | string | group | command_with_tail .
+callee          = (symbol | group | empty_list), { selector } | "=" .
+argument        = (symbol | string | group | empty_list), { selector } .
+argument_item   = argument | "=" | command_with_tail .
 command_with_tail = symbol, tail .
+selector        = ".", (symbol | "[", form, "]") .
 group           = "(", form, [ tail ], ")" .
+empty_list      = "[", "]" .
 symbol          = atom .
 string          = quote, { string_char | escape }, quote .
 escape          = backslash, ( quote | backslash | "n" | "r" | "t" ) .
 string_char     = ? any character except double quote, backslash, carriage return, or newline ? .
 atom            = atom_start, { atom_char } .
-atom_start      = ? any character except whitespace, \", (, ), ,, :, =, or ; ? .
-atom_char       = ? any character except whitespace, \", (, ), ,, :, or ; ? .
+atom_start      = ? any character except whitespace, \", (, ), [, ], ., ,, :, =, or ; ? .
+atom_char       = ? any character except whitespace, \", (, ), [, ], ., ,, :, or ; ? .
 newline         = ? line feed, carriage return, or carriage return followed by line feed ? .
 indent          = ? indentation token emitted when leading whitespace increases ? .
 dedent          = ? indentation token emitted when leading whitespace decreases ? .
@@ -68,6 +72,7 @@ The [[term-value][runtime value]] kinds are:
 | stream     | input or output stream marker                 |
 | list       | ordered values                                |
 | dictionary | text keys to values                           |
+| record     | fixed-key text fields to values               |
 | syntax     | syntax node plus the environment it came from |
 | command    | native command or closure command             |
 | native     | host-provided extension value                 |
@@ -121,6 +126,8 @@ abc =
 When a colon follows an argument on the same line, Crow resolves the ambiguity lexically. Identifier-like argument symbols leave the colon for the outer command, so =if condition:= and =block-command name:= keep their existing block form. Operator-like argument symbols take the colon as their own command layout, so =print []:= parses as a call to =print= with one argument, the =[]= command with a colon body. Parenthesizing an operator-like symbol keeps the colon on the outer command, as in =block-command ([]):=.
 
 The raw [[term-argument][argument]] syntax, [[term-layout-kind][layout kind]], and colon [[term-layout-body][layout body]] syntax are then passed to that command. [[term-native-command][Native commands]] and [[term-closure][closures]] decide which arguments to evaluate.
+
+Selectors are parsed as ordinary command-shaped syntax. =a.b= parses like =field a "b"=. =xs.[0]= parses like =index xs 0=. Selectors can be chained, so =(a.b.c).d= and =a.[+ 1 2].d= nest the same =field= and =index= commands.
 
 ** Commands
 There are two [[term-command][command]] kinds.
@@ -198,7 +205,7 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 
 =or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value. With no arguments, it returns =false=.
 
-=if=, =cond=, list literal =[]=, dictionary literal ={ }=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =crow/prelude.nest= using [[term-raw-syntax][raw syntax]], =eval=, and [[term-syntax-inspection][syntax inspection]].
+=if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =crow/prelude.nest= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Crow cannot yet directly create runtime commands.
 
 ** Data Commands
 Arithmetic commands =+=, =-=, =*=, and =/= require at least one argument. They evaluate all arguments as numbers and [[term-fold-left][fold left]].
@@ -215,7 +222,7 @@ Comparison commands evaluate their two arguments:
 
 =list= creates an empty list. =cons value list= returns a new list with the evaluated value prepended to the evaluated list. =first= returns the first item of a non-empty list. =rest= returns a list without the first item, or an empty list for an empty input. =empty?= returns whether a list is empty.
 
-=dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-get= and =field= read a text key or fail if it is missing.
+=dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key.
 
 ** Streams And Resources
 =stdin= and =stdout= are dictionaries installed in the root environment. They expose command fields such as =read-line=, =write=, =write-line=, =open=, and =close=.
@@ -230,6 +237,46 @@ Prelude helpers =read-line=, =readline=, =read=, =write=, and =write-line= call 
 
 ** Errors
 Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Crow adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
+
+* Structural Data types 
+
+*** List
+A sequence of indexable objects
+#+begin_src nest
+define:
+  my-empty-list = (list) ; call to the list command
+  my-list = []:
+    1, 2, 3 ; Comma ',' acts as a terminal + indent
+#+end_src
+
+*** Dictionary
+
+*** Record
+Records are fixed-field runtime values. They read like dictionaries, but new keys cannot be added after construction. Existing fields can be updated through =set=.
+
+#+begin_src nest
+record Vec3:
+  x = 0
+  y = 0
+  z = 0
+
+define:
+  my-point = Vec3 1 2 3
+  my-point2 = Vec3 1 2:
+    z = 3
+  my-point3 = Vec3
+    1
+    2
+    3
+print (+ my-point3.x my-point2.z)
+
+; chaining also works (a.b.c).d
+; new indexing syntax (a.[+ 1 2].d).z.e
+; set a.y 100
+; set xs.[0] 20
+; set ys.["hello"] "world"
+#+end_src
+
 
 * References
 <<term-argument>>Argument: one raw syntax node written after a command callee, for example =1= and =x= in =+ 1 x=.

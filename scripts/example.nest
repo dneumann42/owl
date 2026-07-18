@@ -1,12 +1,16 @@
 define:
-  z = 100
-  x = {}:
-    hello = "world"
-    y = "x"
-    z = (+ z 1)
-  ui = do:
-    define:
-      x = 100
-    / 2 x
-print x
-print ui
+  my-list = []:
+    1, 2, 3
+print my-list
+
+record Vec3:
+  x = 0
+  y = 0
+  z = 0
+
+define:
+  point = Vec3 1 2:
+    z = 3
+
+set point.y 20
+print (+ point.x point.y point.z my-list.[1])

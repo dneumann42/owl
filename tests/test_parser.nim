@@ -204,6 +204,28 @@ print []:
     check call.arguments[0].layout == ColonLayout
     check call.arguments[0].body.len == 3
 
+  test "parses dot and bracket selector chains":
+    let tree = parse("""
+print (a.b.c).d
+print a.[+ 1 2].d
+set xs.[0] 20
+set ys.["hello"] "world"
+""")
+    let dotted = tree.statements[0].arguments[0]
+    check dotted.callee.symbol == "field"
+    check dotted.arguments[1].stringValue == "d"
+    check dotted.arguments[0].callee.symbol == "field"
+    check dotted.arguments[0].arguments[1].stringValue == "c"
+
+    let indexed = tree.statements[1].arguments[0]
+    check indexed.callee.symbol == "field"
+    check indexed.arguments[1].stringValue == "d"
+    check indexed.arguments[0].callee.symbol == "index"
+    check indexed.arguments[0].arguments[1].callee.symbol == "+"
+
+    check tree.statements[2].arguments[0].callee.symbol == "index"
+    check tree.statements[3].arguments[0].callee.symbol == "index"
+
   test "parses operator-like argument layouts generically":
     let tree = parse("""
 use <>:

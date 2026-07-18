@@ -298,6 +298,35 @@ dict-get config "answer"
     check value.kind == Number
     check value.number == 42
 
+  test "dot and bracket selectors read values":
+    let value = run("""
+define:
+  values = []:
+    10
+    20
+  config = {}:
+    nested = {}:
+      answer = 42
++ values.[0] values.[1] config.nested.answer
+""")
+    check value.kind == Number
+    check value.number == 72
+
+  test "set updates selector targets":
+    let value = run("""
+define:
+  values = []:
+    10
+    20
+  config = (dict)
+set values.[1] 30
+set config.["name"] "crow"
+set config.answer 12
++ values.[1] config.answer
+""")
+    check value.kind == Number
+    check value.number == 42
+
   test "{} block command evaluates binding values in caller scope":
     let value = run("""
 define:
@@ -308,6 +337,55 @@ dict-get config "answer"
 """)
     check value.kind == Number
     check value.number == 42
+
+  test "record constructors create fixed-field values":
+    let value = run("""
+record Vec3:
+  x = 0
+  y = 0
+  z = 0
+define:
+  a = (Vec3 1 2 3)
+  b = Vec3 1 2:
+    z = 4
+  c = Vec3
+    5
+    6
+    7
++ a.x b.z c.y
+""")
+    check value.kind == Number
+    check value.number == 11
+
+  test "record fields can be set but not added":
+    let value = run("""
+record Vec3:
+  x = 0
+  y = 0
+define:
+  point = (Vec3)
+set point.x 10
+point.x
+""")
+    check value.kind == Number
+    check value.number == 10
+
+    expect EvaluatorError:
+      discard run("""
+record Vec3:
+  x = 0
+define:
+  point = (Vec3)
+set point.y 10
+""")
+
+    expect EvaluatorError:
+      discard run("""
+record Vec3:
+  x = 0
+Vec3:
+  y = 10
+""")
 
   test "native commands receive raw syntax and choose evaluation":
     var evaluator = Evaluator.init()

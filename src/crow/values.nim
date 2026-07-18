@@ -11,6 +11,7 @@ type
     Stream
     List
     Dictionary
+    Record
     Syntax
     Command
     Native
@@ -70,6 +71,9 @@ type
       items*: seq[Value]
     of Dictionary:
       entries*: Table[string, Value]
+    of Record:
+      recordEntries*: Table[string, Value]
+      recordFields*: seq[string]
     of Syntax:
       syntax*: SyntaxNode
       syntaxEnv*: Environment
@@ -98,6 +102,9 @@ proc list*(items: sink seq[Value]): Value {.raises: [].} =
 
 proc dictionary*(entries: sink Table[string, Value]): Value {.raises: [].} =
   Value(kind: Dictionary, entries: entries)
+
+proc record*(entries: sink Table[string, Value], fields: sink seq[string]): Value {.raises: [].} =
+  Value(kind: Record, recordEntries: entries, recordFields: fields)
 
 proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].} =
   Value(kind: Syntax, syntax: node, syntaxEnv: env)
@@ -161,6 +168,12 @@ proc `$`*(value: Value): string {.raises: [].} =
     var parts: seq[string]
     for key, entry in value.entries:
       parts.add key & ": " & $entry
+    "{" & parts.join(", ") & "}"
+  of Record:
+    var parts: seq[string]
+    for key in value.recordFields:
+      if value.recordEntries.hasKey(key):
+        parts.add key & ": " & $value.recordEntries.getOrDefault(key)
     "{" & parts.join(", ") & "}"
   of Syntax:
     $value.syntax

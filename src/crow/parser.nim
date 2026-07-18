@@ -14,6 +14,9 @@ type
     Comma
     Colon
     Equal
+    Dot
+    LBracket
+    RBracket
     LParen
     RParen
     Atom
@@ -41,10 +44,14 @@ proc isSpace(c: char): bool {.raises: [].} =
   c in {' ', '\t', '\r', '\n'}
 
 proc isAtomStartChar(c: char): bool {.raises: [].} =
-  not isSpace(c) and c notin {'"', '(', ')', ',', ':', '=', ';'}
+  not isSpace(c) and c notin {'"', '(', ')', '[', ']', ',', ':', '=', '.', ';'}
 
 proc isAtomPartChar(c: char): bool {.raises: [].} =
-  not isSpace(c) and c notin {'"', '(', ')', ',', ':', ';'}
+  not isSpace(c) and c notin {'"', '(', ')', '[', ']', ',', ':', '.', ';'}
+
+proc isNumberDot(source: string, index: int): bool {.raises: [].} =
+  index > 0 and index + 1 < source.len and source[index] == '.' and
+    source[index - 1] in {'0' .. '9'} and source[index + 1] in {'0' .. '9'}
 
 proc add(
     tokens: var seq[Token], kind: TokenKind, lexeme: sink string, line, column: int
@@ -126,6 +133,15 @@ proc tokenize*(
     of '=':
       result.add(Equal, "=", line, column)
       advance()
+    of '.':
+      result.add(Dot, ".", line, column)
+      advance()
+    of '[':
+      result.add(LBracket, "[", line, column)
+      advance()
+    of ']':
+      result.add(RBracket, "]", line, column)
+      advance()
     of '(':
       result.add(LParen, "(", line, column)
       advance()
@@ -170,7 +186,7 @@ proc tokenize*(
         fail(&"unexpected character {c}", sourceId, line, column)
       let start = i
       let startColumn = column
-      while i < source.len and isAtomPartChar(source[i]):
+      while i < source.len and (isAtomPartChar(source[i]) or source.isNumberDot(i)):
         advance()
       result.add(Atom, source[start ..< i], line, startColumn)
 
@@ -219,7 +235,7 @@ proc parseIndentedBody(parser: var Parser): seq[SyntaxNode] {.raises: [ParserErr
   discard parser.expect(Dedent, "expected end of indented body")
 
 proc startsArgumentItem(kind: TokenKind): bool {.raises: [].} =
-  kind in {Atom, StringLit, Equal, LParen}
+  kind in {Atom, StringLit, Equal, LBracket, LParen}
 
 proc parseArgumentLine(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
   result.add parser.parseArgumentItem()
@@ -268,6 +284,31 @@ proc parseSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let token = parser.expect(Atom, "expected symbol")
   symbol(token.lexeme, parser.pos(token))
 
+proc parseEmptyListSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+  let token = parser.expect(LBracket, "expected '['")
+  discard parser.expect(RBracket, "expected ']'")
+  symbol("[]", parser.pos(token))
+
+proc parsePostfix(parser: var Parser, base: SyntaxNode): SyntaxNode {.raises: [ParserError].} =
+  result = base
+  while parser.at(Dot):
+    let dot = parser.take()
+    if parser.at(Atom):
+      let fieldToken = parser.take()
+      result = command(
+        symbol("field", parser.pos(dot)),
+        @[result, stringLiteral(fieldToken.lexeme, parser.pos(fieldToken))],
+        parser.pos(dot),
+      )
+    elif parser.at(LBracket):
+      discard parser.take()
+      let index = parser.parseForm()
+      discard parser.expect(RBracket, "expected ']'")
+      result = command(symbol("index", parser.pos(dot)), @[result, index], parser.pos(dot))
+    else:
+      let token = parser.peek
+      fail("expected field name or index after '.'", parser.source, token.line, token.column)
+
 proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   discard parser.expect(LParen, "expected '('")
   result = parser.parseForm()
@@ -275,14 +316,17 @@ proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} 
     let tail = parser.parseLayoutTail()
     parser.attachLayoutTail(result, tail.kind, tail.body)
   discard parser.expect(RParen, "expected ')'")
+  result = parser.parsePostfix(result)
 
 proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
   of Atom:
-    result = parser.parseSymbol()
+    result = parser.parsePostfix(parser.parseSymbol())
   of Equal:
     discard parser.take()
-    result = symbol("=", parser.pos(parser.peek(-1)))
+    result = parser.parsePostfix(symbol("=", parser.pos(parser.peek(-1))))
+  of LBracket:
+    result = parser.parsePostfix(parser.parseEmptyListSymbol())
   of LParen:
     result = parser.parseGroupedForm()
   else:
@@ -299,16 +343,30 @@ proc isIdentifierSymbol(value: string): bool {.raises: [].} =
       return false
   true
 
+proc isNumericSymbol(value: string): bool {.raises: [].} =
+  value.len > 0 and (
+    value[0] in {'0' .. '9'} or
+    value.len > 1 and value[0] in {'+', '-'} and value[1] in {'0' .. '9'}
+  )
+
 proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
   of Atom:
     result = parser.parseSymbol()
-    if not result.symbol.isIdentifierSymbol and parser.at(Colon):
+    if not result.symbol.isIdentifierSymbol and not result.symbol.isNumericSymbol and
+        parser.at(Colon):
       let tail = parser.parseLayoutTail()
       parser.attachLayoutTail(result, tail.kind, tail.body)
+    result = parser.parsePostfix(result)
   of StringLit:
     let token = parser.take()
-    result = stringLiteral(token.lexeme, parser.pos(token))
+    result = parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
+  of LBracket:
+    result = parser.parseEmptyListSymbol()
+    if parser.at(Colon):
+      let tail = parser.parseLayoutTail()
+      parser.attachLayoutTail(result, tail.kind, tail.body)
+    result = parser.parsePostfix(result)
   of LParen:
     result = parser.parseGroupedForm()
   else:
@@ -316,7 +374,7 @@ proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     fail("expected argument", parser.source, token.line, token.column)
 
 proc startsArgument(kind: TokenKind): bool {.raises: [].} =
-  kind in {Atom, StringLit, LParen}
+  kind in {Atom, StringLit, LBracket, LParen}
 
 proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
@@ -328,6 +386,8 @@ proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
   of StringLit:
     let token = parser.take()
     result = stringLiteral(token.lexeme, parser.pos(token))
+  of LBracket:
+    result = parser.parseEmptyListSymbol()
   of LParen:
     result = parser.parseGroupedForm()
   else:
@@ -337,6 +397,7 @@ proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
   if parser.at(Colon) or parser.at(Newline) and parser.peek(1).kind == Indent:
     let tail = parser.parseLayoutTail()
     parser.attachLayoutTail(result, tail.kind, tail.body)
+  result = parser.parsePostfix(result)
 
 proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let callee = parser.parseCallee()
@@ -351,7 +412,7 @@ proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
 proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if parser.at(StringLit):
     let token = parser.take()
-    result = stringLiteral(token.lexeme, parser.pos(token))
+    result = parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
   else:
     result = parser.parseCommand()
 

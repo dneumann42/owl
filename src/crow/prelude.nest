@@ -27,6 +27,28 @@ fun dict-from nodes:
 block-command ({}):
   dict-from (statements block)
 
+fun record-fields nodes:
+  if (empty? nodes):
+    then:
+      list
+    else:
+      define:
+        entry = (first nodes)
+      cons (binding-symbol entry) (record-fields (rest nodes))
+
+fun record-defaults nodes:
+  if (empty? nodes):
+    then:
+      list
+    else:
+      cons (binding-value (first nodes)) (record-defaults (rest nodes))
+
+block-command record name:
+  define:
+    fields = (record-fields (statements block))
+    defaults = (record-defaults (statements block))
+  define-caller-value name (record-constructor fields defaults)
+
 fun cond-from clauses:
   if (empty? clauses):
     then:
