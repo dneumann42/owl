@@ -82,6 +82,30 @@ inc 4
     check value.kind == Number
     check value.number == 5
 
+  test "indentation groups call arguments":
+    let value = run("""
+command third a b c:
+  eval c
+third
+  (+ 1 2 3)
+  "test"
+  T
+""")
+    check value.kind == Boolean
+    check value.boolean == true
+
+  test "indentation supplies evaluated closure arguments":
+    let value = run("""
+fun total a b c:
+  + a b c
+total
+  (+ 1 2 3)
+  4
+  5
+""")
+    check value.kind == Number
+    check value.number == 15
+
   test "fn creates anonymous closures":
     let value = run("""
 define:
@@ -162,6 +186,20 @@ not (= 1 2)
 """)
     check value.kind == Boolean
     check value.boolean == true
+
+  test "and short-circuits and returns the decisive value":
+    check run("and\n").boolean == true
+    check run("and true 7\n").number == 7
+    check run("and true false (error \"unreachable\")\n").boolean == false
+    expect EvaluatorError:
+      discard run("and true (error \"reachable\")\n")
+
+  test "or short-circuits and returns the decisive value":
+    check run("or\n").boolean == false
+    check run("or false 7\n").number == 7
+    check run("or true (error \"unreachable\")\n").boolean == true
+    expect EvaluatorError:
+      discard run("or false (error \"reachable\")\n")
 
   test "error raises evaluator errors":
     expect EvaluatorError:

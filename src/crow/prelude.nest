@@ -8,8 +8,12 @@ fun list-from nodes:
     else:
       cons (eval (first nodes)) (list-from (rest nodes))
 
-block-command []:
+block-command ([]):
   list-from (statements block)
+
+block-command (do):
+  when true:
+    eval block
 
 fun dict-from nodes:
   if (empty? nodes):
@@ -20,7 +24,7 @@ fun dict-from nodes:
         entry = (first nodes)
       dict-put (dict-from (rest nodes)) (binding-symbol entry) (eval (binding-value entry))
 
-block-command {}:
+block-command ({}):
   dict-from (statements block)
 
 fun cond-from clauses:

@@ -30,7 +30,9 @@ type
     pos: int
     source: SourceID
 
-proc fail(message: string, source: SourceID, line, column: int) {.raises: [ParserError].} =
+proc fail(
+    message: string, source: SourceID, line, column: int
+) {.raises: [ParserError].} =
   let error = newException(ParserError, message)
   error.primary = sourcePos(source, line, column)
   raise error
@@ -49,9 +51,10 @@ proc add(
 ) {.raises: [].} =
   tokens.add Token(kind: kind, lexeme: lexeme, line: line, column: column)
 
-proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [ParserError].} =
+proc tokenize*(
+    source: string, sourceId = NoSource
+): seq[Token] {.raises: [ParserError].} =
   var
-    tokens: seq[Token]
     indents = @[0]
     atLineStart = true
     pendingIndent = 0
@@ -63,16 +66,16 @@ proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [Parse
     inc i
     inc column
 
-  proc emitPendingIndent() {.raises: [ParserError].} =
+  template emitPendingIndent() =
     if atLineStart:
       let current = indents[^1]
       if pendingIndent > current:
         indents.add pendingIndent
-        tokens.add(Indent, "", line, 1)
+        result.add(Indent, "", line, 1)
       elif pendingIndent < current:
         while indents.len > 1 and pendingIndent < indents[^1]:
           discard indents.pop()
-          tokens.add(Dedent, "", line, 1)
+          result.add(Dedent, "", line, 1)
         if pendingIndent != indents[^1]:
           fail("inconsistent indentation", sourceId, line, 1)
       atLineStart = false
@@ -104,7 +107,7 @@ proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [Parse
     of ' ', '\t':
       advance()
     of '\r', '\n':
-      tokens.add(Newline, "", line, column)
+      result.add(Newline, "", line, column)
       if c == '\r' and i + 1 < source.len and source[i + 1] == '\n':
         inc i
       inc i
@@ -115,19 +118,19 @@ proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [Parse
       while i < source.len and source[i] notin {'\r', '\n'}:
         advance()
     of ',':
-      tokens.add(Comma, ",", line, column)
+      result.add(Comma, ",", line, column)
       advance()
     of ':':
-      tokens.add(Colon, ":", line, column)
+      result.add(Colon, ":", line, column)
       advance()
     of '=':
-      tokens.add(Equal, "=", line, column)
+      result.add(Equal, "=", line, column)
       advance()
     of '(':
-      tokens.add(LParen, "(", line, column)
+      result.add(LParen, "(", line, column)
       advance()
     of ')':
-      tokens.add(RParen, ")", line, column)
+      result.add(RParen, ")", line, column)
       advance()
     of '"':
       let startLine = line
@@ -161,7 +164,7 @@ proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [Parse
       if i >= source.len:
         fail("unterminated string", sourceId, startLine, startColumn)
       advance()
-      tokens.add(StringLit, value, startLine, startColumn)
+      result.add(StringLit, value, startLine, startColumn)
     else:
       if not isAtomStartChar(c):
         fail(&"unexpected character {c}", sourceId, line, column)
@@ -169,15 +172,14 @@ proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [Parse
       let startColumn = column
       while i < source.len and isAtomPartChar(source[i]):
         advance()
-      tokens.add(Atom, source[start ..< i], line, startColumn)
+      result.add(Atom, source[start ..< i], line, startColumn)
 
   if not atLineStart:
-    tokens.add(Newline, "", line, column)
+    result.add(Newline, "", line, column)
   while indents.len > 1:
     discard indents.pop()
-    tokens.add(Dedent, "", line, 1)
-  tokens.add(Eof, "", line, column)
-  tokens
+    result.add(Dedent, "", line, 1)
+  result.add(Eof, "", line, column)
 
 proc peek(parser: Parser): Token {.raises: [].} =
   parser.tokens[parser.pos]
@@ -208,12 +210,38 @@ proc parseStatementList(
 ): seq[SyntaxNode] {.raises: [ParserError].}
 
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].}
+proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
 
 proc parseIndentedBody(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
   discard parser.expect(Newline, "expected newline before indented body")
   discard parser.expect(Indent, "expected indented body")
   result = parser.parseStatementList({Dedent})
   discard parser.expect(Dedent, "expected end of indented body")
+
+proc startsArgumentItem(kind: TokenKind): bool {.raises: [].} =
+  kind in {Atom, StringLit, Equal, LParen}
+
+proc parseArgumentLine(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
+  result.add parser.parseArgumentItem()
+  while startsArgumentItem(parser.peek.kind):
+    result.add parser.parseArgumentItem()
+  if parser.at(Newline):
+    discard parser.take()
+  elif parser.peek.kind notin {Dedent, RParen, Eof}:
+    let token = parser.peek
+    fail("expected newline after argument", parser.source, token.line, token.column)
+
+proc parseIndentedArguments(
+    parser: var Parser
+): seq[SyntaxNode] {.raises: [ParserError].} =
+  discard parser.expect(Newline, "expected newline before indented arguments")
+  discard parser.expect(Indent, "expected indented arguments")
+  while not parser.at(Dedent):
+    if parser.at(Newline):
+      discard parser.take()
+    else:
+      result.add parser.parseArgumentLine()
+  discard parser.expect(Dedent, "expected end of indented arguments")
 
 proc parseLayoutTail(
     parser: var Parser
@@ -222,7 +250,19 @@ proc parseLayoutTail(
     discard parser.take()
     result = (ColonLayout, parser.parseIndentedBody())
   else:
-    result = (ContinuationLayout, parser.parseIndentedBody())
+    result = (ContinuationLayout, parser.parseIndentedArguments())
+
+proc attachLayoutTail(
+    parser: Parser, node: var SyntaxNode, layout: LayoutKind, body: sink seq[SyntaxNode]
+) {.raises: [ParserError].} =
+  if node.kind == Symbol:
+    node = command(node, @[], node.pos)
+  if not node.attachLayout(layout, body):
+    let token = parser.peek
+    fail(
+      "layout can only be attached to a command", parser.source, token.line,
+      token.column,
+    )
 
 proc parseSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let token = parser.expect(Atom, "expected symbol")
@@ -233,9 +273,7 @@ proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} 
   result = parser.parseForm()
   if parser.at(Colon) or parser.at(Newline):
     let tail = parser.parseLayoutTail()
-    if not result.attachLayout(tail.kind, tail.body):
-      let token = parser.peek
-      fail("layout can only be attached to a command", parser.source, token.line, token.column)
+    parser.attachLayoutTail(result, tail.kind, tail.body)
   discard parser.expect(RParen, "expected ')'")
 
 proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
@@ -251,10 +289,23 @@ proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     let token = parser.peek
     fail("expected command callee", parser.source, token.line, token.column)
 
+proc isIdentifierSymbol(value: string): bool {.raises: [].} =
+  if value.len == 0:
+    return false
+  if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
+    return false
+  for c in value:
+    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?'}:
+      return false
+  true
+
 proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
   of Atom:
     result = parser.parseSymbol()
+    if not result.symbol.isIdentifierSymbol and parser.at(Colon):
+      let tail = parser.parseLayoutTail()
+      parser.attachLayoutTail(result, tail.kind, tail.body)
   of StringLit:
     let token = parser.take()
     result = stringLiteral(token.lexeme, parser.pos(token))
@@ -266,6 +317,26 @@ proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
 
 proc startsArgument(kind: TokenKind): bool {.raises: [].} =
   kind in {Atom, StringLit, LParen}
+
+proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+  case parser.peek.kind
+  of Atom:
+    result = parser.parseSymbol()
+  of Equal:
+    discard parser.take()
+    result = symbol("=", parser.pos(parser.peek(-1)))
+  of StringLit:
+    let token = parser.take()
+    result = stringLiteral(token.lexeme, parser.pos(token))
+  of LParen:
+    result = parser.parseGroupedForm()
+  else:
+    let token = parser.peek
+    fail("expected argument", parser.source, token.line, token.column)
+
+  if parser.at(Colon) or parser.at(Newline) and parser.peek(1).kind == Indent:
+    let tail = parser.parseLayoutTail()
+    parser.attachLayoutTail(result, tail.kind, tail.body)
 
 proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let callee = parser.parseCallee()
@@ -288,7 +359,15 @@ proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if parser.at(Atom) and parser.peek(1).kind == Equal:
     let bindingToken = parser.take()
     discard parser.take()
-    result = binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
+    if parser.at(Newline) and parser.peek(1).kind == Indent:
+      let values = parser.parseIndentedArguments()
+      if values.len != 1:
+        let token = parser.peek
+        fail("expected one binding value", parser.source, token.line, token.column)
+      result = binding(bindingToken.lexeme, values[0], parser.pos(bindingToken))
+    else:
+      result =
+        binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
   else:
     result = parser.parseExpression()
 
@@ -296,9 +375,7 @@ proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError]
   var first = parser.parseForm()
   if parser.at(Colon) or parser.at(Newline) and parser.peek(1).kind == Indent:
     let tail = parser.parseLayoutTail()
-    if not first.attachLayout(tail.kind, tail.body):
-      let token = parser.peek
-      fail("layout can only be attached to a command", parser.source, token.line, token.column)
+    parser.attachLayoutTail(first, tail.kind, tail.body)
     result.add first
     return
 
@@ -306,7 +383,11 @@ proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError]
   while parser.at(Comma):
     discard parser.take()
     result.add parser.parseForm()
-  discard parser.expect(Newline, "expected newline after statement")
+  if parser.at(Newline):
+    discard parser.take()
+  elif parser.peek.kind notin {Dedent, RParen, Eof}:
+    let token = parser.peek
+    fail("expected newline after statement", parser.source, token.line, token.column)
 
 proc parseStatementList(
     parser: var Parser, stop: set[TokenKind]
@@ -317,7 +398,7 @@ proc parseStatementList(
     else:
       result.add parser.parseStatement()
 
-proc parse*(source: string; path = "<input>"): SyntaxNode {.raises: [ParserError].} =
+proc parse*(source: string, path = "<input>"): SyntaxNode {.raises: [ParserError].} =
   let sourceId = registerSource(source, path)
   var parser = Parser(tokens: tokenize(source, sourceId), pos: 0, source: sourceId)
   let statements = parser.parseStatementList({Eof})

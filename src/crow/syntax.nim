@@ -171,8 +171,13 @@ proc attachLayout*(
 ): bool {.raises: [].} =
   case node.kind
   of Command:
-    node.layout = layout
-    node.body = body
+    if layout == ContinuationLayout:
+      node.layout = layout
+      node.arguments.add body
+      node.body = @[]
+    else:
+      node.layout = layout
+      node.body = body
     true
   of Binding:
     attachLayout(node.value, layout, body)
@@ -213,19 +218,21 @@ proc renderBody(nodes: seq[SyntaxNode], indent: int): string {.raises: [].} =
 
 proc renderCommand(node: SyntaxNode, indent: int): string {.raises: [].} =
   result.add node.callee.render(indent, statement = false, bindingValue = false)
-  for argument in node.arguments:
-    result.add ' '
-    result.add argument.render(indent, statement = false, bindingValue = false)
 
   case node.layout
   of NoLayout:
-    discard
+    for argument in node.arguments:
+      result.add ' '
+      result.add argument.render(indent, statement = false, bindingValue = false)
   of ColonLayout:
+    for argument in node.arguments:
+      result.add ' '
+      result.add argument.render(indent, statement = false, bindingValue = false)
     result.add ":\n"
     result.add renderBody(node.body, indent + 2)
   of ContinuationLayout:
     result.add '\n'
-    result.add renderBody(node.body, indent + 2)
+    result.add renderBody(node.arguments, indent + 2)
 
 proc render(
     node: SyntaxNode, indent: int, statement, bindingValue: bool

@@ -77,8 +77,9 @@ writeLine
     let call = tree.statements[0]
     check call.kind == Command
     check call.layout == ContinuationLayout
-    check call.body[0].kind == String
-    check call.body[1].callee.symbol == "stdout"
+    check call.body.len == 0
+    check call.arguments[0].kind == String
+    check call.arguments[1].symbol == "stdout"
 
   test "attaches binding layout to the right hand side command":
     let tree = parse("""
@@ -152,7 +153,79 @@ config = {}:
     let value = tree.statements[0].value
     check value.callee.symbol == "Vec3"
     check value.layout == ContinuationLayout
-    check value.body.len == 3
+    check value.body.len == 0
+    check value.arguments.len == 3
+
+  test "parses indentation as nested call grouping":
+    let tree = parse("""
+print
+  +
+    1
+    2
+    3
+  "test"
+  T
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "print"
+    check call.arguments.len == 3
+    check call.arguments[0].callee.symbol == "+"
+    check call.arguments[0].arguments.len == 3
+    check call.arguments[1].stringValue == "test"
+    check call.arguments[2].symbol == "T"
+
+  test "parses indented binding values":
+    let tree = parse("""
+config = {}:
+  world = +
+    1 2 3
+  abc =
+    -
+      1
+      9
+""")
+    let body = tree.statements[0].value.body
+    check body[0].value.callee.symbol == "+"
+    check body[0].value.arguments.len == 3
+    check body[1].value.callee.symbol == "-"
+    check body[1].value.arguments.len == 2
+
+  test "parses block literal as command argument":
+    let tree = parse("""
+print []:
+  1
+  2
+  3
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "print"
+    check call.arguments.len == 1
+    check call.arguments[0].callee.symbol == "[]"
+    check call.arguments[0].layout == ColonLayout
+    check call.arguments[0].body.len == 3
+
+  test "parses operator-like argument layouts generically":
+    let tree = parse("""
+use <>:
+  value
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "use"
+    check call.arguments.len == 1
+    check call.arguments[0].callee.symbol == "<>"
+    check call.arguments[0].layout == ColonLayout
+    check call.arguments[0].body[0].callee.symbol == "value"
+
+  test "keeps grouped operator-like command names as outer layouts":
+    let tree = parse("""
+block-command ([]):
+  value
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "block-command"
+    check call.arguments[0].callee.symbol == "[]"
+    check call.layout == ColonLayout
+    check call.body[0].callee.symbol == "value"
 
   test "accepts unicode atom characters":
     let tree = parse("π = плюс α β\n")

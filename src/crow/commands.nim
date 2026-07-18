@@ -23,9 +23,17 @@ macro stdCommand*(name: static[string], node: untyped): untyped =
 proc requireSymbol(
     node: SyntaxNode, role: string
 ): string {.raises: [EvaluatorError].} =
-  if node.kind != Symbol:
+  case node.kind
+  of Symbol:
+    node.symbol
+  of Command:
+    if node.callee.kind == Symbol and node.arguments.len == 0 and
+        node.layout == NoLayout and node.body.len == 0:
+      node.callee.symbol
+    else:
+      raise newException(EvaluatorError, &"expected {role} to be a symbol")
+  else:
     raise newException(EvaluatorError, &"expected {role} to be a symbol")
-  node.symbol
 
 proc requireNumber(value: Value): float64 {.raises: [EvaluatorError].} =
   if value.kind != Number:
@@ -127,6 +135,14 @@ proc commandCommand(
 ): Value {.stdCommand: "command", raises: [EvaluatorError].} =
   discard layout
   env.defineClosure(arguments, body, evaluatesArguments = false, acceptsBlock = false)
+
+proc componentCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "component", raises: [EvaluatorError].} =
+  commandCommand(env, arguments, layout, body)
 
 proc blockCommandCommand(
     env: Environment,
@@ -990,6 +1006,34 @@ proc notCommand(
   if arguments.len != 1:
     raise newException(EvaluatorError, "not expects one value")
   boolean(not env.eval(arguments[0]).isTruthy)
+
+proc andCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "and", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  result = boolean(true)
+  for argument in arguments:
+    result = env.eval(argument)
+    if not result.isTruthy:
+      return
+
+proc orCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "or", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  result = boolean(false)
+  for argument in arguments:
+    result = env.eval(argument)
+    if result.isTruthy:
+      return
 
 proc dictPutCommand(
     env: Environment,

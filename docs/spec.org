@@ -1,3 +1,315 @@
+* Syntax
+
+My goal with the syntax is to make it maximally useful, nicely expressive yet very simple. The syntax leverages [[term-indent][indentation]] to separate [[term-block][blocks]] and group [[term-expr][expressions]].
+
+** Tokens
+Single datum of a program. The [[term-lexer][lexer]] produces these tokens before the [[term-parser][parser]] builds syntax nodes.
+*** Special token characters:
+| characters            | class                                         |
+|-----------------------+-----------------------------------------------|
+| ' ', '\t', '\r', '\n' | Whitespace                                    |
+| ';'                   | Starts a comment                              |
+| ','                   | Comma (not used)                              |
+| '(' ')'               | Used for grouping calls                       |
+| ':'                   | Starts a code block                           |
+| '='                   | Used for assignment                           |
+| '"'                   | String start and terminal (refer to escaping) |
+*** EBNF
+The [[term-lexer][lexer]] discards horizontal spacing, comments, and physical blank lines. It emits newline, indent, and dedent tokens for the [[term-parser][parser]].
+#+begin_src ebnf
+script          = stmts, eof .
+stmts           = { newline | stmt } .
+stmt            = layout_stmt | simple_stmt .
+layout_stmt     = form, tail .
+tail            = colon_tail | cont_tail .
+colon_tail      = ":", block .
+cont_tail       = arg_block .
+block           = newline, indent, stmts, dedent .
+arg_block       = newline, indent, args, dedent .
+args            = { newline | argument_line } .
+argument_line   = argument_item, { argument_item }, newline .
+simple_stmt     = form, { ",", form }, newline .
+form            = binding | expr .
+binding         = symbol, "=", (expr | binding_cont) .
+binding_cont    = arg_block containing exactly one argument_item .
+expr            = string | command .
+command         = callee, { argument } .
+callee          = symbol | "=" | group .
+argument        = symbol | string | group .
+argument_item   = symbol | "=" | string | group | command_with_tail .
+command_with_tail = symbol, tail .
+group           = "(", form, [ tail ], ")" .
+symbol          = atom .
+string          = quote, { string_char | escape }, quote .
+escape          = backslash, ( quote | backslash | "n" | "r" | "t" ) .
+string_char     = ? any character except double quote, backslash, carriage return, or newline ? .
+atom            = atom_start, { atom_char } .
+atom_start      = ? any character except whitespace, \", (, ), ,, :, =, or ; ? .
+atom_char       = ? any character except whitespace, \", (, ), ,, :, or ; ? .
+newline         = ? line feed, carriage return, or carriage return followed by line feed ? .
+indent          = ? indentation token emitted when leading whitespace increases ? .
+dedent          = ? indentation token emitted when leading whitespace decreases ? .
+eof             = ? end of file ? .
+quote           = ? double quote character ? .
+backslash       = ? backslash character ? .
+comment         = ";", { ? any character except carriage return or newline ? } .
+#+end_src
 * Evaluation
+Crow evaluates parsed [[term-syntax-node][syntax nodes]] to [[term-value][runtime values]] in an [[term-env][environment]]. The environment is a chain of [[term-scope][scopes]]. [[term-lookup][Name lookup]] searches the current scope first, then each parent scope. A new [[term-evaluator][evaluator]] starts with the standard [[term-native-command][native commands]] installed, then evaluates =crow/prelude.nest= into the [[term-root-env][root environment]].
 
+The [[term-value][runtime value]] kinds are:
 
+| kind       | contents                                      |
+|------------+-----------------------------------------------|
+| nothing    | no payload                                    |
+| number     | 64-bit floating point number                  |
+| boolean    | true or false                                 |
+| text       | string                                        |
+| stream     | input or output stream marker                 |
+| list       | ordered values                                |
+| dictionary | text keys to values                           |
+| syntax     | syntax node plus the environment it came from |
+| command    | native command or closure command             |
+| native     | host-provided extension value                 |
+
+Only =nothing= and =false= are [[term-truthiness][falsey]]. Every other value is [[term-truthiness][truthy]].
+
+** Node Evaluation
+[[term-script][Scripts]] evaluate each [[term-statement][statement]] in order and return the value of the last statement. An empty script returns =nothing=.
+
+[[term-binding][Bindings]] do not assign by themselves. Evaluating a binding returns a =syntax= value containing that binding node and its [[term-env][environment]]. [[term-command][Commands]] such as =define= and ={ }= decide how to interpret binding syntax.
+
+[[term-symbol][Symbols]] are evaluated in this order:
+
+1. If the symbol parses as a number, it returns a number.
+2. =true= and =T= return =true=.
+3. =false= and =F= return =false=.
+4. Otherwise the symbol is looked up in the [[term-env][environment chain]].
+
+[[term-string][Strings]] evaluate to text.
+
+[[term-command][Commands]] evaluate through the [[term-call-protocol][command call protocol]]. Before resolving a command call, Crow has one shorthand rule: if a command has a symbol [[term-callee][callee]], no [[term-argument][arguments]], and no [[term-layout-body][layout body]], that symbol may evaluate directly to a literal or bound non-command value. This is why =x= reads a variable but =x 1= calls the command stored in =x=.
+
+For any other command call, Crow evaluates the [[term-callee][callee]] expression. The callee must produce a command value. The [[term-parser][parser]] stores continuation indentation as raw [[term-argument][arguments]] on the command node. This lets indentation group command arguments in the same places where parenthesized calls can be written, for example:
+
+#+begin_src nest
+print
+  +
+    1
+    2
+    3
+  "test"
+  T
+#+end_src
+
+This parses like =print (+ 1 2 3) "test" T=. Continuation argument lines may contain more than one argument item, so:
+
+#+begin_src nest
+world = +
+  1 2 3
+#+end_src
+
+parses like =world = (+ 1 2 3)=. A binding may also put its single value on the next indented line:
+
+#+begin_src nest
+abc =
+  -
+    1
+    9
+#+end_src
+
+When a colon follows an argument on the same line, Crow resolves the ambiguity lexically. Identifier-like argument symbols leave the colon for the outer command, so =if condition:= and =block-command name:= keep their existing block form. Operator-like argument symbols take the colon as their own command layout, so =print []:= parses as a call to =print= with one argument, the =[]= command with a colon body. Parenthesizing an operator-like symbol keeps the colon on the outer command, as in =block-command ([]):=.
+
+The raw [[term-argument][argument]] syntax, [[term-layout-kind][layout kind]], and colon [[term-layout-body][layout body]] syntax are then passed to that command. [[term-native-command][Native commands]] and [[term-closure][closures]] decide which arguments to evaluate.
+
+** Commands
+There are two [[term-command][command]] kinds.
+
+[[term-native-command][Native commands]] are host callbacks. They receive:
+
+| input       | meaning                                          |
+|-------------+--------------------------------------------------|
+| environment | the [[term-caller-env][caller environment]]                           |
+| arguments   | raw [[term-argument][argument]] syntax nodes                        |
+| layout      | [[term-layout-kind][=NoLayout=, =ColonLayout=, or =ContinuationLayout=]] |
+| body        | raw syntax nodes from the colon [[term-layout-body][layout body]]      |
+
+Native commands are responsible for [[term-arity][arity]] checks, type checks, [[term-argument][argument]] evaluation, and body evaluation. For example, =and= and =or= [[term-short-circuit][short-circuit]] because their native implementations choose when to evaluate arguments.
+
+[[term-closure][Closure commands]] are created by =command=, =block-command=, =fun=, =fn=, and =lambda=. A closure stores [[term-parameter][parameters]], body syntax, the environment [[term-capture][captured]] at definition time, and two flags:
+
+| flag                 | effect                                                   |
+|----------------------+----------------------------------------------------------|
+| evaluatesArguments   | parameters receive evaluated argument values             |
+| acceptsBlock         | calls may provide a layout body                          |
+
+When a closure is called, the argument count must exactly match the [[term-parameter][parameter]] count. If the call provides a body and the closure does not accept one, evaluation fails.
+
+For argument-evaluating closures, Crow creates the [[term-call-scope][call scope]] as a child of the closure's [[term-capture][captured environment]]. Each parameter is [[term-binding-value][bound]] to the evaluated argument value. This is the behavior of =fun=, =fn=, and =lambda=.
+
+For [[term-raw-syntax][raw-syntax]] closures, Crow creates the call scope as a child of the [[term-caller-env][caller environment]]. Each parameter is bound to a =syntax= value for the raw argument node paired with the caller environment. This is the behavior of =command= and =block-command=.
+
+Every closure call also binds:
+
+| name   | value                                               |
+|--------+-----------------------------------------------------|
+| block  | syntax value containing the call's body as a [[term-script][script]] |
+| layout | text form of the [[term-layout-kind][layout kind]]                        |
+
+The closure body evaluates in the [[term-call-scope][call scope]] and returns its last value.
+
+** Environments And Assignment
+=define= evaluates every [[term-binding][binding]] value in its body and defines that symbol in the current [[term-env][environment]]. It does not require the symbol to already exist, and it writes only to the current [[term-scope][scope]].
+
+=set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=. If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated. If =target= is not a symbol, Crow evaluates it as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
+
+Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is evaluated and the named symbol is updated. Unlike the lower-level environment setter, the public =set= command rejects unknown symbols.
+
+The arithmetic assignment commands =+==, =-==, =*==, and =/== require an existing numeric symbol and one numeric value. They update the existing symbol and return the new number.
+
+** Syntax Values
+[[term-syntax-value][Syntax values]] preserve both a [[term-syntax-node][syntax node]] and the [[term-env][environment]] where that syntax was [[term-capture][captured]]. This is what makes [[term-raw-syntax][raw-syntax]] commands and macros predictable.
+
+=eval= evaluates each [[term-argument][argument]]. If the evaluated value is syntax, Crow evaluates that syntax in its [[term-capture][captured environment]], falling back to the [[term-caller-env][caller environment]] when no captured environment is present. Non-syntax values pass through unchanged.
+
+=parse= evaluates its text argument, parses it, and returns syntax paired with the [[term-caller-env][caller environment]].
+
+The [[term-syntax-inspection][syntax inspection]] commands operate on syntax values:
+
+| command        | result                                                |
+|----------------+-------------------------------------------------------|
+| =statements=     | list of syntax values for a script's statements       |
+| =body-of=        | script syntax for the first command body matching tag |
+| =command-arg=    | syntax for a command argument by index                |
+| =command-symbol= | text callee name for symbol-callee commands           |
+| =command-body=   | script syntax for a command body                      |
+| =binding-symbol= | text name of a binding                                |
+| =binding-value=  | syntax for a binding value                            |
+| =eval-with=      | evaluates syntax in a child scope with one binding    |
+
+** Standard Control Flow
+=when= evaluates one condition. If it is truthy, the body evaluates in the current environment and its last value is returned. Otherwise =nothing= is returned.
+
+=while= evaluates one condition before each iteration. While it is truthy, the body evaluates in the current environment. The command returns the last body value, or =nothing= if the body never ran.
+
+=pick= evaluates the condition, then evaluates only the selected branch [[term-expr][expression]].
+
+=and= evaluates arguments left to right and returns the first [[term-truthiness][falsey]] value. With no arguments, it returns =true=.
+
+=or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value. With no arguments, it returns =false=.
+
+=if=, =cond=, list literal =[]=, dictionary literal ={ }=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =crow/prelude.nest= using [[term-raw-syntax][raw syntax]], =eval=, and [[term-syntax-inspection][syntax inspection]].
+
+** Data Commands
+Arithmetic commands =+=, =-=, =*=, and =/= require at least one argument. They evaluate all arguments as numbers and [[term-fold-left][fold left]].
+
+Comparison commands evaluate their two arguments:
+
+| command | comparison                                  |
+|---------+---------------------------------------------|
+| ~=~       | string rendering of left equals right       |
+| ~<~       | numeric left is less than right             |
+| ~<=~      | numeric left is less than or equal to right |
+| ~>~       | numeric left is greater than right          |
+| ~>=~      | numeric left is greater than or equal       |
+
+=list= creates an empty list. =cons value list= returns a new list with the evaluated value prepended to the evaluated list. =first= returns the first item of a non-empty list. =rest= returns a list without the first item, or an empty list for an empty input. =empty?= returns whether a list is empty.
+
+=dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-get= and =field= read a text key or fail if it is missing.
+
+** Streams And Resources
+=stdin= and =stdout= are dictionaries installed in the root environment. They expose command fields such as =read-line=, =write=, =write-line=, =open=, and =close=.
+
+=open-file= returns a file-backed stream dictionary. It accepts either a mode, or a path and mode. Supported modes are =r=, =rb=, =w=, =wb=, =a=, and =ab=.
+
+=open-string= returns a string-backed stream dictionary.
+
+=with resource name:= evaluates the resource, calls its optional =open= field, creates a child [[term-env][environment]] with =name= bound to the opened resource, evaluates the body there, then calls the resource's optional =close= field in a [[term-finally][=finally= step]]. If =open= or =close= returns =nothing=, the original resource remains the value used by =with=.
+
+Prelude helpers =read-line=, =readline=, =read=, =write=, and =write-line= call the corresponding command fields on explicit stream values.
+
+** Errors
+Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Crow adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
+
+* References
+<<term-argument>>Argument: one raw syntax node written after a command callee, for example =1= and =x= in =+ 1 x=.
+
+<<term-arity>>Arity: the number of arguments a command expects.
+
+<<term-binding>>Binding: syntax of the shape =name = value=. Evaluating a binding returns syntax; commands such as =define= decide whether it assigns.
+
+<<term-binding-value>>Bound: stored in an environment under a symbol name.
+
+<<term-block>>Block: an indented sequence of statements. In the AST, command blocks are stored as body syntax.
+
+<<term-callee>>Callee: the expression at the start of a command call. It must evaluate to a command unless the no-argument variable shorthand applies.
+
+<<term-call-protocol>>Command call protocol: the process of evaluating the callee, requiring a command value, then giving that command raw arguments, layout kind, and layout body syntax.
+
+<<term-call-scope>>Call scope: the child environment created for one closure invocation.
+
+<<term-caller-env>>Caller environment: the environment where a command call appears and begins evaluation.
+
+<<term-capture>>Captured environment: the environment saved with a closure or syntax value so it can be evaluated later with the same lexical context.
+
+<<term-closure>>Closure: a Crow command value implemented by Crow syntax. It stores parameters, body syntax, captured environment, and argument-evaluation flags.
+
+<<term-command>>Command: a callable value. Commands may be native host callbacks or Crow closures.
+
+<<term-diagnostic-frame>>Diagnostic frame: source location attached while an evaluation error unwinds, used to build a stack trace.
+
+<<term-env>>Environment: a scope plus an optional parent environment. Lookup walks this chain from child to parent.
+
+<<term-evaluator>>Evaluator: the object that owns the root environment and knows how to evaluate syntax nodes.
+
+<<term-expr>>Expression: syntax that produces a value when evaluated.
+
+<<term-finally>>Finally step: cleanup code that runs even if body evaluation fails. Crow uses this in =with= to close resources.
+
+<<term-fold-left>>Fold left: combine values from left to right. For example, =- 10 3 2= computes =(10 - 3) - 2=.
+
+<<term-indent>>Indentation: leading spaces or tabs at the start of a line. Crow converts indentation increases/decreases into block tokens.
+
+<<term-layout-body>>Layout body: the indented body attached to a command call by =:=. Continuation indentation is parsed into the command's argument list instead of its body.
+
+<<term-layout-kind>>Layout kind: how indentation was attached. =NoLayout= means no indentation, =ColonLayout= means a body followed =:=, and =ContinuationLayout= means arguments followed a newline without =:=.
+
+<<term-lexer>>Lexer: the parser stage that turns source text into tokens.
+
+<<term-lookup>>Name lookup: resolving a symbol by searching the current environment, then parent environments.
+
+<<term-native-command>>Native command: a command implemented by host code. It receives raw syntax and controls its own evaluation.
+
+<<term-parameter>>Parameter: a name declared by a closure and bound during a call.
+
+<<term-parser>>Parser: the stage that turns tokens into syntax nodes.
+
+<<term-raw-syntax>>Raw syntax: unevaluated syntax passed to a command as data.
+
+<<term-root-env>>Root environment: the top-level environment created by a new evaluator.
+
+<<term-scope>>Scope: one table of symbol bindings.
+
+<<term-script>>Script: a sequence of statements.
+
+<<term-short-circuit>>Short-circuit: stop evaluating operands once the result is already known. =and= stops at the first falsey value; =or= stops at the first truthy value.
+
+<<term-source-context>>Source context: file, line, column, and source preview information attached to errors.
+
+<<term-stack-trace>>Stack trace: the ordered list of diagnostic frames showing how evaluation reached an error.
+
+<<term-statement>>Statement: one top-level or block-level form, optionally followed by comma-separated forms or a layout body.
+
+<<term-string>>String: quoted text syntax. String escapes are defined in the EBNF.
+
+<<term-symbol>>Symbol: an atom used as a name, literal keyword, command callee, or argument.
+
+<<term-syntax-inspection>>Syntax inspection: commands that read syntax values as data, such as =statements=, =command-arg=, and =binding-value=.
+
+<<term-syntax-node>>Syntax node: parsed AST data. Crow node kinds are script, binding, command, symbol, and string.
+
+<<term-syntax-value>>Syntax value: a runtime value containing a syntax node and the environment it came from.
+
+<<term-truthiness>>Truthiness: how a value behaves in conditions. Only =nothing= and =false= are falsey; all other values are truthy.
+
+<<term-value>>Runtime value: data produced by evaluation, such as a number, text, list, dictionary, syntax value, or command.
