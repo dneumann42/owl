@@ -75,7 +75,25 @@ proc set*(env: Environment, symbol: string, value: Value) {.raises: [].} =
 proc eval*(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
   if env.evaluator == nil:
     raise newException(EvaluatorError, "environment has no evaluator")
-  env.evaluator(env, node)
+  try:
+    env.evaluator(env, node)
+  except EvaluatorError as error:
+    if not node.isNil:
+      let label =
+        case node.kind
+        of Command:
+          $node.callee
+        of Binding:
+          node.bindingSymbol
+        of Symbol:
+          node.symbol
+        of String:
+          "string"
+        of Script:
+          ""
+      if node.kind != Script:
+        error.addFrame(node.pos, label)
+    raise error
 
 proc evalBlock*(
     env: Environment, body: seq[SyntaxNode]

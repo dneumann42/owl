@@ -11,8 +11,10 @@ proc start() =
 
   var evaluator = Evaluator.init()
   try:
-    let ast = parse content
+    let ast = parse(content, if cmds[0] == "run": cmds[1] else: "scripts/repl.nest")
     discard evaluator.exec(ast)
+  except CrowError as error:
+    quit report(error, useColor = true), 1
   except CatchableError as error:
     quit error.msg, 1
 

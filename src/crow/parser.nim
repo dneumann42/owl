@@ -4,7 +4,7 @@ import syntax
 export syntax
 
 type
-  ParserError* = object of CatchableError
+  ParserError* = object of CrowError
 
   TokenKind = enum
     Eof
@@ -28,9 +28,12 @@ type
   Parser = object
     tokens: seq[Token]
     pos: int
+    source: SourceID
 
-proc fail(message: string, line, column: int) {.raises: [ParserError].} =
-  raise newException(ParserError, &"{line}:{column}: {message}")
+proc fail(message: string, source: SourceID, line, column: int) {.raises: [ParserError].} =
+  let error = newException(ParserError, message)
+  error.primary = sourcePos(source, line, column)
+  raise error
 
 proc isSpace(c: char): bool {.raises: [].} =
   c in {' ', '\t', '\r', '\n'}
@@ -46,7 +49,7 @@ proc add(
 ) {.raises: [].} =
   tokens.add Token(kind: kind, lexeme: lexeme, line: line, column: column)
 
-proc tokenize*(source: string): seq[Token] {.raises: [ParserError].} =
+proc tokenize*(source: string; sourceId = NoSource): seq[Token] {.raises: [ParserError].} =
   var
     tokens: seq[Token]
     indents = @[0]
@@ -71,7 +74,7 @@ proc tokenize*(source: string): seq[Token] {.raises: [ParserError].} =
           discard indents.pop()
           tokens.add(Dedent, "", line, 1)
         if pendingIndent != indents[^1]:
-          fail("inconsistent indentation", line, 1)
+          fail("inconsistent indentation", sourceId, line, 1)
       atLineStart = false
 
   while i < source.len:
@@ -133,11 +136,11 @@ proc tokenize*(source: string): seq[Token] {.raises: [ParserError].} =
       var value = ""
       while i < source.len and source[i] != '"':
         if source[i] in {'\r', '\n'}:
-          fail("unterminated string", startLine, startColumn)
+          fail("unterminated string", sourceId, startLine, startColumn)
         if source[i] == '\\':
           advance()
           if i >= source.len:
-            fail("unterminated string escape", startLine, startColumn)
+            fail("unterminated string escape", sourceId, startLine, startColumn)
           case source[i]
           of '"':
             value.add '"'
@@ -150,18 +153,18 @@ proc tokenize*(source: string): seq[Token] {.raises: [ParserError].} =
           of 't':
             value.add '\t'
           else:
-            fail("invalid string escape", line, column)
+            fail("invalid string escape", sourceId, line, column)
           advance()
         else:
           value.add source[i]
           advance()
       if i >= source.len:
-        fail("unterminated string", startLine, startColumn)
+        fail("unterminated string", sourceId, startLine, startColumn)
       advance()
       tokens.add(StringLit, value, startLine, startColumn)
     else:
       if not isAtomStartChar(c):
-        fail(&"unexpected character {c}", line, column)
+        fail(&"unexpected character {c}", sourceId, line, column)
       let start = i
       let startColumn = column
       while i < source.len and isAtomPartChar(source[i]):
@@ -189,12 +192,15 @@ proc take(parser: var Parser): Token {.raises: [].} =
   result = parser.tokens[parser.pos]
   inc parser.pos
 
+proc pos(parser: Parser, token: Token): SourcePos {.raises: [].} =
+  sourcePos(parser.source, token.line, token.column)
+
 proc expect(
     parser: var Parser, kind: TokenKind, message: string
 ): Token {.raises: [ParserError].} =
   if not parser.at(kind):
     let token = parser.peek
-    fail(message, token.line, token.column)
+    fail(message, parser.source, token.line, token.column)
   parser.take()
 
 proc parseStatementList(
@@ -220,7 +226,7 @@ proc parseLayoutTail(
 
 proc parseSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let token = parser.expect(Atom, "expected symbol")
-  symbol(token.lexeme)
+  symbol(token.lexeme, parser.pos(token))
 
 proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   discard parser.expect(LParen, "expected '('")
@@ -229,7 +235,7 @@ proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} 
     let tail = parser.parseLayoutTail()
     if not result.attachLayout(tail.kind, tail.body):
       let token = parser.peek
-      fail("layout can only be attached to a command", token.line, token.column)
+      fail("layout can only be attached to a command", parser.source, token.line, token.column)
   discard parser.expect(RParen, "expected ')'")
 
 proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
@@ -238,12 +244,12 @@ proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     result = parser.parseSymbol()
   of Equal:
     discard parser.take()
-    result = symbol("=")
+    result = symbol("=", parser.pos(parser.peek(-1)))
   of LParen:
     result = parser.parseGroupedForm()
   else:
     let token = parser.peek
-    fail("expected command callee", token.line, token.column)
+    fail("expected command callee", parser.source, token.line, token.column)
 
 proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
@@ -251,12 +257,12 @@ proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     result = parser.parseSymbol()
   of StringLit:
     let token = parser.take()
-    result = stringLiteral(token.lexeme)
+    result = stringLiteral(token.lexeme, parser.pos(token))
   of LParen:
     result = parser.parseGroupedForm()
   else:
     let token = parser.peek
-    fail("expected argument", token.line, token.column)
+    fail("expected argument", parser.source, token.line, token.column)
 
 proc startsArgument(kind: TokenKind): bool {.raises: [].} =
   kind in {Atom, StringLit, LParen}
@@ -269,12 +275,12 @@ proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if callee.kind == Command and arguments.len == 0:
     result = callee
   else:
-    result = command(callee, arguments)
+    result = command(callee, arguments, callee.pos)
 
 proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if parser.at(StringLit):
     let token = parser.take()
-    result = stringLiteral(token.lexeme)
+    result = stringLiteral(token.lexeme, parser.pos(token))
   else:
     result = parser.parseCommand()
 
@@ -282,7 +288,7 @@ proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if parser.at(Atom) and parser.peek(1).kind == Equal:
     let bindingToken = parser.take()
     discard parser.take()
-    result = binding(bindingToken.lexeme, parser.parseExpression())
+    result = binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
   else:
     result = parser.parseExpression()
 
@@ -292,7 +298,7 @@ proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError]
     let tail = parser.parseLayoutTail()
     if not first.attachLayout(tail.kind, tail.body):
       let token = parser.peek
-      fail("layout can only be attached to a command", token.line, token.column)
+      fail("layout can only be attached to a command", parser.source, token.line, token.column)
     result.add first
     return
 
@@ -311,8 +317,14 @@ proc parseStatementList(
     else:
       result.add parser.parseStatement()
 
-proc parse*(source: string): SyntaxNode {.raises: [ParserError].} =
-  var parser = Parser(tokens: tokenize(source), pos: 0)
+proc parse*(source: string; path = "<input>"): SyntaxNode {.raises: [ParserError].} =
+  let sourceId = registerSource(source, path)
+  var parser = Parser(tokens: tokenize(source, sourceId), pos: 0, source: sourceId)
   let statements = parser.parseStatementList({Eof})
   discard parser.expect(Eof, "expected end of file")
-  script(statements)
+  let scriptPos =
+    if statements.len > 0:
+      statements[0].pos
+    else:
+      sourcePos(sourceId, 1, 1)
+  script(statements, scriptPos)

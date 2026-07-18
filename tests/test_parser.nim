@@ -1,4 +1,4 @@
-import std/unittest
+import std/[strutils, unittest]
 
 import crow/parser
 import crow/syntax
@@ -182,6 +182,16 @@ config = {}:
       discard parse("x,\n")
     expect ParserError:
       discard parse("x:\ny\n")
+
+  test "reports source path, line, column, and preview":
+    try:
+      discard parse("define:\n  x = \"\\x\"\n", "/tmp/bad.nest")
+      fail()
+    except ParserError as error:
+      let output = report(error)
+      check output.contains("/tmp/bad.nest:2:9: error: invalid string escape")
+      check output.contains("  x = \"\\x\"")
+      check output.contains("^")
 
 suite "formatter":
   test "formats simple statements and escapes strings":

@@ -15,7 +15,7 @@ type
     Command
     Native
 
-  EvaluatorError* = object of CatchableError
+  EvaluatorError* = object of CrowError
 
   NativeValue* = ref object of RootObj
 

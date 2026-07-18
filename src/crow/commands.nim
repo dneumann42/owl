@@ -233,7 +233,10 @@ proc parseCommand(
   try:
     syntaxValue(parse(env.eval(arguments[0]).requireText()), env)
   except ParserError as error:
-    raise newException(EvaluatorError, error.msg)
+    let converted = newException(EvaluatorError, error.msg)
+    converted.primary = error.primary
+    converted.frames = error.frames
+    raise converted
 
 proc valueOfCommand(
     env: Environment,

@@ -1,4 +1,25 @@
+import std/[strformat, strutils]
+
 type
+  SourceID* = uint32
+
+  SourcePos* = object
+    source*: SourceID
+    line*: uint32
+    column*: uint16
+
+  SourceInfo* = object
+    path*: string
+    lines*: seq[string]
+
+  DiagnosticFrame* = object
+    pos*: SourcePos
+    label*: string
+
+  CrowError* = object of CatchableError
+    primary*: SourcePos
+    frames*: seq[DiagnosticFrame]
+
   SyntaxKind* = enum
     Script
     Binding
@@ -12,6 +33,7 @@ type
     ContinuationLayout
 
   SyntaxNode* = ref object
+    pos*: SourcePos
     case kind*: SyntaxKind
     of Script:
       statements*: seq[SyntaxNode]
@@ -28,24 +50,121 @@ type
     of String:
       stringValue*: string
 
-proc script*(statements: sink seq[SyntaxNode]): SyntaxNode {.raises: [].} =
-  SyntaxNode(kind: Script, statements: statements)
+const
+  NoSource* = SourceID(0)
+  Red* = "\e[31m"
+  BoldRed* = "\e[1;31m"
+  Reset* = "\e[0m"
 
-proc binding*(symbol: sink string, value: SyntaxNode): SyntaxNode {.raises: [].} =
-  SyntaxNode(kind: Binding, bindingSymbol: symbol, value: value)
+var sourceRegistry: seq[SourceInfo]
+
+proc noSourcePos*(): SourcePos {.raises: [].} =
+  SourcePos(source: NoSource, line: 0, column: 0)
+
+proc sourcePos*(source: SourceID, line, column: int): SourcePos {.raises: [].} =
+  SourcePos(source: source, line: uint32(line), column: uint16(min(column, high(uint16).int)))
+
+proc hasSource*(pos: SourcePos): bool {.raises: [].} =
+  pos.source != NoSource and pos.line > 0 and pos.column > 0
+
+proc registerSource*(source: string; path = "<input>"): SourceID {.raises: [].} =
+  sourceRegistry.add SourceInfo(path: path, lines: source.splitLines)
+  SourceID(sourceRegistry.len)
+
+proc sourceInfo*(id: SourceID): SourceInfo {.raises: [].} =
+  if id == NoSource or id.int > sourceRegistry.len:
+    SourceInfo(path: "<unknown>", lines: @[])
+  else:
+    sourceRegistry[id.int - 1]
+
+proc sourcePath*(pos: SourcePos): string {.raises: [].} =
+  sourceInfo(pos.source).path
+
+proc sourceLine*(pos: SourcePos): string {.raises: [].} =
+  let info = sourceInfo(pos.source)
+  if pos.line == 0 or pos.line.int > info.lines.len:
+    ""
+  else:
+    info.lines[pos.line.int - 1]
+
+proc script*(statements: sink seq[SyntaxNode], pos = noSourcePos()): SyntaxNode {.raises: [].} =
+  SyntaxNode(kind: Script, pos: pos, statements: statements)
+
+proc binding*(symbol: sink string, value: SyntaxNode, pos = noSourcePos()): SyntaxNode {.raises: [].} =
+  SyntaxNode(kind: Binding, pos: pos, bindingSymbol: symbol, value: value)
 
 proc command*(
-    callee: SyntaxNode, arguments: sink seq[SyntaxNode]
+    callee: SyntaxNode, arguments: sink seq[SyntaxNode], pos = noSourcePos()
 ): SyntaxNode {.raises: [].} =
   SyntaxNode(
-    kind: Command, callee: callee, arguments: arguments, layout: NoLayout, body: @[]
+    kind: Command, pos: pos, callee: callee, arguments: arguments, layout: NoLayout, body: @[]
   )
 
-proc symbol*(value: sink string): SyntaxNode {.raises: [].} =
-  SyntaxNode(kind: Symbol, symbol: value)
+proc symbol*(value: sink string, pos = noSourcePos()): SyntaxNode {.raises: [].} =
+  SyntaxNode(kind: Symbol, pos: pos, symbol: value)
 
-proc stringLiteral*(value: sink string): SyntaxNode {.raises: [].} =
-  SyntaxNode(kind: String, stringValue: value)
+proc stringLiteral*(value: sink string, pos = noSourcePos()): SyntaxNode {.raises: [].} =
+  SyntaxNode(kind: String, pos: pos, stringValue: value)
+
+proc loc*(pos: SourcePos): string {.raises: [].} =
+  if pos.hasSource:
+    &"{pos.sourcePath}:{pos.line}:{pos.column}"
+  else:
+    "<unknown>:0:0"
+
+proc underline(column, width: int): string {.raises: [].} =
+  repeat(' ', max(column - 1, 0)) & repeat('^', max(width, 1))
+
+proc addLocationPreview(target: var string, pos: SourcePos, useColor: bool) {.raises: [].} =
+  if not pos.hasSource:
+    return
+  let line = pos.sourceLine
+  if line.len == 0:
+    return
+  target.add "  "
+  target.add line
+  target.add '\n'
+  target.add "  "
+  let marks = underline(pos.column.int, 1)
+  if useColor:
+    target.add BoldRed
+    target.add marks
+    target.add Reset
+  else:
+    target.add marks
+  target.add '\n'
+
+proc addFrame*(error: ref CrowError, pos: SourcePos, label: string) {.raises: [].} =
+  if not pos.hasSource:
+    return
+  if error.primary.hasSource:
+    if error.frames.len > 0 and error.frames[^1].pos == pos and error.frames[^1].label == label:
+      return
+    error.frames.add DiagnosticFrame(pos: pos, label: label)
+  else:
+    error.primary = pos
+
+proc report*(error: ref CrowError, useColor = false): string {.raises: [].} =
+  let message =
+    if useColor:
+      BoldRed & "error: " & Reset & error.msg
+    else:
+      "error: " & error.msg
+  if error.primary.hasSource:
+    result.add &"{error.primary.loc}: {message}\n"
+    result.addLocationPreview(error.primary, useColor)
+  else:
+    result.add message
+    result.add '\n'
+
+  if error.frames.len > 0:
+    result.add "Stack trace:\n"
+    for frame in countdown(error.frames.high, 0):
+      let item = error.frames[frame]
+      result.add &"  at {item.pos.loc}"
+      if item.label.len > 0:
+        result.add &" in {item.label}"
+      result.add '\n'
 
 proc attachLayout*(
     node: SyntaxNode, layout: LayoutKind, body: sink seq[SyntaxNode]

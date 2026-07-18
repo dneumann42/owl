@@ -1,4 +1,4 @@
-import std/[tables, unittest]
+import std/[strutils, tables, unittest]
 
 import crow
 import crow/evaluator
@@ -166,6 +166,22 @@ not (= 1 2)
   test "error raises evaluator errors":
     expect EvaluatorError:
       discard run("error \"boom\"\n")
+
+  test "evaluator errors include source preview and stack trace":
+    var evaluator = Evaluator.init()
+    try:
+      discard evaluator.exec(parse("""
+fun explode:
+  error "boom"
+explode
+""", "/tmp/stack.nest"))
+      fail()
+    except EvaluatorError as error:
+      let output = report(error)
+      check output.contains("/tmp/stack.nest:2:3: error: boom")
+      check output.contains("  error \"boom\"")
+      check output.contains("Stack trace:")
+      check output.contains("/tmp/stack.nest:3:1 in explode")
 
   test "parse returns syntax evaluated in the caller environment":
     let value = run("""
