@@ -10,3 +10,4 @@ define:
 print point
 
 print (Vec3? point)
+

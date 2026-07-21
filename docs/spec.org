@@ -222,7 +222,7 @@ Comparison commands evaluate their two arguments:
 | ~>~       | numeric left is greater than right          |
 | ~>=~      | numeric left is greater than or equal       |
 
-=list= creates an empty list. =cons value list= returns a new list with the evaluated value prepended to the evaluated list. =first= returns the first item of a non-empty list. =rest= returns a list without the first item, or an empty list for an empty input. =empty?= returns whether a list is empty.
+=list= creates an empty list. =cons value list= returns a new list with the evaluated value prepended to the evaluated list. =first= returns the first item of a non-empty list. =rest= returns a list without the first item, or an empty list for an empty input. =empty?= returns whether a list is empty. =length= returns the size of a list, dictionary, or text value.
 
 =dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key.
 
@@ -281,7 +281,6 @@ print (Vec3? my-point)
 ; set xs.[0] 20
 ; set ys.["hello"] "world"
 #+end_src
-
 
 * References
 <<term-argument>>Argument: one raw syntax node written after a command callee, for example =1= and =x= in =+ 1 x=.

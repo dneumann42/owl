@@ -1,4 +1,4 @@
-import std/[strutils, tables, unittest]
+import std/[os, strutils, tables, unittest]
 
 import crow
 import crow/evaluator
@@ -163,6 +163,24 @@ nth values 1
     check value.kind == Text
     check value.text == "b"
 
+  test "length returns list dictionary and string sizes":
+    let value = run("""
+define:
+  values = []:
+    1
+    2
+    3
+  config = {}:
+    name = "crow"
+    answer = 42
++ (length values) (length config) (length "crow")
+""")
+    check value.kind == Number
+    check value.number == 9
+
+    expect EvaluatorError:
+      discard run("length 42\n")
+
   test "assert raises when condition is false":
     discard run("assert (= 1 1)\n")
     expect EvaluatorError:
@@ -229,6 +247,43 @@ eval (parse "+ x 2")
 """)
     check value.kind == Number
     check value.number == 42
+
+  test "import evaluates another source file in the caller environment":
+    let dir = getTempDir() / "crow-import-test"
+    createDir(dir)
+    writeFile(dir / "defs.nest", """
+define:
+  imported = 40
+""")
+
+    var evaluator = Evaluator.init()
+    let value = evaluator.exec(parse("""
+import "defs.nest"
++ imported 2
+""", dir / "main.nest"))
+    check value.kind == Number
+    check value.number == 42
+
+  test "use evaluates another source file as a module dictionary":
+    let dir = getTempDir() / "crow-use-test"
+    createDir(dir)
+    writeFile(dir / "mathish.nest", """
+define:
+  imported = 40
+fun inc n:
+  + n 1
+""")
+
+    var evaluator = Evaluator.init()
+    let value = evaluator.exec(parse("""
+use "mathish.nest" mathish
+mathish.inc mathish.imported
+""", dir / "main.nest"))
+    check value.kind == Number
+    check value.number == 41
+
+    expect EvaluatorError:
+      discard evaluator.exec(parse("imported\n"))
 
   test "command defines closures that receive raw syntax":
     let value = run("""

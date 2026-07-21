@@ -1,4 +1,4 @@
-import std/[macros, os, rdstdin, strformat, strutils, tables]
+import std/[macros, os, rdstdin, strformat, strutils, tables, math]
 
 import environment
 import parser
@@ -27,8 +27,8 @@ proc requireSymbol(
   of Symbol:
     node.symbol
   of Command:
-    if node.callee.kind == Symbol and node.arguments.len == 0 and
-        node.layout == NoLayout and node.body.len == 0:
+    if node.callee.kind == Symbol and node.arguments.len == 0 and node.layout == NoLayout and
+        node.body.len == 0:
       node.callee.symbol
     else:
       raise newException(EvaluatorError, &"expected {role} to be a symbol")
@@ -55,7 +55,9 @@ proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, &"expected list, got {value}")
   value.items
 
-proc requireDictionary(value: Value): Table[string, Value] {.raises: [EvaluatorError].} =
+proc requireDictionary(
+    value: Value
+): Table[string, Value] {.raises: [EvaluatorError].} =
   if value.kind != Dictionary:
     raise newException(EvaluatorError, &"expected dictionary, got {value}")
   value.entries
@@ -64,6 +66,47 @@ proc requireText(value: Value): string {.raises: [EvaluatorError].} =
   if value.kind != Text:
     raise newException(EvaluatorError, &"expected text, got {value}")
   value.text
+
+proc resolveSourcePath(
+    path: string, pos: SourcePos
+): string {.raises: [EvaluatorError].} =
+  if path.isAbsolute:
+    return path.normalizedPath
+  let base =
+    try:
+      if pos.hasSource:
+        pos.sourcePath.parentDir
+      else:
+        getCurrentDir()
+    except OSError as error:
+      raise newException(EvaluatorError, error.msg)
+  (base / path).normalizedPath
+
+proc loadSourceFile(
+    path: string, pos: SourcePos
+): SyntaxNode {.raises: [EvaluatorError].} =
+  let resolved = resolveSourcePath(path, pos)
+  try:
+    parse(readFile(resolved), resolved)
+  except IOError as error:
+    raise newException(EvaluatorError, resolved & ": " & error.msg)
+  except OSError as error:
+    raise newException(EvaluatorError, resolved & ": " & error.msg)
+  except ParserError as error:
+    let converted = newException(EvaluatorError, error.msg)
+    converted.primary = error.primary
+    converted.frames = error.frames
+    raise converted
+
+proc moduleName(path: string): string {.raises: [].} =
+  let name = splitFile(path).name
+  if name.len > 0: name else: path
+
+proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
+  var entries = initTable[string, Value]()
+  for key, value in moduleEnv.bindings.pairs:
+    entries[key] = value
+  dictionary(entries)
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
   if value.kind != Record:
@@ -102,9 +145,12 @@ proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
   of Dictionary, Record:
     value.field(key.requireText())
   else:
-    raise newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
+    raise
+      newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
 
-proc setFieldValue(value: Value, name: string, entry: Value): Value {.raises: [EvaluatorError].} =
+proc setFieldValue(
+    value: Value, name: string, entry: Value
+): Value {.raises: [EvaluatorError].} =
   case value.kind
   of Dictionary:
     result = value
@@ -128,7 +174,8 @@ proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].}
   of Dictionary, Record:
     result = value.setFieldValue(key.requireText(), entry)
   else:
-    raise newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
+    raise
+      newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
 
 proc optionalField(value: Value, name: string): Value {.raises: [].} =
   if value.kind == Dictionary and value.entries.hasKey(name):
@@ -139,9 +186,7 @@ proc optionalField(value: Value, name: string): Value {.raises: [].} =
     nothing()
 
 proc callOptionalField(
-    env: Environment,
-    receiver: Value,
-    name: string,
+    env: Environment, receiver: Value, name: string
 ): Value {.raises: [EvaluatorError].} =
   let fieldValue = receiver.optionalField(name)
   if fieldValue.kind == Nothing:
@@ -149,10 +194,7 @@ proc callOptionalField(
   if fieldValue.kind != Command:
     raise newException(EvaluatorError, &"field is not a command: {name}")
   let value = env.call(fieldValue.command)
-  if value.kind == Nothing:
-    receiver
-  else:
-    value
+  if value.kind == Nothing: receiver else: value
 
 proc defineClosure(
     env: Environment,
@@ -299,6 +341,47 @@ proc defineValueCommand(
   let targetEnv = if env.parent == nil: env else: env.parent
   targetEnv.define(name, result)
 
+proc importCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "import", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "import expects one path")
+  let node = loadSourceFile(env.eval(arguments[0]).requireText(), arguments[0].pos)
+  env.evalBlock(node.statements)
+
+proc useCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "use", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len < 1 or arguments.len > 2:
+    raise newException(EvaluatorError, "use expects path and optional module name")
+
+  let
+    path = env.eval(arguments[0]).requireText()
+    node = loadSourceFile(path, arguments[0].pos)
+    name =
+      if arguments.len == 2:
+        if arguments[1].kind == String:
+          env.eval(arguments[1]).requireText()
+        else:
+          arguments[1].requireSymbol("module name")
+      else:
+        moduleName(path)
+    moduleEnv = env.child()
+
+  discard moduleEnv.evalBlock(node.statements)
+  result = moduleDictionary(moduleEnv)
+  env.define(name, result)
+
 proc symbolTextCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -339,7 +422,9 @@ proc recordConstructorCommand(
   discard layout
   discard body
   if arguments.len != 3:
-    raise newException(EvaluatorError, "record-constructor expects name, fields, and defaults")
+    raise newException(
+      EvaluatorError, "record-constructor expects name, fields, and defaults"
+    )
 
   let recordName = env.eval(arguments[0]).requireText()
 
@@ -362,36 +447,40 @@ proc recordConstructorCommand(
   let typeName = recordName
   let fieldOrder = fields
   let defaultValues = defaults
-  nativeCommand(proc(
-      callEnv: Environment,
-      callArguments: seq[SyntaxNode],
-      callLayout: LayoutKind,
-      callBody: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard callLayout
-    if callArguments.len > fieldOrder.len:
-      raise newException(EvaluatorError, "record got too many arguments")
+  nativeCommand(
+    proc(
+        callEnv: Environment,
+        callArguments: seq[SyntaxNode],
+        callLayout: LayoutKind,
+        callBody: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard callLayout
+      if callArguments.len > fieldOrder.len:
+        raise newException(EvaluatorError, "record got too many arguments")
 
-    var entries = initTable[string, Value]()
-    for index, field in fieldOrder:
-      entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(defaultValues[index].syntax)
+      var entries = initTable[string, Value]()
+      for index, field in fieldOrder:
+        entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(
+            defaultValues[index].syntax
+          )
 
-    for index, argument in callArguments:
-      entries[fieldOrder[index]] = callEnv.eval(argument)
+      for index, argument in callArguments:
+        entries[fieldOrder[index]] = callEnv.eval(argument)
 
-    var seenOverrides: seq[string]
-    for node in callBody:
-      if node.kind != Binding:
-        raise newException(EvaluatorError, "record overrides must be bindings")
-      if not fieldOrder.containsField(node.bindingSymbol):
-        raise newException(EvaluatorError, &"unknown record field: {node.bindingSymbol}")
-      for seen in seenOverrides:
-        if seen == node.bindingSymbol:
-          raise newException(EvaluatorError, &"duplicate record override: {seen}")
-      seenOverrides.add node.bindingSymbol
-      entries[node.bindingSymbol] = callEnv.eval(node.value)
+      var seenOverrides: seq[string]
+      for node in callBody:
+        if node.kind != Binding:
+          raise newException(EvaluatorError, "record overrides must be bindings")
+        if not fieldOrder.containsField(node.bindingSymbol):
+          raise
+            newException(EvaluatorError, &"unknown record field: {node.bindingSymbol}")
+        for seen in seenOverrides:
+          if seen == node.bindingSymbol:
+            raise newException(EvaluatorError, &"duplicate record override: {seen}")
+        seenOverrides.add node.bindingSymbol
+        entries[node.bindingSymbol] = callEnv.eval(node.value)
 
-    record(typeName, entries, fieldOrder)
+      record(typeName, entries, fieldOrder)
   )
 
 proc recordPredicateCommand(
@@ -405,18 +494,19 @@ proc recordPredicateCommand(
   if arguments.len != 1:
     raise newException(EvaluatorError, "record-predicate expects name")
   let typeName = env.eval(arguments[0]).requireText()
-  nativeCommand(proc(
-      callEnv: Environment,
-      callArguments: seq[SyntaxNode],
-      callLayout: LayoutKind,
-      callBody: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard callLayout
-    discard callBody
-    if callArguments.len != 1:
-      raise newException(EvaluatorError, "record predicate expects one value")
-    let value = callEnv.eval(callArguments[0])
-    boolean(value.kind == Record and value.recordName == typeName)
+  nativeCommand(
+    proc(
+        callEnv: Environment,
+        callArguments: seq[SyntaxNode],
+        callLayout: LayoutKind,
+        callBody: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard callLayout
+      discard callBody
+      if callArguments.len != 1:
+        raise newException(EvaluatorError, "record predicate expects one value")
+      let value = callEnv.eval(callArguments[0])
+      boolean(value.kind == Record and value.recordName == typeName)
   )
 
 proc setCommand(
@@ -533,114 +623,121 @@ proc errorCommand(
 
 proc stdinStream(): Value {.raises: [].} =
   var entries = initTable[string, Value]()
-  entries["read-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "stdin read-line expects no arguments")
-    var line: string
-    if readLineFromStdin("", line):
-      text(line)
-    else:
+  entries["read-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdin read-line expects no arguments")
+      var line: string
+      if readLineFromStdin("", line):
+        text(line)
+      else:
+        nothing()
+  )
+  entries["open"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdin open expects no arguments")
       nothing()
   )
-  entries["open"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "stdin open expects no arguments")
-    nothing()
-  )
-  entries["close"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "stdin close expects no arguments")
-    nothing()
+  entries["close"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdin close expects no arguments")
+      nothing()
   )
   dictionary(entries)
 
 proc stdoutStream(): Value {.raises: [].} =
   var entries = initTable[string, Value]()
-  entries["write"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
+  entries["write"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        try:
+          stdout.write($result)
+        except IOError as error:
+          raise newException(EvaluatorError, error.msg)
+  )
+  entries["write-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        try:
+          stdout.write($result)
+        except IOError as error:
+          raise newException(EvaluatorError, error.msg)
       try:
-        stdout.write($result)
+        stdout.write("\n")
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
   )
-  entries["write-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
-      try:
-        stdout.write($result)
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-    try:
-      stdout.write("\n")
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
+  entries["open"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdout open expects no arguments")
+      nothing()
   )
-  entries["open"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "stdout open expects no arguments")
-    nothing()
-  )
-  entries["close"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "stdout close expects no arguments")
-    nothing()
+  entries["close"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdout close expects no arguments")
+      nothing()
   )
   dictionary(entries)
 
@@ -660,101 +757,106 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
   var file: File
   var opened = false
 
-  entries["open"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "file open expects no arguments")
-    if not opened:
+  entries["open"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "file open expects no arguments")
+      if not opened:
+        try:
+          if not open(file, path, fileMode(mode)):
+            raise newException(EvaluatorError, &"could not open file: {path}")
+          opened = true
+        except IOError as error:
+          raise newException(EvaluatorError, error.msg)
+      nothing()
+  )
+  entries["close"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "file close expects no arguments")
+      if opened:
+        close(file)
+        opened = false
+      nothing()
+  )
+  entries["read-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "file read-line expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "file is not open")
       try:
-        if not open(file, path, fileMode(mode)):
-          raise newException(EvaluatorError, &"could not open file: {path}")
-        opened = true
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-    nothing()
-  )
-  entries["close"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "file close expects no arguments")
-    if opened:
-      close(file)
-      opened = false
-    nothing()
-  )
-  entries["read-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "file read-line expects no arguments")
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
-    try:
-      if file.endOfFile:
-        return nothing()
-      text(file.readLine())
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  )
-  entries["write"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
-      try:
-        file.write($result)
+        if file.endOfFile:
+          return nothing()
+        text(file.readLine())
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
   )
-  entries["write-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
+  entries["write"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      if not opened:
+        raise newException(EvaluatorError, "file is not open")
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        try:
+          file.write($result)
+        except IOError as error:
+          raise newException(EvaluatorError, error.msg)
+  )
+  entries["write-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      if not opened:
+        raise newException(EvaluatorError, "file is not open")
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        try:
+          file.write($result)
+        except IOError as error:
+          raise newException(EvaluatorError, error.msg)
       try:
-        file.write($result)
+        file.write("\n")
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
-    try:
-      file.write("\n")
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
   )
   dictionary(entries)
 
@@ -764,87 +866,92 @@ proc openStringStream(content: string): Value {.raises: [].} =
   var position = 0
   var opened = false
 
-  entries["open"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "string open expects no arguments")
-    position = 0
-    opened = true
-    nothing()
+  entries["open"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "string open expects no arguments")
+      position = 0
+      opened = true
+      nothing()
   )
-  entries["close"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "string close expects no arguments")
-    opened = false
-    nothing()
+  entries["close"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "string close expects no arguments")
+      opened = false
+      nothing()
   )
-  entries["read-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard env
-    discard layout
-    discard body
-    if arguments.len != 0:
-      raise newException(EvaluatorError, "string read-line expects no arguments")
-    if not opened:
-      raise newException(EvaluatorError, "string stream is not open")
-    if position >= buffer.len:
-      return nothing()
-    let start = position
-    while position < buffer.len and buffer[position] notin {'\n', '\r'}:
-      inc position
-    result = text(buffer[start ..< position])
-    if position < buffer.len and buffer[position] == '\r':
-      inc position
-      if position < buffer.len and buffer[position] == '\n':
+  entries["read-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "string read-line expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "string stream is not open")
+      if position >= buffer.len:
+        return nothing()
+      let start = position
+      while position < buffer.len and buffer[position] notin {'\n', '\r'}:
         inc position
-    elif position < buffer.len and buffer[position] == '\n':
-      inc position
+      result = text(buffer[start ..< position])
+      if position < buffer.len and buffer[position] == '\r':
+        inc position
+        if position < buffer.len and buffer[position] == '\n':
+          inc position
+      elif position < buffer.len and buffer[position] == '\n':
+        inc position
   )
-  entries["write"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
-      buffer.add $result
+  entries["write"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        buffer.add $result
   )
-  entries["write-line"] = nativeCommand(proc(
-      env: Environment,
-      arguments: seq[SyntaxNode],
-      layout: LayoutKind,
-      body: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    discard layout
-    discard body
-    result = nothing()
-    for argument in arguments:
-      result = env.eval(argument)
-      buffer.add $result
-    buffer.add "\n"
+  entries["write-line"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard layout
+      discard body
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        buffer.add $result
+      buffer.add "\n"
   )
   dictionary(entries)
 
@@ -1217,6 +1324,29 @@ proc emptyCommand(
     raise newException(EvaluatorError, "empty? expects one list")
   boolean(env.eval(arguments[0]).requireList().len == 0)
 
+proc lengthCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "length", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "length expects one value")
+  let value = env.eval(arguments[0])
+  case value.kind
+  of List:
+    number(value.items.len.float64)
+  of Dictionary:
+    number(value.entries.len.float64)
+  of Text:
+    number(value.text.len.float64)
+  else:
+    raise newException(
+      EvaluatorError, &"expected list, dictionary, or text, got {value}"
+    )
+
 proc notCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -1268,10 +1398,7 @@ proc dictPutCommand(
   if arguments.len != 3:
     raise newException(EvaluatorError, "dict-put expects dict, key, and value")
   let original = env.eval(arguments[0])
-  original.setFieldValue(
-    env.eval(arguments[1]).requireText(),
-    env.eval(arguments[2]),
-  )
+  original.setFieldValue(env.eval(arguments[1]).requireText(), env.eval(arguments[2]))
 
 proc dictGetCommand(
     env: Environment,
@@ -1453,6 +1580,15 @@ proc evalWithCommand(
     local.evalBlock(bodyNode.statements)
   else:
     local.eval(bodyNode)
+
+proc floorCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "floor", raises: [EvaluatorError].} =
+  let n: float64 = env.eval(arguments[0]).requireNumber()
+  result = number(floor(n))
 
 proc addStandardCommands*(env: Environment) {.raises: [].} =
   env.define("stdin", stdinStream())
