@@ -55,13 +55,6 @@ proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, &"expected list, got {value}")
   value.items
 
-proc requireDictionary(
-    value: Value
-): Table[string, Value] {.raises: [EvaluatorError].} =
-  if value.kind != Dictionary:
-    raise newException(EvaluatorError, &"expected dictionary, got {value}")
-  value.entries
-
 proc requireText(value: Value): string {.raises: [EvaluatorError].} =
   if value.kind != Text:
     raise newException(EvaluatorError, &"expected text, got {value}")
@@ -621,8 +614,52 @@ proc errorCommand(
     message.add $env.eval(argument)
   raise newException(EvaluatorError, message)
 
+const StreamFields = [
+  "open", "close", "read", "read-line", "read-all", "write", "write-line"
+]
+
+proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
+  nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard arguments
+      discard layout
+      discard body
+      raise newException(EvaluatorError, &"unsupported stream operation: {name}")
+  )
+
+proc streamRecord(entries: sink Table[string, Value]): Value {.raises: [].} =
+  for field in StreamFields:
+    if not entries.hasKey(field):
+      entries[field] = unsupportedStreamCommand(field)
+  record("Stream", entries, @StreamFields)
+
 proc stdinStream(): Value {.raises: [].} =
   var entries = initTable[string, Value]()
+  entries["read"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdin read expects no arguments")
+      try:
+        if stdin.endOfFile:
+          return nothing()
+        text($stdin.readChar())
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
+  )
   entries["read-line"] = nativeCommand(
     proc(
         env: Environment,
@@ -640,6 +677,26 @@ proc stdinStream(): Value {.raises: [].} =
         text(line)
       else:
         nothing()
+  )
+  entries["read-all"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "stdin read-all expects no arguments")
+      try:
+        var content = ""
+        while not stdin.endOfFile:
+          content.add stdin.readChar()
+        text(content)
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
   )
   entries["open"] = nativeCommand(
     proc(
@@ -669,7 +726,7 @@ proc stdinStream(): Value {.raises: [].} =
         raise newException(EvaluatorError, "stdin close expects no arguments")
       nothing()
   )
-  dictionary(entries)
+  streamRecord(entries)
 
 proc stdoutStream(): Value {.raises: [].} =
   var entries = initTable[string, Value]()
@@ -739,7 +796,7 @@ proc stdoutStream(): Value {.raises: [].} =
         raise newException(EvaluatorError, "stdout close expects no arguments")
       nothing()
   )
-  dictionary(entries)
+  streamRecord(entries)
 
 proc fileMode(mode: string): FileMode {.raises: [EvaluatorError].} =
   case mode
@@ -795,6 +852,27 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
         opened = false
       nothing()
   )
+  entries["read"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "file read expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "file is not open")
+      try:
+        if file.endOfFile:
+          return nothing()
+        text($file.readChar())
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
+  )
   entries["read-line"] = nativeCommand(
     proc(
         env: Environment,
@@ -813,6 +891,28 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
         if file.endOfFile:
           return nothing()
         text(file.readLine())
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
+  )
+  entries["read-all"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "file read-all expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "file is not open")
+      try:
+        var content = ""
+        while not file.endOfFile:
+          content.add file.readChar()
+        text(content)
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
   )
@@ -858,7 +958,7 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
   )
-  dictionary(entries)
+  streamRecord(entries)
 
 proc openStringStream(content: string): Value {.raises: [].} =
   var entries = initTable[string, Value]()
@@ -897,6 +997,25 @@ proc openStringStream(content: string): Value {.raises: [].} =
       opened = false
       nothing()
   )
+  entries["read"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "string read expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "string stream is not open")
+      if position >= buffer.len:
+        return nothing()
+      result = text($buffer[position])
+      inc position
+  )
   entries["read-line"] = nativeCommand(
     proc(
         env: Environment,
@@ -923,6 +1042,25 @@ proc openStringStream(content: string): Value {.raises: [].} =
           inc position
       elif position < buffer.len and buffer[position] == '\n':
         inc position
+  )
+  entries["read-all"] = nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, "string read-all expects no arguments")
+      if not opened:
+        raise newException(EvaluatorError, "string stream is not open")
+      if position >= buffer.len:
+        return text("")
+      result = text(buffer[position .. ^1])
+      position = buffer.len
   )
   entries["write"] = nativeCommand(
     proc(
@@ -953,7 +1091,7 @@ proc openStringStream(content: string): Value {.raises: [].} =
         buffer.add $result
       buffer.add "\n"
   )
-  dictionary(entries)
+  streamRecord(entries)
 
 proc openFileCommand(
     env: Environment,

@@ -1,4 +1,4 @@
-import std/[strformat, strutils]
+import std/[hashes, strformat, strutils, tables]
 
 type
   SourceID* = uint32
@@ -11,6 +11,7 @@ type
   SourceInfo* = object
     path*: string
     lines*: seq[string]
+    fingerprint: Hash
 
   DiagnosticFrame* = object
     pos*: SourcePos
@@ -57,6 +58,7 @@ const
   Reset* = "\e[0m"
 
 var sourceRegistry: seq[SourceInfo]
+var sourceRegistryByKey: Table[string, SourceID]
 
 proc noSourcePos*(): SourcePos {.raises: [].} =
   SourcePos(source: NoSource, line: 0, column: 0)
@@ -67,15 +69,30 @@ proc sourcePos*(source: SourceID, line, column: int): SourcePos {.raises: [].} =
 proc hasSource*(pos: SourcePos): bool {.raises: [].} =
   pos.source != NoSource and pos.line > 0 and pos.column > 0
 
+proc sourceRegistryKey(source: string; path: string): string {.raises: [].} =
+  path & "\0" & $source.len & "\0" & $hash(source)
+
 proc registerSource*(source: string; path = "<input>"): SourceID {.raises: [].} =
-  sourceRegistry.add SourceInfo(path: path, lines: source.splitLines)
-  SourceID(sourceRegistry.len)
+  let key = sourceRegistryKey(source, path)
+  let existing = sourceRegistryByKey.getOrDefault(key, NoSource)
+  if existing != NoSource:
+    return existing
+  sourceRegistry.add SourceInfo(
+    path: path,
+    lines: source.splitLines,
+    fingerprint: hash(source),
+  )
+  result = SourceID(sourceRegistry.len)
+  sourceRegistryByKey[key] = result
 
 proc sourceInfo*(id: SourceID): SourceInfo {.raises: [].} =
   if id == NoSource or id.int > sourceRegistry.len:
     SourceInfo(path: "<unknown>", lines: @[])
   else:
     sourceRegistry[id.int - 1]
+
+proc registeredSourceCount*(): int {.raises: [].} =
+  sourceRegistry.len
 
 proc sourcePath*(pos: SourcePos): string {.raises: [].} =
   sourceInfo(pos.source).path

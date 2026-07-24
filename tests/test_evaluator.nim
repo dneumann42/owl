@@ -129,17 +129,26 @@ lam 9 4
 
   test "standard streams are globals":
     let input = run("stdin\n")
-    check input.kind == Dictionary
-    check input.entries.hasKey("read-line")
-    check input.entries.hasKey("open")
-    check input.entries.hasKey("close")
+    check input.kind == Record
+    check input.recordName == "Stream"
+    check input.recordEntries.hasKey("read")
+    check input.recordEntries.hasKey("read-line")
+    check input.recordEntries.hasKey("read-all")
+    check input.recordEntries.hasKey("open")
+    check input.recordEntries.hasKey("close")
 
     let output = run("stdout\n")
-    check output.kind == Dictionary
-    check output.entries.hasKey("write")
-    check output.entries.hasKey("write-line")
-    check output.entries.hasKey("open")
-    check output.entries.hasKey("close")
+    check output.kind == Record
+    check output.recordName == "Stream"
+    check output.recordEntries.hasKey("write")
+    check output.recordEntries.hasKey("write-line")
+    check output.recordEntries.hasKey("open")
+    check output.recordEntries.hasKey("close")
+
+  test "stream predicate recognizes host streams":
+    let value = run("and (Stream? stdin) (Stream? stdout) (Stream? (open-string \"x\"))\n")
+    check value.kind == Boolean
+    check value.boolean
 
   test "write commands take output streams":
     let value = run("write stdout \"\"\n")
@@ -151,6 +160,14 @@ lam 9 4
       discard run("readline\n")
     expect EvaluatorError:
       discard run("read-line stdout\n")
+
+  test "read reads one byte and read-all drains remaining input":
+    let value = run("""
+with (open-string "abc") stream:
+  text-append (read stream) (read-all stream)
+""")
+    check value.kind == Text
+    check value.text == "abc"
 
   test "append mutates named lists and nth reads by index":
     let value = run("""

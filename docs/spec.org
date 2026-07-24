@@ -229,15 +229,17 @@ Comparison commands evaluate their two arguments:
 =text-append= evaluates text arguments and returns their concatenation.
 
 ** Streams And Resources
-=stdin= and =stdout= are dictionaries installed in the root environment. They expose command fields such as =read-line=, =write=, =write-line=, =open=, and =close=.
+=Stream= is a record interface defined in =crow/prelude.nest=. Its fields are command values: =open=, =close=, =read=, =read-line=, =read-all=, =write=, and =write-line=. Unsupported operations are still present in the record and raise an evaluator error when called.
 
-=open-file= returns a file-backed stream dictionary. It accepts either a mode, or a path and mode. Supported modes are =r=, =rb=, =w=, =wb=, =a=, and =ab=.
+=stdin= and =stdout= are =Stream= records installed in the root environment.
 
-=open-string= returns a string-backed stream dictionary.
+=open-file= returns a file-backed =Stream=. It accepts either a mode, or a path and mode. Supported modes are =r=, =rb=, =w=, =wb=, =a=, and =ab=.
+
+=open-string= returns a string-backed =Stream=.
 
 =with resource name:= evaluates the resource, calls its optional =open= field, creates a child [[term-env][environment]] with =name= bound to the opened resource, evaluates the body there, then calls the resource's optional =close= field in a [[term-finally][=finally= step]]. If =open= or =close= returns =nothing=, the original resource remains the value used by =with=.
 
-Prelude helpers =read-line=, =readline=, =read=, =write=, and =write-line= call the corresponding command fields on explicit stream values.
+Prelude helpers =read=, =read-line=, =readline=, =read-all=, =write=, and =write-line= call the corresponding command fields on explicit stream values. =read= reads one byte and returns it as text, or =nothing= at end of input. =read-all= returns the remaining input as text.
 
 ** Errors
 Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Crow adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.

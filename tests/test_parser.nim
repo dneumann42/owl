@@ -288,6 +288,15 @@ block-command ([]):
       check output.contains("  x = \"\\x\"")
       check output.contains("^")
 
+  test "reuses source registry entries for identical source and path":
+    let before = registeredSourceCount()
+    discard parse("a\nb\n", "/tmp/reused.nest")
+    check registeredSourceCount() == before + 1
+    discard parse("a\nb\n", "/tmp/reused.nest")
+    check registeredSourceCount() == before + 1
+    discard parse("a\nc\n", "/tmp/reused.nest")
+    check registeredSourceCount() == before + 2
+
 suite "formatter":
   test "formats simple statements and escapes strings":
     let tree = parse("writeLine \"Hello\\nWorld\" stdout\n")

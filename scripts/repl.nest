@@ -15,7 +15,7 @@ fun repl:
   while running:
     write stdout "> "
     define:
-      line = (readline stdin)
+      line = (read-line stdin)
       
     handle-repl line
 repl

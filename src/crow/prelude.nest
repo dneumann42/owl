@@ -51,6 +51,18 @@ block-command record name:
   define-caller-value name (record-constructor record-name fields defaults)
   define-caller-value (text-append record-name "?") (record-predicate record-name)
 
+fun unsupported-stream-operation:
+  error "unsupported stream operation"
+
+record Stream:
+  open = (value-of unsupported-stream-operation)
+  close = (value-of unsupported-stream-operation)
+  read = (value-of unsupported-stream-operation)
+  read-line = (value-of unsupported-stream-operation)
+  read-all = (value-of unsupported-stream-operation)
+  write = (value-of unsupported-stream-operation)
+  write-line = (value-of unsupported-stream-operation)
+
 fun cond-from clauses:
   if (empty? clauses):
     then:
@@ -88,19 +100,19 @@ block-command append target value:
   set (value-of target) (append-value (eval target) (eval value))
 
 fun read-line stream:
-  call (field stream "read-line")
-
-fun readline stream:
-  read-line stream
+  call stream.read-line
 
 fun read stream:
-  read-line stream
+  call stream.read
 
-fun write stream value:
-  call (field stream "write") value
+fun read-all stream:
+  call stream.read-all
 
 fun write-line stream value:
-  call (field stream "write-line") value
+  call stream.write-line value
+
+fun write stream value:
+  call stream.write value
 
 fun assert condition:
   when (not condition):
