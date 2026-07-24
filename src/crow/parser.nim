@@ -394,7 +394,7 @@ proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
     let token = parser.peek
     fail("expected argument", parser.source, token.line, token.column)
 
-  if parser.at(Colon) or parser.at(Newline) and parser.peek(1).kind == Indent:
+  if parser.at(Colon) or (parser.at(Newline) and parser.peek(1).kind == Indent):
     let tail = parser.parseLayoutTail()
     parser.attachLayoutTail(result, tail.kind, tail.body)
   result = parser.parsePostfix(result)
@@ -434,7 +434,7 @@ proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
 
 proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
   var first = parser.parseForm()
-  if parser.at(Colon) or parser.at(Newline) and parser.peek(1).kind == Indent:
+  if parser.at(Colon) or (parser.at(Newline) and parser.peek(1).kind == Indent):
     let tail = parser.parseLayoutTail()
     parser.attachLayoutTail(first, tail.kind, tail.body)
     result.add first

@@ -3,3 +3,5 @@ nimble.paths
 nimbledeps
 build/
 crow
+tests/*
+!tests/*.nim

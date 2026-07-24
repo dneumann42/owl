@@ -40,17 +40,24 @@ proc callClosure(
   local.define("layout", text($layout))
   local.evalBlock(command.body)
 
+proc literalValue(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =
+  let parsed = parseNumber(symbol)
+  if parsed.ok:
+    (true, parsed.value)
+  elif symbol == "true" or symbol == "T":
+    (true, boolean(true))
+  elif symbol == "false" or symbol == "F":
+    (true, boolean(false))
+  else:
+    (false, nothing())
+
 proc evalCommandNode(
     env: Environment, node: SyntaxNode
 ): Value {.raises: [EvaluatorError].} =
   if node.callee.kind == Symbol and node.arguments.len == 0 and node.layout == NoLayout:
-    let parsed = parseNumber(node.callee.symbol)
-    if parsed.ok:
-      return parsed.value
-    if node.callee.symbol == "true" or node.callee.symbol == "T":
-      return boolean(true)
-    if node.callee.symbol == "false" or node.callee.symbol == "F":
-      return boolean(false)
+    let literal = literalValue(node.callee.symbol)
+    if literal.ok:
+      return literal.value
     if env.contains(node.callee.symbol):
       let value = env.get(node.callee.symbol)
       if value.kind != Command:
@@ -84,13 +91,9 @@ proc evalCore(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorErr
   of Command:
     result = env.evalCommandNode(node)
   of Symbol:
-    let parsed = parseNumber(node.symbol)
-    if parsed.ok:
-      result = parsed.value
-    elif node.symbol == "true" or node.symbol == "T":
-      result = boolean(true)
-    elif node.symbol == "false" or node.symbol == "F":
-      result = boolean(false)
+    let literal = literalValue(node.symbol)
+    if literal.ok:
+      result = literal.value
     else:
       result = env.get(node.symbol)
   of String:

@@ -102,18 +102,7 @@ proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
   dictionary(entries)
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
-  if value.kind != Record:
-    return false
-  for field in value.recordFields:
-    if field == name:
-      return true
-  false
-
-proc containsField(fields: seq[string], name: string): bool {.raises: [].} =
-  for field in fields:
-    if field == name:
-      return true
-  false
+  value.kind == Record and name in value.recordFields
 
 proc field(value: Value, name: string): Value {.raises: [EvaluatorError].} =
   case value.kind
@@ -424,7 +413,7 @@ proc recordConstructorCommand(
   var fields: seq[string]
   for item in env.eval(arguments[1]).requireList():
     let field = item.requireText()
-    if fields.containsField(field):
+    if field in fields:
       raise newException(EvaluatorError, &"duplicate record field: {field}")
     fields.add field
 
@@ -464,12 +453,13 @@ proc recordConstructorCommand(
       for node in callBody:
         if node.kind != Binding:
           raise newException(EvaluatorError, "record overrides must be bindings")
-        if not fieldOrder.containsField(node.bindingSymbol):
+        if node.bindingSymbol notin fieldOrder:
           raise
             newException(EvaluatorError, &"unknown record field: {node.bindingSymbol}")
-        for seen in seenOverrides:
-          if seen == node.bindingSymbol:
-            raise newException(EvaluatorError, &"duplicate record override: {seen}")
+        if node.bindingSymbol in seenOverrides:
+          raise newException(
+            EvaluatorError, &"duplicate record override: {node.bindingSymbol}"
+          )
         seenOverrides.add node.bindingSymbol
         entries[node.bindingSymbol] = callEnv.eval(node.value)
 
@@ -1725,8 +1715,11 @@ proc floorCommand(
     layout: LayoutKind,
     body: seq[SyntaxNode],
 ): Value {.stdCommand: "floor", raises: [EvaluatorError].} =
-  let n: float64 = env.eval(arguments[0]).requireNumber()
-  result = number(floor(n))
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "floor expects one number")
+  number(floor(env.eval(arguments[0]).requireNumber()))
 
 proc addStandardCommands*(env: Environment) {.raises: [].} =
   env.define("stdin", stdinStream())
