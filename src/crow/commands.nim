@@ -1138,20 +1138,21 @@ proc arithmeticCommand(
 ): Value {.raises: [EvaluatorError].} =
   if arguments.len == 0:
     raise newException(EvaluatorError, &"{op} expects arguments")
-  result = number(env.eval(arguments[0]).requireNumber())
-  for argument in arguments[1 .. ^1]:
-    let rhs = env.eval(argument).requireNumber()
+  var acc = env.eval(arguments[0]).requireNumber()
+  for index in 1 ..< arguments.len:
+    let rhs = env.eval(arguments[index]).requireNumber()
     case op
     of "+":
-      result = number(result.number + rhs)
+      acc += rhs
     of "-":
-      result = number(result.number - rhs)
+      acc -= rhs
     of "*":
-      result = number(result.number * rhs)
+      acc *= rhs
     of "/":
-      result = number(result.number / rhs)
+      acc /= rhs
     else:
       raise newException(EvaluatorError, &"unknown arithmetic operator: {op}")
+  number(acc)
 
 proc plusCommand(
     env: Environment,

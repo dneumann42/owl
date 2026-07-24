@@ -186,6 +186,10 @@ proc `$`*(value: Value): string {.raises: [].} =
     "<native>"
 
 proc parseNumber*(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =
+  if symbol.len == 0 or (
+      symbol[0] notin {'0' .. '9'} and
+      not (symbol.len > 1 and symbol[0] in {'+', '-'} and symbol[1] in {'0' .. '9'})):
+    return (false, nothing())
   try:
     if symbol.contains('.') or symbol.contains('e') or symbol.contains('E'):
       return (true, number(parseFloat(symbol)))

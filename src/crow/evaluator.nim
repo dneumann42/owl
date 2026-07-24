@@ -1,4 +1,4 @@
-import std/[strformat]
+import std/[strformat, tables]
 
 import commands
 import environment
@@ -58,10 +58,12 @@ proc evalCommandNode(
     let literal = literalValue(node.callee.symbol)
     if literal.ok:
       return literal.value
-    if env.contains(node.callee.symbol):
-      let value = env.get(node.callee.symbol)
+    let owner = env.find(node.callee.symbol)
+    if owner != nil:
+      let value = owner.bindings.getOrDefault(node.callee.symbol)
       if value.kind != Command:
         return value
+      return env.call(value.command, node.arguments, node.layout, node.body)
 
   let callee = env.eval(node.callee)
   if callee.kind != Command:
