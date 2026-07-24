@@ -5,22 +5,10 @@ import values
 export values
 
 proc newEnvironment*(parent: Environment = nil): Environment {.raises: [].} =
-  let evaluator =
-    if parent == nil:
-      nil
-    else:
-      parent.evaluator
-  let commandCaller =
-    if parent == nil:
-      nil
-    else:
-      parent.commandCaller
-  Environment(
-    parent: parent,
-    bindings: initTable[string, Value](),
-    evaluator: evaluator,
-    commandCaller: commandCaller,
-  )
+  result = Environment(parent: parent, bindings: initTable[string, Value]())
+  if parent != nil:
+    result.evaluator = parent.evaluator
+    result.commandCaller = parent.commandCaller
 
 proc child*(env: Environment): Environment {.raises: [].} =
   newEnvironment(env)

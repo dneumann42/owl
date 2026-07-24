@@ -96,10 +96,7 @@ proc moduleName(path: string): string {.raises: [].} =
   if name.len > 0: name else: path
 
 proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
-  var entries = initTable[string, Value]()
-  for key, value in moduleEnv.bindings.pairs:
-    entries[key] = value
-  dictionary(entries)
+  dictionary(moduleEnv.bindings)
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
   value.kind == Record and name in value.recordFields
@@ -629,93 +626,49 @@ proc streamRecord(entries: sink Table[string, Value]): Value {.raises: [].} =
       entries[field] = unsupportedStreamCommand(field)
   record("Stream", entries, @StreamFields)
 
+template niladicStream(label: static string, handler: untyped): Value =
+  nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, label & " expects no arguments")
+      handler
+  )
+
 proc stdinStream(): Value {.raises: [].} =
   var entries = initTable[string, Value]()
-  entries["read"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdin read expects no arguments")
-      try:
-        if stdin.endOfFile:
-          return nothing()
-        text($stdin.readChar())
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
-  entries["read-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdin read-line expects no arguments")
-      var line: string
-      if readLineFromStdin("", line):
-        text(line)
-      else:
-        nothing()
-  )
-  entries["read-all"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdin read-all expects no arguments")
-      try:
-        var content = ""
-        while not stdin.endOfFile:
-          content.add stdin.readChar()
-        text(content)
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
-  entries["open"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdin open expects no arguments")
+  entries["read"] = niladicStream("stdin read"):
+    try:
+      if stdin.endOfFile:
+        return nothing()
+      text($stdin.readChar())
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+  entries["read-line"] = niladicStream("stdin read-line"):
+    var line: string
+    if readLineFromStdin("", line):
+      text(line)
+    else:
       nothing()
-  )
-  entries["close"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdin close expects no arguments")
-      nothing()
-  )
+  entries["read-all"] = niladicStream("stdin read-all"):
+    try:
+      var content = ""
+      while not stdin.endOfFile:
+        content.add stdin.readChar()
+      text(content)
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+  entries["open"] = niladicStream("stdin open"):
+    nothing()
+  entries["close"] = niladicStream("stdin close"):
+    nothing()
   streamRecord(entries)
 
 proc stdoutStream(): Value {.raises: [].} =
@@ -758,34 +711,10 @@ proc stdoutStream(): Value {.raises: [].} =
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
   )
-  entries["open"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdout open expects no arguments")
-      nothing()
-  )
-  entries["close"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "stdout close expects no arguments")
-      nothing()
-  )
+  entries["open"] = niladicStream("stdout open"):
+    nothing()
+  entries["close"] = niladicStream("stdout close"):
+    nothing()
   streamRecord(entries)
 
 proc fileMode(mode: string): FileMode {.raises: [EvaluatorError].} =
@@ -804,108 +733,48 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
   var file: File
   var opened = false
 
-  entries["open"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "file open expects no arguments")
-      if not opened:
-        try:
-          if not open(file, path, fileMode(mode)):
-            raise newException(EvaluatorError, &"could not open file: {path}")
-          opened = true
-        except IOError as error:
-          raise newException(EvaluatorError, error.msg)
-      nothing()
-  )
-  entries["close"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "file close expects no arguments")
-      if opened:
-        close(file)
-        opened = false
-      nothing()
-  )
-  entries["read"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "file read expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "file is not open")
+  entries["open"] = niladicStream("file open"):
+    if not opened:
       try:
-        if file.endOfFile:
-          return nothing()
-        text($file.readChar())
+        if not open(file, path, fileMode(mode)):
+          raise newException(EvaluatorError, &"could not open file: {path}")
+        opened = true
       except IOError as error:
         raise newException(EvaluatorError, error.msg)
-  )
-  entries["read-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "file read-line expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "file is not open")
-      try:
-        if file.endOfFile:
-          return nothing()
-        text(file.readLine())
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
-  entries["read-all"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "file read-all expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "file is not open")
-      try:
-        var content = ""
-        while not file.endOfFile:
-          content.add file.readChar()
-        text(content)
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
+    nothing()
+  entries["close"] = niladicStream("file close"):
+    if opened:
+      close(file)
+      opened = false
+    nothing()
+  entries["read"] = niladicStream("file read"):
+    if not opened:
+      raise newException(EvaluatorError, "file is not open")
+    try:
+      if file.endOfFile:
+        return nothing()
+      text($file.readChar())
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+  entries["read-line"] = niladicStream("file read-line"):
+    if not opened:
+      raise newException(EvaluatorError, "file is not open")
+    try:
+      if file.endOfFile:
+        return nothing()
+      text(file.readLine())
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+  entries["read-all"] = niladicStream("file read-all"):
+    if not opened:
+      raise newException(EvaluatorError, "file is not open")
+    try:
+      var content = ""
+      while not file.endOfFile:
+        content.add file.readChar()
+      text(content)
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
   entries["write"] = nativeCommand(
     proc(
         env: Environment,
@@ -956,102 +825,42 @@ proc openStringStream(content: string): Value {.raises: [].} =
   var position = 0
   var opened = false
 
-  entries["open"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "string open expects no arguments")
-      position = 0
-      opened = true
-      nothing()
-  )
-  entries["close"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "string close expects no arguments")
-      opened = false
-      nothing()
-  )
-  entries["read"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "string read expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "string stream is not open")
-      if position >= buffer.len:
-        return nothing()
-      result = text($buffer[position])
+  entries["open"] = niladicStream("string open"):
+    position = 0
+    opened = true
+    nothing()
+  entries["close"] = niladicStream("string close"):
+    opened = false
+    nothing()
+  entries["read"] = niladicStream("string read"):
+    if not opened:
+      raise newException(EvaluatorError, "string stream is not open")
+    if position >= buffer.len:
+      return nothing()
+    result = text($buffer[position])
+    inc position
+  entries["read-line"] = niladicStream("string read-line"):
+    if not opened:
+      raise newException(EvaluatorError, "string stream is not open")
+    if position >= buffer.len:
+      return nothing()
+    let start = position
+    while position < buffer.len and buffer[position] notin {'\n', '\r'}:
       inc position
-  )
-  entries["read-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "string read-line expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "string stream is not open")
-      if position >= buffer.len:
-        return nothing()
-      let start = position
-      while position < buffer.len and buffer[position] notin {'\n', '\r'}:
+    result = text(buffer[start ..< position])
+    if position < buffer.len and buffer[position] == '\r':
+      inc position
+      if position < buffer.len and buffer[position] == '\n':
         inc position
-      result = text(buffer[start ..< position])
-      if position < buffer.len and buffer[position] == '\r':
-        inc position
-        if position < buffer.len and buffer[position] == '\n':
-          inc position
-      elif position < buffer.len and buffer[position] == '\n':
-        inc position
-  )
-  entries["read-all"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, "string read-all expects no arguments")
-      if not opened:
-        raise newException(EvaluatorError, "string stream is not open")
-      if position >= buffer.len:
-        return text("")
-      result = text(buffer[position .. ^1])
-      position = buffer.len
-  )
+    elif position < buffer.len and buffer[position] == '\n':
+      inc position
+  entries["read-all"] = niladicStream("string read-all"):
+    if not opened:
+      raise newException(EvaluatorError, "string stream is not open")
+    if position >= buffer.len:
+      return text("")
+    result = text(buffer[position .. ^1])
+    position = buffer.len
   entries["write"] = nativeCommand(
     proc(
         env: Environment,
