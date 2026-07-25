@@ -87,6 +87,80 @@ proc tokenize*(
           fail("inconsistent indentation", sourceId, line, 1)
       atLineStart = false
 
+  proc handleStringInterpolation(
+      str: string, columns: seq[int], ts: var seq[Token], startLine, startColumn: int
+  ) =
+    var
+      index = 0
+      strStart = 0
+      foundOne = false
+
+    template addStringPart(start, stop: int) =
+      if start < stop:
+        ts.add(StringLit, str[start ..< stop], startLine, columns[start])
+
+    template addInterpolationTokens(substr: string, sourceColumn: int) =
+      let subTokens =
+        try:
+          tokenize(substr, sourceId)
+        except ParserError as error:
+          if error.primary.hasSource and error.primary.line == 1:
+            error.primary = sourcePos(
+              sourceId, startLine, sourceColumn + error.primary.column.int - 1
+            )
+          raise error
+      for token in subTokens:
+        if token.kind in {Newline, Eof}:
+          continue
+        var shifted = token
+        shifted.line = startLine
+        shifted.column = sourceColumn + token.column - 1
+        ts.add shifted
+
+    while index < str.len:
+      if str[index] != '\\':
+        inc index
+        continue
+      inc index
+      if index >= str.len:
+        break
+      if str[index] == '(':
+        if not foundOne:
+          ts.add(LParen, "(", startLine, startColumn)
+          ts.add(Atom, "concat", startLine, startColumn + str.len)
+        foundOne = true
+        addStringPart(strStart, index - 1)
+        inc index
+        let start = index
+        while index < str.len and str[index] != ')':
+          inc index
+        if index >= str.len:
+          fail(
+            "Unexpected EOF in string interpolation", sourceId, startLine,
+            columns[start - 2],
+          )
+        let substr = str[start ..< index]
+        let interpolationColumn =
+          if start < columns.len:
+            columns[start]
+          else:
+            startColumn
+        inc index
+        strStart = index
+        ts.add(LParen, "(", startLine, startColumn)
+        ts.add(Atom, "to-string", startLine, startColumn)
+        ts.add(LParen, "(", startLine, startColumn)
+        addInterpolationTokens(substr, interpolationColumn)
+        ts.add(RParen, ")", startLine, startColumn)
+        ts.add(RParen, ")", startLine, startColumn)
+      else:
+        inc index
+    if foundOne:
+      addStringPart(strStart, str.len)
+      ts.add(RParen, ")", startLine, startColumn)
+    else:
+      ts.add(StringLit, str, startLine, startColumn)
+
   while i < source.len:
     let c = source[i]
     if atLineStart:
@@ -153,34 +227,48 @@ proc tokenize*(
       let startColumn = column
       advance()
       var value = ""
+      var valueColumns: seq[int]
       while i < source.len and source[i] != '"':
         if source[i] in {'\r', '\n'}:
           fail("unterminated string", sourceId, startLine, startColumn)
         if source[i] == '\\':
+          let escapeColumn = column
           advance()
           if i >= source.len:
             fail("unterminated string escape", sourceId, startLine, startColumn)
           case source[i]
           of '"':
             value.add '"'
+            valueColumns.add escapeColumn
           of '\\':
             value.add '\\'
+            valueColumns.add escapeColumn
           of 'n':
             value.add '\n'
+            valueColumns.add escapeColumn
           of 'r':
             value.add '\r'
+            valueColumns.add escapeColumn
           of 't':
             value.add '\t'
+            valueColumns.add escapeColumn
+          of '(':
+            # Preserve the interpolation marker for the second pass.
+            value.add '\\'
+            valueColumns.add escapeColumn
+            value.add '('
+            valueColumns.add column
           else:
             fail("invalid string escape", sourceId, line, column)
           advance()
         else:
           value.add source[i]
+          valueColumns.add column
           advance()
       if i >= source.len:
         fail("unterminated string", sourceId, startLine, startColumn)
       advance()
-      result.add(StringLit, value, startLine, startColumn)
+      handleStringInterpolation(value, valueColumns, result, startLine, startColumn)
     else:
       if not isAtomStartChar(c):
         fail(&"unexpected character {c}", sourceId, line, column)
@@ -289,7 +377,9 @@ proc parseEmptyListSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError
   discard parser.expect(RBracket, "expected ']'")
   symbol("[]", parser.pos(token))
 
-proc parsePostfix(parser: var Parser, base: SyntaxNode): SyntaxNode {.raises: [ParserError].} =
+proc parsePostfix(
+    parser: var Parser, base: SyntaxNode
+): SyntaxNode {.raises: [ParserError].} =
   result = base
   while parser.at(Dot):
     let dot = parser.take()
@@ -304,10 +394,14 @@ proc parsePostfix(parser: var Parser, base: SyntaxNode): SyntaxNode {.raises: [P
       discard parser.take()
       let index = parser.parseForm()
       discard parser.expect(RBracket, "expected ']'")
-      result = command(symbol("index", parser.pos(dot)), @[result, index], parser.pos(dot))
+      result =
+        command(symbol("index", parser.pos(dot)), @[result, index], parser.pos(dot))
     else:
       let token = parser.peek
-      fail("expected field name or index after '.'", parser.source, token.line, token.column)
+      fail(
+        "expected field name or index after '.'", parser.source, token.line,
+        token.column,
+      )
 
 proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   discard parser.expect(LParen, "expected '('")

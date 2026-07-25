@@ -288,6 +288,17 @@ block-command ([]):
       check output.contains("  x = \"\\x\"")
       check output.contains("^")
 
+  test "reports interpolation parse errors at the original source position":
+    try:
+      discard parse("define:\n  x = \"before \\(.)\"\n", "/tmp/bad-interpolation.nest")
+      fail()
+    except ParserError as error:
+      let output = report(error)
+      check output.contains(
+        "/tmp/bad-interpolation.nest:2:17: error: expected command callee"
+      )
+      check output.contains("  x = \"before \\(.)\"")
+
   test "reuses source registry entries for identical source and path":
     let before = registeredSourceCount()
     discard parse("a\nb\n", "/tmp/reused.nest")

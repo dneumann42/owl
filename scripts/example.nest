@@ -1,13 +1,5 @@
-record Vec3:
-  x = 0
-  y = 0
-  z = 0
-
 define:
-  point = Vec3 1 2:
-    z = 3
+  hello = + 1 2 3
+  my-string = "Compute: \(+ hello 4) \(+ 1 2 3)"
 
-print point
-
-print (Vec3? point)
-
+print my-string  

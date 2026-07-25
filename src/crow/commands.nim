@@ -379,18 +379,31 @@ proc symbolTextCommand(
       arguments[0]
   text(node.requireSymbol("symbol"))
 
-proc textAppendCommand(
+proc concatCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
     layout: LayoutKind,
     body: seq[SyntaxNode],
-): Value {.stdCommand: "text-append", raises: [EvaluatorError].} =
+): Value {.stdCommand: "concat", raises: [EvaluatorError].} =
   discard layout
   discard body
+  # TODO: Make this work for lists and dictionaries
   var parts: seq[string]
   for argument in arguments:
     parts.add env.eval(argument).requireText()
   text(parts.join(""))
+
+proc toStringCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "to-string", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "to-string expects one value")
+  text($env.eval(arguments[0]))
 
 proc recordConstructorCommand(
     env: Environment,
@@ -601,9 +614,8 @@ proc errorCommand(
     message.add $env.eval(argument)
   raise newException(EvaluatorError, message)
 
-const StreamFields = [
-  "open", "close", "read", "read-line", "read-all", "write", "write-line"
-]
+const StreamFields =
+  ["open", "close", "read", "read-line", "read-all", "write", "write-line"]
 
 proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
   nativeCommand(
@@ -1281,9 +1293,8 @@ proc lengthCommand(
   of Text:
     number(value.text.len.float64)
   else:
-    raise newException(
-      EvaluatorError, &"expected list, dictionary, or text, got {value}"
-    )
+    raise
+      newException(EvaluatorError, &"expected list, dictionary, or text, got {value}")
 
 proc notCommand(
     env: Environment,

@@ -49,7 +49,7 @@ block-command record name:
     fields = (record-fields (statements block))
     defaults = (record-defaults (statements block))
   define-caller-value name (record-constructor record-name fields defaults)
-  define-caller-value (text-append record-name "?") (record-predicate record-name)
+  define-caller-value (concat record-name "?") (record-predicate record-name)
 
 fun unsupported-stream-operation:
   error "unsupported stream operation"

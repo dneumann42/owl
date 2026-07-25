@@ -14,32 +14,39 @@ proc run(source: string): Value =
 
 suite "evaluator":
   test "scripts yield the last expression":
-    let value = run("""
+    let value = run(
+      """
 1
 2
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 2
 
   test "bindings are syntax data":
-    let value = run("""
+    let value = run(
+      """
 a = 41
-""")
+"""
+    )
     check value.kind == Syntax
     check value.syntax.kind == Binding
     check value.syntax.bindingSymbol == "a"
 
   test "define binds symbols in the current environment":
-    let value = run("""
+    let value = run(
+      """
 define:
   a = 41
 + a 1
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 42
 
   test "define shadows captured symbols and set mutates them":
-    let value = run("""
+    let value = run(
+      """
 fun probe:
   define:
     current = 1
@@ -56,12 +63,14 @@ fun probe:
     mutated = (mutate)
   + shadowed afterShadow mutated current
 probe
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 51
 
   test "compound assignment commands mutate existing symbols":
-    let value = run("""
+    let value = run(
+      """
 define:
   n = 6
 += n 4
@@ -69,61 +78,72 @@ define:
 -= n 9
 /= n 3
 n
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 7
 
   test "fun defines closures that evaluate arguments":
-    let value = run("""
+    let value = run(
+      """
 fun inc n:
   + n 1
 inc 4
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 5
 
   test "indentation groups call arguments":
-    let value = run("""
+    let value = run(
+      """
 command third a b c:
   eval c
 third
   (+ 1 2 3)
   "test"
   T
-""")
+"""
+    )
     check value.kind == Boolean
     check value.boolean == true
 
   test "indentation supplies evaluated closure arguments":
-    let value = run("""
+    let value = run(
+      """
 fun total a b c:
   + a b c
 total
   (+ 1 2 3)
   4
   5
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 15
 
   test "fn creates anonymous closures":
-    let value = run("""
+    let value = run(
+      """
 define:
   base = 10
   lam = fn a b c:
     + base a (* b c)
 lam 1 2 3
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 17
 
   test "lambda aliases fn":
-    let value = run("""
+    let value = run(
+      """
 define:
   lam = lambda a b:
     - a b
 lam 9 4
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 5
 
@@ -146,7 +166,8 @@ lam 9 4
     check output.recordEntries.hasKey("close")
 
   test "stream predicate recognizes host streams":
-    let value = run("and (Stream? stdin) (Stream? stdout) (Stream? (open-string \"x\"))\n")
+    let value =
+      run("and (Stream? stdin) (Stream? stdout) (Stream? (open-string \"x\"))\n")
     check value.kind == Boolean
     check value.boolean
 
@@ -162,26 +183,31 @@ lam 9 4
       discard run("read-line stdout\n")
 
   test "read reads one byte and read-all drains remaining input":
-    let value = run("""
+    let value = run(
+      """
 with (open-string "abc") stream:
-  text-append (read stream) (read-all stream)
-""")
+  concat (read stream) (read-all stream)
+"""
+    )
     check value.kind == Text
     check value.text == "abc"
 
   test "append mutates named lists and nth reads by index":
-    let value = run("""
+    let value = run(
+      """
 define:
   values = (list)
 append values "a"
 append values "b"
 nth values 1
-""")
+"""
+    )
     check value.kind == Text
     check value.text == "b"
 
   test "length returns list dictionary and string sizes":
-    let value = run("""
+    let value = run(
+      """
 define:
   values = []:
     1
@@ -191,12 +217,29 @@ define:
     name = "crow"
     answer = 42
 + (length values) (length config) (length "crow")
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 9
 
     expect EvaluatorError:
       discard run("length 42\n")
+
+  test "to-string pretty prints values as text":
+    let plain = run("to-string \"hello\"\n")
+    check plain.kind == Text
+    check plain.text == "hello"
+
+    let structured = run(
+      """
+to-string []:
+  1
+  "two"
+  false
+"""
+    )
+    check structured.kind == Text
+    check structured.text == "[1, two, false]"
 
   test "assert raises when condition is false":
     discard run("assert (= 1 1)\n")
@@ -204,21 +247,25 @@ define:
       discard run("assert (= 1 2)\n")
 
   test "with opens and closes string streams":
-    let value = run("""
+    let value = run(
+      """
 define:
   lines = (list)
 with (open-string "a\nb\n") stream:
   append lines (read-line stream)
   append lines (read-line stream)
 = (nth lines 0) (nth lines 1)
-""")
+"""
+    )
     check value.kind == Boolean
     check value.boolean == false
 
   test "not negates truthiness":
-    let value = run("""
+    let value = run(
+      """
 not (= 1 2)
-""")
+"""
+    )
     check value.kind == Boolean
     check value.boolean == true
 
@@ -243,11 +290,15 @@ not (= 1 2)
   test "evaluator errors include source preview and stack trace":
     var evaluator = Evaluator.init()
     try:
-      discard evaluator.exec(parse("""
+      discard evaluator.exec(
+        parse(
+          """
 fun explode:
   error "boom"
 explode
-""", "/tmp/stack.nest"))
+""", "/tmp/stack.nest",
+        )
+      )
       fail()
     except EvaluatorError as error:
       let output = report(error)
@@ -257,45 +308,63 @@ explode
       check output.contains("/tmp/stack.nest:3:1 in explode")
 
   test "parse returns syntax evaluated in the caller environment":
-    let value = run("""
+    let value = run(
+      """
 define:
   x = 40
 eval (parse "+ x 2")
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 42
 
   test "import evaluates another source file in the caller environment":
     let dir = getTempDir() / "crow-import-test"
     createDir(dir)
-    writeFile(dir / "defs.nest", """
+    writeFile(
+      dir / "defs.nest",
+      """
 define:
   imported = 40
-""")
+""",
+    )
 
     var evaluator = Evaluator.init()
-    let value = evaluator.exec(parse("""
+    let value = evaluator.exec(
+      parse(
+        """
 import "defs.nest"
 + imported 2
-""", dir / "main.nest"))
+""",
+        dir / "main.nest",
+      )
+    )
     check value.kind == Number
     check value.number == 42
 
   test "use evaluates another source file as a module dictionary":
     let dir = getTempDir() / "crow-use-test"
     createDir(dir)
-    writeFile(dir / "mathish.nest", """
+    writeFile(
+      dir / "mathish.nest",
+      """
 define:
   imported = 40
 fun inc n:
   + n 1
-""")
+""",
+    )
 
     var evaluator = Evaluator.init()
-    let value = evaluator.exec(parse("""
+    let value = evaluator.exec(
+      parse(
+        """
 use "mathish.nest" mathish
 mathish.inc mathish.imported
-""", dir / "main.nest"))
+""",
+        dir / "main.nest",
+      )
+    )
     check value.kind == Number
     check value.number == 41
 
@@ -303,35 +372,41 @@ mathish.inc mathish.imported
       discard evaluator.exec(parse("imported\n"))
 
   test "command defines closures that receive raw syntax":
-    let value = run("""
+    let value = run(
+      """
 command twice x:
   + (eval x) (eval x)
 define:
   a = 5
 twice a
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 10
 
   test "block-command receives call body as syntax":
-    let value = run("""
+    let value = run(
+      """
 block-command run:
   eval block
 run:
   define:
     x = 3
   + x 4
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 7
 
   test "prelude defines list literals in crow":
-    let value = run("""
+    let value = run(
+      """
 []:
   1
   + 1 1
   3
-""")
+"""
+    )
     check value.kind == List
     check value.items.len == 3
     check value.items[0].number == 1
@@ -339,39 +414,46 @@ run:
     check value.items[2].number == 3
 
   test "prelude defines dictionary literals in crow":
-    let value = run("""
+    let value = run(
+      """
 {}:
   name = "crow"
   answer = (+ 40 2)
-""")
+"""
+    )
     check value.kind == Dictionary
     check value.entries["name"].text == "crow"
     check value.entries["answer"].number == 42
 
   test "dictionary entries can be read with dict-get and field":
-    let value = run("""
+    let value = run(
+      """
 define:
   config = {}:
     name = "crow"
     answer = (+ 40 2)
 + (dict-get config "answer") (field config "answer")
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 84
 
   test "dictionary entries can be set by assigning dict-put result":
-    let value = run("""
+    let value = run(
+      """
 define:
   config = (dict)
 set config (dict-put config "name" "crow")
 set config (dict-put config "answer" (+ 40 2))
 dict-get config "answer"
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 42
 
   test "dot and bracket selectors read values":
-    let value = run("""
+    let value = run(
+      """
 define:
   values = []:
     10
@@ -380,12 +462,14 @@ define:
     nested = {}:
       answer = 42
 + values.[0] values.[1] config.nested.answer
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 72
 
   test "set updates selector targets":
-    let value = run("""
+    let value = run(
+      """
 define:
   values = []:
     10
@@ -395,23 +479,27 @@ set values.[1] 30
 set config.["name"] "crow"
 set config.answer 12
 + values.[1] config.answer
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 42
 
   test "{} block command evaluates binding values in caller scope":
-    let value = run("""
+    let value = run(
+      """
 define:
   base = 40
   config = {}:
     answer = (+ base 2)
 dict-get config "answer"
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 42
 
   test "record constructors create fixed-field values":
-    let value = run("""
+    let value = run(
+      """
 record Vec3:
   x = 0
   y = 0
@@ -425,12 +513,14 @@ define:
     6
     7
 + a.x b.z c.y
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 11
 
   test "record command defines a type predicate":
-    let value = run("""
+    let value = run(
+      """
 record Vec3:
   x = 0
 record Color:
@@ -439,12 +529,14 @@ define:
   point = (Vec3)
   color = (Color)
 and (Vec3? point) (not (Vec3? color)) (not (Vec3? (dict))) (not (Vec3? 1))
-""")
+"""
+    )
     check value.kind == Boolean
     check value.boolean == true
 
   test "record fields can be set but not added":
-    let value = run("""
+    let value = run(
+      """
 record Vec3:
   x = 0
   y = 0
@@ -452,26 +544,31 @@ define:
   point = (Vec3)
 set point.x 10
 point.x
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 10
 
     expect EvaluatorError:
-      discard run("""
+      discard run(
+        """
 record Vec3:
   x = 0
 define:
   point = (Vec3)
 set point.y 10
-""")
+"""
+      )
 
     expect EvaluatorError:
-      discard run("""
+      discard run(
+        """
 record Vec3:
   x = 0
 Vec3:
   y = 10
-""")
+"""
+      )
 
   test "native commands receive raw syntax and choose evaluation":
     var evaluator = Evaluator.init()
@@ -483,10 +580,14 @@ Vec3:
       let evaluated = env.eval(arguments[1])
       text(arguments[0].symbol & ":" & $evaluated & ":" & $layout)
 
-    let value = evaluator.exec(parse("""
+    let value = evaluator.exec(
+      parse(
+        """
 capture x (+ 20 22):
   ignored
-"""))
+"""
+      )
+    )
 
     check value.kind == Text
     check value.text == "x:42:ColonLayout"
@@ -506,18 +607,21 @@ capture x (+ 20 22):
     check ProbeNative(value.native).label == "from-native"
 
   test "prelude defines if in crow":
-    let value = run("""
+    let value = run(
+      """
 if (= 1 2):
   then:
     "bad"
   else:
     "good"
-""")
+"""
+    )
     check value.kind == Text
     check value.text == "good"
 
   test "prelude defines cond in crow":
-    let value = run("""
+    let value = run(
+      """
 define:
   inp = "world"
 cond:
@@ -527,12 +631,14 @@ cond:
     "world"
   when T:
     "unknown"
-""")
+"""
+    )
     check value.kind == Text
     check value.text == "world"
 
   test "prelude cond evaluates clause syntax in the caller environment":
-    let value = run("""
+    let value = run(
+      """
 fun check line:
   cond:
     when (= line "history"):
@@ -540,58 +646,70 @@ fun check line:
     when T:
       "bad"
 check "history"
-""")
+"""
+    )
     check value.kind == Text
     check value.text == "ok"
 
   test "prelude cond rejects invalid clauses":
     expect EvaluatorError:
-      discard run("""
+      discard run(
+        """
 cond:
   nope T:
     "bad"
-""")
+"""
+      )
 
   test "native while loops in the current environment":
-    let value = run("""
+    let value = run(
+      """
 define:
   n = 0
 while (< n 3):
   define:
     n = (+ n 1)
 n
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 3
 
   test "value-of returns a command without calling it":
-    let value = run("""
+    let value = run(
+      """
 fun answer:
   42
 value-of answer
-""")
+"""
+    )
     check value.kind == Command
 
   test "prelude defines range iterators in crow":
-    let value = run("""
+    let value = run(
+      """
 define:
   next = (range 1 4)
 + (next) (next) (next)
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 6
 
   test "prelude defines countdown iterators in crow":
-    let value = run("""
+    let value = run(
+      """
 define:
   next = (countdown 3 0)
 + (next) (next) (next)
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 6
 
   test "prelude defines list and once iterators in crow":
-    let value = run("""
+    let value = run(
+      """
 define:
   items = (iter ([]:
     10
@@ -599,14 +717,17 @@ define:
   ))
   single = (once 3)
 + (items) (items) (single)
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 33
 
   test "prelude defines for over iterators in crow":
-    let value = run("""
+    let value = run(
+      """
 for n (range 1 4):
   + n 10
-""")
+"""
+    )
     check value.kind == Number
     check value.number == 13

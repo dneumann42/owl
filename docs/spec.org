@@ -226,7 +226,7 @@ Comparison commands evaluate their two arguments:
 
 =dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key.
 
-=text-append= evaluates text arguments and returns their concatenation.
+=concat= evaluates text arguments and returns their concatenation.
 
 ** Streams And Resources
 =Stream= is a record interface defined in =crow/prelude.nest=. Its fields are command values: =open=, =close=, =read=, =read-line=, =read-all=, =write=, and =write-line=. Unsupported operations are still present in the record and raise an evaluator error when called.
@@ -243,6 +243,14 @@ Prelude helpers =read=, =read-line=, =readline=, =read-all=, =write=, and =write
 
 ** Errors
 Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Crow adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
+
+* String interpolation
+
+#+begin_src nest
+define:
+  hello = + 1 2 3
+  my-string "Compute: \(+ hello 4)"
+#+end_src
 
 * Structural Data types 
 
