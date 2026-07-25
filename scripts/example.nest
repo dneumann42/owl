@@ -1,5 +1,0 @@
-define:
-  hello = + 1 2 3
-  my-string = "Compute: \(+ hello 4) \(+ 1 2 3)"
-
-print my-string  

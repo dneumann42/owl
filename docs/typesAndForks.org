@@ -1,0 +1,82 @@
+#+TITLE: Error handling in Crow
+
+#+begin_src nest
+;; In nest, we care about what we can do with a thing, not what things are
+;; We don't say that a thing is a Dividable, but is Dividable, behavior over identity
+type Dividable A:
+  / = <A A -> A> ; is a value that when passed to / 
+
+;; Type tags can be put before a command that uses them, commands
+;; can grab the next or the previous value if its a type tag.
+;; `fun` is a command that expects an optional type tag above it
+<Dividable Zero Error> ; Returns a Dividable and can fork to Zero or Error
+fun safeDivide a <Dividable> b <Dividable>:
+  unless (= b 0):
+    fork Zero
+  unless (= a b):
+    fork Error "A cannot be B"
+  / a b
+
+<() Zero Error>
+fun caller2:
+  ; Try will cause the caller of caller2 to fork on the same branches of the command being called (ex. safeDivide)
+  define:
+    value = try (safeDivide 10 0)
+  print value
+    
+<()>
+fun caller:
+  switch (caller2):
+    Error msg:
+      print "Caller failed, " message
+    Zero:
+      print "Cannot divide by zero dude..."
+#+end_src
+
+Form example
+
+#+begin_src nest
+record-type FormState:
+  dateFormat = <String>
+  age = <Number>
+
+<Nothing Invalid Error>
+fun validate state <FormState> on-warn <String -> ()>:
+  define:
+    result = switch (valid-date-format? state.dateFormat):
+      Invalid msg:
+        fork Error "FORMAT: \(msg)"
+      Warning msg:
+        on-warn msg
+        ; Tells the runtime to go back to the previous
+	; execution path, yielding the value 0 which is the
+	; value that that result will be
+        unfork 0
+  switch (valid-age? state.age):
+    TooOld:
+      fork Invalid "Too old"
+    TooYoung:
+      fork Invalid "Too young"
+    
+  unless (valid-date-format? state.dateFormat):
+    fork InvalidFormat
+
+define:
+  state = {}:
+    dateFormat = "YYYY-MM-DD"
+    age = 100
+validate
+  state
+  lambda warning:
+    print warning
+
+define:
+  v = switch (example):
+    Error e:
+      print e
+
+;; If example forked to Error, then this code is never reached
+;; Forking after the block executes, will implicitly exit the program
+;; You must do something to keep the execution moving.
+print "Hello!"
+#+end_src

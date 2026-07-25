@@ -252,6 +252,11 @@ define:
   my-string "Compute: \(+ hello 4)"
 #+end_src
 
+* Static Type System
+
+You can attach type tags to syntax nodes, after parse time the ast gets type checked.
+
+* Code Forking
 * Structural Data types 
 
 *** List
