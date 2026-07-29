@@ -88,7 +88,8 @@ proc tokenize*(
       atLineStart = false
 
   proc handleStringInterpolation(
-      str: string, columns: seq[int], ts: var seq[Token], startLine, startColumn: int
+      str: string, columns: seq[int], ts: var seq[Token], startLine,
+          startColumn: int
   ) =
     var
       index = 0
@@ -316,16 +317,21 @@ proc parseStatementList(
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].}
 proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
 
-proc parseIndentedBody(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
+proc parseIndentedBody(parser: var Parser): seq[SyntaxNode] {.raises: [
+    ParserError].} =
   discard parser.expect(Newline, "expected newline before indented body")
   discard parser.expect(Indent, "expected indented body")
   result = parser.parseStatementList({Dedent})
   discard parser.expect(Dedent, "expected end of indented body")
 
-proc startsArgumentItem(kind: TokenKind): bool {.raises: [].} =
+proc startsPrimary(kind: TokenKind): bool {.raises: [].} =
   kind in {Atom, StringLit, Equal, LBracket, LParen}
 
-proc parseArgumentLine(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
+proc startsArgumentItem(kind: TokenKind): bool {.raises: [].} =
+  startsPrimary(kind)
+
+proc parseArgumentLine(parser: var Parser): seq[SyntaxNode] {.raises: [
+    ParserError].} =
   result.add parser.parseArgumentItem()
   while startsArgumentItem(parser.peek.kind):
     result.add parser.parseArgumentItem()
@@ -372,10 +378,20 @@ proc parseSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let token = parser.expect(Atom, "expected symbol")
   symbol(token.lexeme, parser.pos(token))
 
-proc parseEmptyListSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  let token = parser.expect(LBracket, "expected '['")
-  discard parser.expect(RBracket, "expected ']'")
-  symbol("[]", parser.pos(token))
+proc parseSymbolLike(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+  case parser.peek.kind
+  of Atom:
+    result = parser.parseSymbol()
+  of Equal:
+    let token = parser.take()
+    result = symbol(token.lexeme, parser.pos(token))
+  of LBracket:
+    let token = parser.take()
+    let closeToken = parser.expect(RBracket, "expected ']'")
+    result = symbol(token.lexeme & closeToken.lexeme, parser.pos(token))
+  else:
+    let token = parser.peek
+    fail("expected symbol", parser.source, token.line, token.column)
 
 proc parsePostfix(
     parser: var Parser, base: SyntaxNode
@@ -403,7 +419,8 @@ proc parsePostfix(
         token.column,
       )
 
-proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [
+    ParserError].} =
   discard parser.expect(LParen, "expected '('")
   result = parser.parseForm()
   if parser.at(Colon) or parser.at(Newline):
@@ -414,15 +431,10 @@ proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} 
 
 proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
-  of Atom:
-    result = parser.parsePostfix(parser.parseSymbol())
-  of Equal:
-    discard parser.take()
-    result = parser.parsePostfix(symbol("=", parser.pos(parser.peek(-1))))
-  of LBracket:
-    result = parser.parsePostfix(parser.parseEmptyListSymbol())
   of LParen:
     result = parser.parseGroupedForm()
+  of Atom, Equal, LBracket:
+    result = parser.parsePostfix(parser.parseSymbolLike())
   else:
     let token = parser.peek
     fail("expected command callee", parser.source, token.line, token.column)
@@ -445,22 +457,19 @@ proc isNumericSymbol(value: string): bool {.raises: [].} =
 
 proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
-  of Atom:
-    result = parser.parseSymbol()
-    if not result.symbol.isIdentifierSymbol and not result.symbol.isNumericSymbol and
-        parser.at(Colon):
+  of Atom, Equal, LBracket:
+    result = parser.parseSymbolLike()
+    let takesSameLineLayout =
+      not result.symbol.isIdentifierSymbol and
+      not result.symbol.isNumericSymbol and
+      parser.at(Colon)
+    if takesSameLineLayout:
       let tail = parser.parseLayoutTail()
       parser.attachLayoutTail(result, tail.kind, tail.body)
     result = parser.parsePostfix(result)
   of StringLit:
     let token = parser.take()
     result = parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
-  of LBracket:
-    result = parser.parseEmptyListSymbol()
-    if parser.at(Colon):
-      let tail = parser.parseLayoutTail()
-      parser.attachLayoutTail(result, tail.kind, tail.body)
-    result = parser.parsePostfix(result)
   of LParen:
     result = parser.parseGroupedForm()
   else:
@@ -468,20 +477,16 @@ proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     fail("expected argument", parser.source, token.line, token.column)
 
 proc startsArgument(kind: TokenKind): bool {.raises: [].} =
-  kind in {Atom, StringLit, LBracket, LParen}
+  startsPrimary(kind)
 
-proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [
+    ParserError].} =
   case parser.peek.kind
-  of Atom:
-    result = parser.parseSymbol()
-  of Equal:
-    discard parser.take()
-    result = symbol("=", parser.pos(parser.peek(-1)))
+  of Atom, Equal, LBracket:
+    result = parser.parseSymbolLike()
   of StringLit:
     let token = parser.take()
     result = stringLiteral(token.lexeme, parser.pos(token))
-  of LBracket:
-    result = parser.parseEmptyListSymbol()
   of LParen:
     result = parser.parseGroupedForm()
   else:
@@ -510,23 +515,30 @@ proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   else:
     result = parser.parseCommand()
 
+proc parseIndentedBindingValue(parser: var Parser): SyntaxNode {.raises: [
+    ParserError].} =
+  let values = parser.parseIndentedBody()
+  if values.len != 1:
+    let token = parser.peek
+    fail("expected one binding value", parser.source, token.line, token.column)
+  values[0]
+
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if parser.at(Atom) and parser.peek(1).kind == Equal:
     let bindingToken = parser.take()
     discard parser.take()
     if parser.at(Newline) and parser.peek(1).kind == Indent:
-      let values = parser.parseIndentedArguments()
-      if values.len != 1:
-        let token = parser.peek
-        fail("expected one binding value", parser.source, token.line, token.column)
-      result = binding(bindingToken.lexeme, values[0], parser.pos(bindingToken))
+      result =
+        binding(bindingToken.lexeme, parser.parseIndentedBindingValue(),
+            parser.pos(bindingToken))
     else:
       result =
         binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
   else:
     result = parser.parseExpression()
 
-proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
+proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [
+    ParserError].} =
   var first = parser.parseForm()
   if parser.at(Colon) or (parser.at(Newline) and parser.peek(1).kind == Indent):
     let tail = parser.parseLayoutTail()
@@ -553,9 +565,11 @@ proc parseStatementList(
     else:
       result.add parser.parseStatement()
 
-proc parse*(source: string, path = "<input>"): SyntaxNode {.raises: [ParserError].} =
+proc parse*(source: string, path = "<input>"): SyntaxNode {.raises: [
+    ParserError].} =
   let sourceId = registerSource(source, path)
-  var parser = Parser(tokens: tokenize(source, sourceId), pos: 0, source: sourceId)
+  var parser = Parser(tokens: tokenize(source, sourceId), pos: 0,
+      source: sourceId)
   let statements = parser.parseStatementList({Eof})
   discard parser.expect(Eof, "expected end of file")
   let scriptPos =

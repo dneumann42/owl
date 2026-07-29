@@ -118,6 +118,20 @@ pos = Vec3:
     check call.arguments[0].symbol == "n"
     check call.arguments[1].symbol == "1"
 
+  test "parses generic punctuation command symbols":
+    let tree = parse("""
+print &&
+when (= a b):
+  print ok
+config = {}:
+  value = 1
+""")
+    check tree.statements[0].callee.symbol == "print"
+    check tree.statements[0].arguments[0].symbol == "&&"
+    check tree.statements[1].arguments[0].callee.symbol == "="
+    check tree.statements[2].value.callee.symbol == "{}"
+    check tree.statements[2].value.layout == ColonLayout
+
   test "parses grouped form with layout":
     let tree = parse("""
 pos3 = (Vec3:
@@ -189,6 +203,20 @@ config = {}:
     check body[0].value.arguments.len == 3
     check body[1].value.callee.symbol == "-"
     check body[1].value.arguments.len == 2
+
+  test "rejects multi-form indented binding values":
+    expect ParserError:
+      discard parse("""
+abc =
+  1
+  2
+""")
+
+  test "rejects malformed bracket punctuation and selector indexes":
+    expect ParserError:
+      discard parse("print [1]\n")
+    expect ParserError:
+      discard parse("print a.[]\n")
 
   test "parses block literal as command argument":
     let tree = parse("""
