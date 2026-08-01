@@ -227,10 +227,32 @@ proc render(
   node: SyntaxNode, indent: int, statement, bindingValue: bool
 ): string {.raises: [].}
 
-proc renderBody(nodes: seq[SyntaxNode], indent: int): string {.raises: [].} =
+proc isClause(node: SyntaxNode): bool {.raises: [].} =
+  node.kind == Command and node.callee.kind == Symbol and
+    (node.callee.symbol == "|" or node.callee.symbol == "then" or node.callee.symbol == "else")
+
+proc isBlockStatement(node: SyntaxNode): bool {.raises: [].} =
+  case node.kind
+  of Command:
+    node.layout != NoLayout
+  of Binding:
+    node.value.kind == Command and node.value.layout != NoLayout
+  else:
+    false
+
+proc shouldSeparateStatements(left, right: SyntaxNode): bool {.raises: [].} =
+  if left.kind == Binding and right.kind == Binding:
+    return false
+  if left.isClause or right.isClause:
+    return false
+  left.isBlockStatement or right.isBlockStatement
+
+proc renderBody(nodes: seq[SyntaxNode], indent: int, separate = true): string {.raises: [].} =
   for index, node in nodes:
     if index > 0:
       result.add '\n'
+      if separate and shouldSeparateStatements(nodes[index - 1], node):
+        result.add '\n'
     result.add node.render(indent, statement = true, bindingValue = false)
 
 proc renderCommand(node: SyntaxNode, indent: int): string {.raises: [].} =
@@ -249,7 +271,7 @@ proc renderCommand(node: SyntaxNode, indent: int): string {.raises: [].} =
     result.add renderBody(node.body, indent + 2)
   of ContinuationLayout:
     result.add '\n'
-    result.add renderBody(node.arguments, indent + 2)
+    result.add renderBody(node.arguments, indent + 2, separate = false)
 
 proc render(
     node: SyntaxNode, indent: int, statement, bindingValue: bool
@@ -267,7 +289,7 @@ proc render(
   of Command:
     let needsParens =
       not statement and node.layout == NoLayout and
-      (not bindingValue or node.arguments.len > 0 or node.callee.kind == Command)
+      (not bindingValue or node.callee.kind == Command)
     if needsParens:
       result.add '('
     result.add node.renderCommand(indent)

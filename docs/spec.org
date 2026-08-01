@@ -57,24 +57,24 @@ atom            = atom_start, { atom_char } .
 
 Lexical constants:
 
-| constant            | definition                                                                                                               |
-|---------------------+--------------------------------------------------------------------------------------------------------------------------|
-| =symbol_like=         | a normal atom, or structural punctuation accepted where a symbol is expected, such as equals or empty bracket punctuation |
-| =operator_symbol=     | a =symbol_like= that is neither identifier-like nor numeric                                                               |
-| =single_form_suite=   | an indented suite containing exactly one statement                                                                        |
-| =atom_start=          | any non-whitespace char except double quote, parentheses, brackets, dot, comma, colon, equals, or semicolon              |
-| =atom_char=           | any char except whitespace, double quote, parentheses, brackets, comma, colon, or semicolon; dot only between two digits |
-| =string_char=         | any char except =DQUOTE=, =BS=, =CR=, or =LF=                                                                                    |
-| =END=                 | =NL=, or the position before =DEDENT=, =)=, or =EOF=                                                                             |
-| =NL=                  | =LF=, =CR=, or =CR LF=                                                                                                         |
-| =INDENT=              | indentation token emitted when leading whitespace increases                                                              |
-| =DEDENT=              | indentation token emitted when leading whitespace decreases                                                              |
-| =EOF=                 | end of file                                                                                                              |
-| =DQUOTE=              | double quote                                                                                                             |
-| =BS=                  | backslash                                                                                                                |
-| =CR=                  | carriage return                                                                                                          |
-| =LF=                  | line feed                                                                                                                |
-| comment             | =;= through the end of a physical line; discarded by the lexer                                                             |
+| constant          | definition                                                                                                                |
+|-------------------+---------------------------------------------------------------------------------------------------------------------------|
+| =symbol_like=       | a normal atom, or structural punctuation accepted where a symbol is expected, such as equals or empty bracket punctuation |
+| =operator_symbol=   | a =symbol_like= that is neither identifier-like nor numeric                                                                 |
+| =single_form_suite= | an indented suite containing exactly one statement                                                                        |
+| =atom_start=        | any non-whitespace char except double quote, parentheses, brackets, dot, comma, colon, equals, or semicolon               |
+| =atom_char=         | any char except whitespace, double quote, parentheses, brackets, comma, colon, or semicolon; dot only between two digits  |
+| =string_char=       | any char except =DQUOTE=, =BS=, =CR=, or =LF=                                                                                     |
+| =END=               | =NL=, or the position before =DEDENT=, =)=, or =EOF=                                                                              |
+| =NL=                | =LF=, =CR=, or =CR LF=                                                                                                          |
+| =INDENT=            | indentation token emitted when leading whitespace increases                                                               |
+| =DEDENT=            | indentation token emitted when leading whitespace decreases                                                               |
+| =EOF=               | end of file                                                                                                               |
+| =DQUOTE=            | double quote                                                                                                              |
+| =BS=                | backslash                                                                                                                 |
+| =CR=                | carriage return                                                                                                           |
+| =LF=                | line feed                                                                                                                 |
+| comment           | =;= through the end of a physical line; discarded by the lexer                                                              |
 * Evaluation
 Crow evaluates parsed [[term-syntax-node][syntax nodes]] to [[term-value][runtime values]] in an [[term-env][environment]]. The environment is a chain of [[term-scope][scopes]]. [[term-lookup][Name lookup]] searches the current scope first, then each parent scope. A new [[term-evaluator][evaluator]] starts with the standard [[term-native-command][native commands]] installed, then evaluates =crow/prelude.nest= into the [[term-root-env][root environment]].
 

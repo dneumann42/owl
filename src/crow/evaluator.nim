@@ -1,11 +1,6 @@
 import std/[strformat, tables]
 
-import commands
-import environment
-import parser
-import syntax
-import values
-export environment
+import commands, environment, parser, syntax, values, environment
 
 const PreludeSource = staticRead("prelude.nest")
 

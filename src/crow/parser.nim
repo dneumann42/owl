@@ -524,18 +524,15 @@ proc parseIndentedBindingValue(parser: var Parser): SyntaxNode {.raises: [
   values[0]
 
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  if parser.at(Atom) and parser.peek(1).kind == Equal:
-    let bindingToken = parser.take()
-    discard parser.take()
+  if not parser.at(Atom) or parser.peek(1).kind != Equal:
+    return parser.parseExpression()
+  let bindingToken = parser.take()
+  discard parser.take()
+  result =
     if parser.at(Newline) and parser.peek(1).kind == Indent:
-      result =
-        binding(bindingToken.lexeme, parser.parseIndentedBindingValue(),
-            parser.pos(bindingToken))
+      binding(bindingToken.lexeme, parser.parseIndentedBindingValue(), parser.pos(bindingToken))
     else:
-      result =
-        binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
-  else:
-    result = parser.parseExpression()
+      binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
 
 proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [
     ParserError].} =

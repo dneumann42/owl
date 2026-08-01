@@ -1,9 +1,6 @@
-import std/[macros, os, rdstdin, strformat, strutils, tables, math]
+import std/[macros, os, rdstdin, strformat, strutils, tables, math, sequtils]
 
-import environment
-import parser
-import syntax
-import values
+import environment, parser, syntax, values
 
 type CommandRegistration = object
   name: string
@@ -599,7 +596,10 @@ proc printCommand(
   for argument in arguments:
     result = env.eval(argument)
     parts.add $result
-  echo parts.join("")
+  try:
+    stdout.write parts.join("")
+  except:
+    raise newException(EvaluatorError, getCurrentExceptionMsg())
 
 proc errorCommand(
     env: Environment,
@@ -1541,6 +1541,26 @@ proc floorCommand(
   if arguments.len != 1:
     raise newException(EvaluatorError, "floor expects one number")
   number(floor(env.eval(arguments[0]).requireNumber()))
+
+proc commandLineArgumentsCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "command-line-arguments", raises: [EvaluatorError].} =
+  let args = commandLineParams()
+  list(args.mapIt(text(it)))
+
+proc exitCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "exit", raises: [EvaluatorError].} =
+  if arguments.len == 0:
+    quit(0)
+  let exitCode = env.eval(arguments[0]).requireNumber().toInt()
+  quit(exitCode)
 
 proc addStandardCommands*(env: Environment) {.raises: [].} =
   env.define("stdin", stdinStream())

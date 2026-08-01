@@ -2,6 +2,7 @@ fun repl:
   define:
     running = T
     history = (list)
+    
   fun handle-repl line:
     cond:
       | (= line "q"):
@@ -12,8 +13,10 @@ fun repl:
 	write-line stdout history
       | T:
 	write-line stdout (eval (parse line))
+
   while running:
     write stdout "> "
+
     define:
       line = (read-line stdin)
       

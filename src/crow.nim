@@ -26,20 +26,28 @@ proc runRepl() =
     except CatchableError as error:
       stderr.writeLine error.msg
 
+const FormatScript = staticRead("../scripts/formatter.nest")
+
+proc runScript(path: string) =
+  let content = readFile path
+  var evaluator = Evaluator.init()
+  let ast = parse(content, path)
+  discard evaluator.exec(ast)
+
 proc start() =
   let cmds = commandLineParams()
   try:
     if cmds.len == 0:
       runRepl()
       return
-    if cmds[0] != "run" or cmds.len != 2:
+    if cmds[0] == "format":
+      runScript cmds[1]
+      quit 0
+    if cmds[0] != "run" or cmds.len < 2:
       quit "usage: crow [run <path>]", 2
-
     let path = cmds[1]
-    let content = readFile path
-    var evaluator = Evaluator.init()
-    let ast = parse(content, path)
-    discard evaluator.exec(ast)
+    runScript cmds[1]
+    quit 0
   except CrowError as error:
     quit report(error, useColor = true), 1
   except CatchableError as error:

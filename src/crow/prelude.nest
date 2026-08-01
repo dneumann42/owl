@@ -99,6 +99,19 @@ fun append-value values value:
 block-command append target value:
   set (value-of target) (append-value (eval target) (eval value))
 
+fun drop-front values count:
+  if (or (<= count 0) (empty? values)):
+    then:
+      values
+    else:
+      drop-front (rest values) (- count 1)
+
+block-command pop-front target count:
+  set (value-of target) (drop-front (eval target) (eval count))
+
+fun close stream:
+  call stream.close
+
 fun read-line stream:
   call stream.read-line
 

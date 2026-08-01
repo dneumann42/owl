@@ -343,6 +343,12 @@ suite "formatter":
     check $parse("print \"tab\\treturn\\rslash\\\\quote\\\"\"\n") ==
       "print \"tab\\treturn\\rslash\\\\quote\\\"\""
 
+  test "formats adjacent non-block commands compactly":
+    check $parse("print a\nprint b\nprint c\n") == "print a\nprint b\nprint c"
+
+  test "formats binding rhs commands without outer parentheses":
+    check $parse("define:\n  args = (pop-front (command-line-arguments) 2)\n") == "define:\n  args = pop-front (command-line-arguments) 2"
+
   test "formats bindings and grouped command expressions":
     let tree = parse("""
 a = 100
@@ -350,17 +356,14 @@ y = (+ x 1)
 when (= inp "hello"):
   print "Hello!"
 """)
-    check $tree == "a = 100\ny = (+ x 1)\nwhen (= inp \"hello\"):\n  print \"Hello!\""
+    check $tree == "a = 100\ny = + x 1\n\nwhen (= inp \"hello\"):\n  print \"Hello!\""
 
   test "formats explicit and continuation blocks":
     check $parse("define:\n  x = 1\n  y = 2\n") == """
 define:
   x = 1
   y = 2"""
-    check $parse("writeLine\n  \"Hello\"\n  stdout\n") == """
-writeLine
-  "Hello"
-  stdout"""
+    check $parse("writeLine\n  \"Hello\"\n  stdout\n") == "writeLine\n  \"Hello\"\n  stdout"
 
   test "formats grouped layouts and grouped callees":
     check $parse("pos = (Vec3:\n  x = 1\n  y = 2\n)\n") == """

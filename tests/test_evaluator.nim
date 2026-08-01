@@ -205,6 +205,34 @@ nth values 1
     check value.kind == Text
     check value.text == "b"
 
+  test "pop-front mutates named lists by dropping leading items":
+    let value = run(
+      """
+define:
+  values = []:
+    "a"
+    "b"
+    "c"
+    "d"
+pop-front values 2
+nth values 0
+"""
+    )
+    check value.kind == Text
+    check value.text == "c"
+
+    let empty = run(
+      """
+define:
+  values = []:
+    "a"
+pop-front values 3
+empty? values
+"""
+    )
+    check empty.kind == Boolean
+    check empty.boolean == true
+
   test "length returns list dictionary and string sizes":
     let value = run(
       """
