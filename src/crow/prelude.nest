@@ -1,17 +1,23 @@
 command-define:
-  condition-result = nothing
+  condition-results = (list)
 
 block-command if condition:
   eval (pick (eval condition) (body-of block "then") (body-of block "else"))
 
 block-command if2 condition:
-  command-define:
-    condition-result = (eval condition)
-  when (command-get condition-result):
+  define:
+    result = (eval condition)
+  command-set condition-results (cons result (command-get condition-results))
+  when result:
     eval block
 
 block-command else:
-  when (not (command-get condition-result)):
+  define:
+    pending = (command-get condition-results)
+    done = (empty? pending)
+  when (not done):
+    command-set condition-results (rest pending)
+  when (not (pick done nothing (first pending))):
     eval block
 
 fun list-from nodes:

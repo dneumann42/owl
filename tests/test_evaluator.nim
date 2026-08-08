@@ -845,3 +845,74 @@ command-get seen
     )
     check falseBranch.kind == Text
     check falseBranch.text == "else"
+
+  test "prelude if2 and else nest without clobbering outer conditions":
+    let innerFalse = run(
+      """
+define:
+  xs = []
+  ys = []:
+    1
+if2 (empty? xs):
+  if2 (empty? ys):
+    command-define:
+      seen = "inner-if2"
+  else:
+    command-define:
+      seen = "inner-else"
+else:
+  command-define:
+    seen = "outer-else"
+command-get seen
+"""
+    )
+    check innerFalse.kind == Text
+    check innerFalse.text == "inner-else"
+
+    let outerFalse = run(
+      """
+define:
+  xs = []:
+    1
+  ys = []
+if2 (empty? xs):
+  if2 (empty? ys):
+    command-define:
+      seen = "inner-if2"
+  else:
+    command-define:
+      seen = "inner-else"
+else:
+  command-define:
+    seen = "outer-else"
+command-get seen
+"""
+    )
+    check outerFalse.kind == Text
+    check outerFalse.text == "outer-else"
+
+    let allTrue = run(
+      """
+define:
+  xs = []
+  ys = []
+  zs = []
+if2 (empty? xs):
+  if2 (empty? ys):
+    if2 (empty? zs):
+      command-define:
+        seen = "deep"
+    else:
+      command-define:
+        seen = "shallow"
+  else:
+    command-define:
+      seen = "middle"
+else:
+  command-define:
+    seen = "outer"
+command-get seen
+"""
+    )
+    check allTrue.kind == Text
+    check allTrue.text == "deep"
