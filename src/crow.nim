@@ -34,17 +34,31 @@ proc runScript(path: string) =
   let ast = parse(content, path)
   discard evaluator.exec(ast)
 
+proc evalSource(source: string) =
+  var evaluator = Evaluator.init()
+  echo evaluator.exec(parse(source, "<eval>"))
+
 proc start() =
   let cmds = commandLineParams()
   try:
     if cmds.len == 0:
       runRepl()
       return
-    if cmds[0] == "format":
+    if cmds[0] == "--eval":
+      if cmds.len < 2:
+        quit "usage: crow --eval <source>", 2
+      evalSource cmds[1]
+      quit 0
+    if cmds[0] == "--format":
       runScript cmds[1]
       quit 0
+    if cmds[0] == "--std":
+      let protos = getCommandPrototypes()
+      for a in protos:
+        echo a
+      quit 0
     if cmds[0] != "run" or cmds.len < 2:
-      quit "usage: crow [run <path>]", 2
+      quit "usage: crow [--eval <source>|run <path>]", 2
     let path = cmds[1]
     runScript cmds[1]
     quit 0

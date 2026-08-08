@@ -2,8 +2,10 @@
 
 My goal with the syntax is to make it maximally useful, nicely expressive yet very simple. The syntax leverages [[term-indent][indentation]] to separate [[term-block][blocks]] and group [[term-expr][expressions]].
 
+My goal with the syntax is to keep it as minimal yet useful as possible, indentation was chosen was the means to group expressions, optionally you can group expressions by surrounding them in '(' and ')'
 ** Tokens
-Single datum of a program. The [[term-lexer][lexer]] produces these tokens before the [[term-parser][parser]] builds syntax nodes.
+- Token :: Single part of a program.
+The [[term-lexer][lexer]] produces tokens before the [[term-parser][parser]] builds syntax nodes.
 *** Special token characters:
 | characters            | class                                         |
 |-----------------------+-----------------------------------------------|
@@ -76,10 +78,11 @@ Lexical constants:
 | =LF=                | line feed                                                                                                                 |
 | comment           | =;= through the end of a physical line; discarded by the lexer                                                              |
 * Evaluation
-Crow evaluates parsed [[term-syntax-node][syntax nodes]] to [[term-value][runtime values]] in an [[term-env][environment]]. The environment is a chain of [[term-scope][scopes]]. [[term-lookup][Name lookup]] searches the current scope first, then each parent scope. A new [[term-evaluator][evaluator]] starts with the standard [[term-native-command][native commands]] installed, then evaluates =crow/prelude.nest= into the [[term-root-env][root environment]].
+Crow evaluates parsed [[term-syntax-node][syntax nodes]] into [[term-value][runtime values]] in an  [[term-env][environment]]. Evaluators are created with an environment loaded with native commands. Before execution the prelude script is loaded.
 
-The [[term-value][runtime value]] kinds are:
+The [[term-value][runtime value]]s are
 
+#+CAPTION: Runtime Values
 | kind       | contents                                      |
 |------------+-----------------------------------------------|
 | nothing    | no payload                                    |
@@ -97,8 +100,7 @@ The [[term-value][runtime value]] kinds are:
 Only =nothing= and =false= are [[term-truthiness][falsey]]. Every other value is [[term-truthiness][truthy]].
 
 ** Node Evaluation
-[[term-script][Scripts]] evaluate each [[term-statement][statement]] in order and return the value of the last statement. An empty script returns =nothing=.
-
+Evaluator evaluates each expression of a script in order. The value of the last statement is the resulting value. empty scripts return =nothing=.
 [[term-binding][Bindings]] do not assign by themselves. Evaluating a binding returns a =syntax= value containing that binding node and its [[term-env][environment]]. [[term-command][Commands]] such as =define= and ={ }= decide how to interpret binding syntax.
 
 [[term-symbol][Symbols]] are evaluated in this order:
@@ -131,7 +133,7 @@ world = +
   1 2 3
 #+end_src
 
-parses like =world = (+ 1 2 3)=. A binding may also put its single value on the next indented line:
+parses =world = (+ 1 2 3)=. A binding may also put its single value on the next indented line:
 
 #+begin_src nest
 abc =
@@ -190,6 +192,17 @@ The closure body evaluates in the [[term-call-scope][call scope]] and returns it
 Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is evaluated and the named symbol is updated. Unlike the lower-level environment setter, the public =set= command rejects unknown symbols.
 
 The arithmetic assignment commands =+==, =-==, =*==, and =/== require an existing numeric symbol and one numeric value. They update the existing symbol and return the new number.
+
+*** Command Environment
+Commands share state in a [[term-command-env][command environment]] that is separate from the main execution environment. Each [[term-evaluator][evaluator]] owns one fresh command environment with the standard commands installed.
+
+=command-define= evaluates every [[term-binding][binding]] value in the caller environment and defines that symbol in the command environment. It does not require the symbol to already exist, and it writes only to the command environment.
+
+=command-set= mutates an existing symbol in the command environment. In two-argument form, =command-set target value= evaluates the value and assigns it to =target=. Block form =command-set:= accepts only [[term-binding][bindings]]. Both forms reject unknown symbols.
+
+=command-get name= returns the value stored under =name= in the command environment. The name may be a symbol, text value, or syntax that resolves to a symbol.
+
+The prelude uses the command environment to implement =if2= and =else=: =if2= stores its condition result with =command-define=, and =else= reads it back with =command-get=.
 
 ** Syntax Values
 [[term-syntax-value][Syntax values]] preserve both a [[term-syntax-node][syntax node]] and the [[term-env][environment]] where that syntax was [[term-capture][captured]]. This is what makes [[term-raw-syntax][raw-syntax]] commands and macros predictable.
@@ -338,6 +351,8 @@ print (Vec3? my-point)
 <<term-closure>>Closure: a Crow command value implemented by Crow syntax. It stores parameters, body syntax, captured environment, and argument-evaluation flags.
 
 <<term-command>>Command: a callable value. Commands may be native host callbacks or Crow closures.
+
+<<term-command-env>>Command environment: the global environment commands use for state shared across invocations, separate from the main execution environment. Written by =command-define= and =command-set=, read by =command-get=.
 
 <<term-diagnostic-frame>>Diagnostic frame: source location attached while an evaluation error unwinds, used to build a stack trace.
 

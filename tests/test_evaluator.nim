@@ -759,3 +759,89 @@ for n (range 1 4):
     )
     check value.kind == Number
     check value.number == 13
+
+  test "command-define and command-get share a separate global scope":
+    let value = run(
+      """
+command-define:
+  flag = true
+command-get flag
+"""
+    )
+    check value.kind == Boolean
+    check value.boolean
+
+    expect EvaluatorError:
+      discard run(
+        """
+command-define:
+  hidden = 1
+hidden
+"""
+      )
+
+  test "command-define evaluates values in the caller environment":
+    let value = run(
+      """
+define:
+  base = 40
+command-define:
+  answer = (+ base 2)
++ (command-get answer) (command-get (concat "an" "swer"))
+"""
+    )
+    check value.kind == Number
+    check value.number == 84
+
+  test "command-set mutates existing command state":
+    let value = run(
+      """
+command-define:
+  count = 1
+command-set count 2
+command-get count
+"""
+    )
+    check value.kind == Number
+    check value.number == 2
+
+    expect EvaluatorError:
+      discard run(
+        """
+command-set missing 1
+"""
+      )
+
+  test "prelude if2 and else share their condition state":
+    let trueBranch = run(
+      """
+define:
+  xs = []
+if2 (empty? xs):
+  command-define:
+    seen = "if2"
+else:
+  command-define:
+    seen = "else"
+command-get seen
+"""
+    )
+    check trueBranch.kind == Text
+    check trueBranch.text == "if2"
+
+    let falseBranch = run(
+      """
+define:
+  xs = []:
+    1
+if2 (empty? xs):
+  command-define:
+    seen = "if2"
+else:
+  command-define:
+    seen = "else"
+command-get seen
+"""
+    )
+    check falseBranch.kind == Text
+    check falseBranch.text == "else"

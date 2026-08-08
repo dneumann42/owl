@@ -1,5 +1,18 @@
+command-define:
+  condition-result = nothing
+
 block-command if condition:
   eval (pick (eval condition) (body-of block "then") (body-of block "else"))
+
+block-command if2 condition:
+  command-define:
+    condition-result = (eval condition)
+  when (command-get condition-result):
+    eval block
+
+block-command else:
+  when (not (command-get condition-result)):
+    eval block
 
 fun list-from nodes:
   if (empty? nodes):

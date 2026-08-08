@@ -1,4 +1,4 @@
-import std/[macros, os, rdstdin, strformat, strutils, tables, math, sequtils]
+import std/[macros, os, rdstdin, strformat, strutils, tables, math, sequtils, macrocache, sugar]
 
 import environment, parser, syntax, values
 
@@ -6,9 +6,14 @@ type CommandRegistration = object
   name: string
   command: NativeCommand
 
-var commandRegistry: seq[CommandRegistration]
+var commandRegistry {.threadvar.}: seq[CommandRegistration]
+var commandEnv {.threadvar.}: Environment
+
+const commandPrototypes = CacheTable"CommandPrototypes"
 
 macro stdCommand*(name: static[string], node: untyped): untyped =
+  commandPrototypes[name] = node
+  
   let procName = node[0]
   result = newStmtList(
     node,
@@ -292,6 +297,21 @@ proc defineCommand(
     result = env.eval(node.value)
     env.define(node.bindingSymbol, result)
 
+proc commandDefineCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "command-define", raises: [EvaluatorError].} =
+  discard arguments
+  discard layout
+  result = nothing()
+  for node in body:
+    if node.kind != Binding:
+      raise newException(EvaluatorError, "define body entries must be bindings")
+    result = env.eval(node.value)
+    commandEnv.define(node.bindingSymbol, result)
+
 proc defineValueCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -520,6 +540,54 @@ proc setCommand(
       raise newException(EvaluatorError, "set body entries must be bindings")
     result = env.eval(node.value)
     env.setSymbol(node.bindingSymbol, result)
+
+proc commandSetCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "command-set", raises: [EvaluatorError].} =
+  discard layout
+  if arguments.len == 2 and body.len == 0:
+    result = env.eval(arguments[1])
+    commandEnv.setTarget(arguments[0], result)
+    return
+
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "set expects a symbol/value pair or a block")
+
+  result = nothing()
+  for node in body:
+    if node.kind != Binding:
+      raise newException(EvaluatorError, "set body entries must be bindings")
+    result = env.eval(node.value)
+    commandEnv.setSymbol(node.bindingSymbol, result)
+
+proc commandName(
+    env: Environment, node: SyntaxNode, role: string
+): string {.raises: [EvaluatorError].} =
+  let value = try:
+    env.eval(node)
+  except EvaluatorError:
+    nothing()
+  if value.kind == Text:
+    value.text
+  elif value.kind == Syntax:
+    value.syntax.requireSymbol(role)
+  else:
+    node.requireSymbol(role)
+
+proc commandGetCommand(
+  env: Environment,
+  arguments: seq[SyntaxNode],
+  layout: LayoutKind,
+  body: seq[SyntaxNode],
+): Value {.stdCommand: "command-get", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "command-get expects one symbol")
+  commandEnv.get(env.commandName(arguments[0], "command name"))
 
 proc evalCommand(
     env: Environment,
@@ -1533,11 +1601,12 @@ proc evalWithCommand(
 proc floorCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
+    _: LayoutKind,
+    _: seq[SyntaxNode],
 ): Value {.stdCommand: "floor", raises: [EvaluatorError].} =
-  discard layout
-  discard body
+  discard """
+  Returns largest integer not greater than argument.  
+  """
   if arguments.len != 1:
     raise newException(EvaluatorError, "floor expects one number")
   number(floor(env.eval(arguments[0]).requireNumber()))
@@ -1548,7 +1617,10 @@ proc commandLineArgumentsCommand(
     layout: LayoutKind,
     body: seq[SyntaxNode],
 ): Value {.stdCommand: "command-line-arguments", raises: [EvaluatorError].} =
-  let args = commandLineParams()
+  discard """
+  Returns command line arguments passed to the script.
+  """
+  let args = (try: commandLineParams() except: @[])
   list(args.mapIt(text(it)))
 
 proc exitCommand(
@@ -1563,8 +1635,25 @@ proc exitCommand(
   quit(exitCode)
 
 proc addStandardCommands*(env: Environment) {.raises: [].} =
+  commandEnv = newEnvironment()
+  commandEnv.evaluator = env.evaluator
+  commandEnv.commandCaller = env.commandCaller
+  commandEnv.define("stdin", stdinStream())
+  commandEnv.define("stdout", stdoutStream())
+  commandEnv.define("nothing", nothing())
   env.define("stdin", stdinStream())
   env.define("stdout", stdoutStream())
   env.define("nothing", nothing())
   for registration in commandRegistry:
     env.define(registration.name, nativeCommand(registration.command))
+    commandEnv.define(registration.name, nativeCommand(registration.command))
+
+proc getCommandPrototypes*(): seq[string] =
+  const Prototypes = collect:
+    for name, command in commandPrototypes:
+      let rep = name.repr[1 ..< ^1]
+      &"""** {rep}
+#+begin_src crow
+{command[3].repr}
+#+end_src"""
+  result = Prototypes
