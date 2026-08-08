@@ -202,7 +202,7 @@ Commands share state in a [[term-command-env][command environment]] that is sepa
 
 =command-get name= returns the value stored under =name= in the command environment. The name may be a symbol, text value, or syntax that resolves to a symbol.
 
-The prelude uses the command environment to implement =if2= and =else=. =if2= pushes its condition result onto a stack of pending results, and =else= pops the top of that stack, running its body only when the condition was falsey. Because =else= always follows its matching =if2= block, the stack keeps nested pairs independent, so an outer =else= checks its own =if2= even when an inner pair ran inside the body.
+The prelude uses the command environment to implement the statement form of =if= and the =else= command. =if= pushes its condition result onto a stack of pending results, and =else= pops the top of that stack, running its body only when the condition was falsey. Because =else= always follows its matching =if= block, the stack keeps nested pairs independent, so an outer =else= checks its own =if= even when an inner pair ran inside the body.
 
 ** Syntax Values
 [[term-syntax-value][Syntax values]] preserve both a [[term-syntax-node][syntax node]] and the [[term-env][environment]] where that syntax was [[term-capture][captured]]. This is what makes [[term-raw-syntax][raw-syntax]] commands and macros predictable.
@@ -238,6 +238,8 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 =or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value. With no arguments, it returns =false=.
 
 =if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =crow/prelude.nest= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Crow cannot yet directly create runtime commands.
+
+=if= has two forms. When its block contains a =then:= clause, =if condition:= acts as a conditional expression: the =then:= body evaluates when the condition is truthy and the =else:= body when it is falsey. When its block contains no =then:= clause, =if= acts as a statement whose condition result is shared with a following =else= command. It pushes the condition result onto a stack in the [[term-command-env][command environment]] and evaluates its block when the condition is truthy; the following =else= pops that result and evaluates its own block when the condition was falsey.
 
 ** Data Commands
 Arithmetic commands =+=, =-=, =*=, and =/= require at least one argument. They evaluate all arguments as numbers and [[term-fold-left][fold left]].

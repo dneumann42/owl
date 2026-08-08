@@ -1,12 +1,13 @@
 define:
-  xs = []
+  xs = []:
+    1
   ys = []:
     1
 
-if2 (empty? xs):
-  if2 (empty? ys):
-    print "both empty"
-  else:
-    print "xs empty, ys not"
+if (empty? xs):
+  print "xs empty, ys not"
+
+print "TEST"  
+
 else:
   print "xs not empty"

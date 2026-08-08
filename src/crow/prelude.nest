@@ -2,14 +2,15 @@ command-define:
   condition-results = (list)
 
 block-command if condition:
-  eval (pick (eval condition) (body-of block "then") (body-of block "else"))
-
-block-command if2 condition:
   define:
     result = (eval condition)
-  command-set condition-results (cons result (command-get condition-results))
-  when result:
-    eval block
+    tagged = (not (empty? (statements (body-of block "then"))))
+  when (not tagged):
+    command-set condition-results (cons result (command-get condition-results))
+    when result:
+      eval block
+  when tagged:
+    eval (pick result (body-of block "then") (body-of block "else"))
 
 block-command else:
   define:

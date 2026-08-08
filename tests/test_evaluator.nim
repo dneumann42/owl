@@ -812,14 +812,14 @@ command-set missing 1
 """
       )
 
-  test "prelude if2 and else share their condition state":
+  test "prelude if and else share their condition state":
     let trueBranch = run(
       """
 define:
   xs = []
-if2 (empty? xs):
+if (empty? xs):
   command-define:
-    seen = "if2"
+    seen = "if"
 else:
   command-define:
     seen = "else"
@@ -827,16 +827,16 @@ command-get seen
 """
     )
     check trueBranch.kind == Text
-    check trueBranch.text == "if2"
+    check trueBranch.text == "if"
 
     let falseBranch = run(
       """
 define:
   xs = []:
     1
-if2 (empty? xs):
+if (empty? xs):
   command-define:
-    seen = "if2"
+    seen = "if"
 else:
   command-define:
     seen = "else"
@@ -846,17 +846,17 @@ command-get seen
     check falseBranch.kind == Text
     check falseBranch.text == "else"
 
-  test "prelude if2 and else nest without clobbering outer conditions":
+  test "prelude if and else nest without clobbering outer conditions":
     let innerFalse = run(
       """
 define:
   xs = []
   ys = []:
     1
-if2 (empty? xs):
-  if2 (empty? ys):
+if (empty? xs):
+  if (empty? ys):
     command-define:
-      seen = "inner-if2"
+      seen = "inner-if"
   else:
     command-define:
       seen = "inner-else"
@@ -875,10 +875,10 @@ define:
   xs = []:
     1
   ys = []
-if2 (empty? xs):
-  if2 (empty? ys):
+if (empty? xs):
+  if (empty? ys):
     command-define:
-      seen = "inner-if2"
+      seen = "inner-if"
   else:
     command-define:
       seen = "inner-else"
@@ -897,9 +897,9 @@ define:
   xs = []
   ys = []
   zs = []
-if2 (empty? xs):
-  if2 (empty? ys):
-    if2 (empty? zs):
+if (empty? xs):
+  if (empty? ys):
+    if (empty? zs):
       command-define:
         seen = "deep"
     else:
@@ -916,3 +916,37 @@ command-get seen
     )
     check allTrue.kind == Text
     check allTrue.text == "deep"
+
+  test "prelude if tagged form coexists with standalone else":
+    let tagged = run(
+      """
+if (= 1 2):
+  then:
+    "bad"
+  else:
+    "good"
+"""
+    )
+    check tagged.kind == Text
+    check tagged.text == "good"
+
+    let nestedTagged = run(
+      """
+define:
+  xs = []
+if (empty? xs):
+  if (= 1 2):
+    then:
+      command-define:
+        seen = "clause-then"
+    else:
+      command-define:
+        seen = "clause-else"
+else:
+  command-define:
+    seen = "outer-else"
+command-get seen
+"""
+    )
+    check nestedTagged.kind == Text
+    check nestedTagged.text == "clause-else"
