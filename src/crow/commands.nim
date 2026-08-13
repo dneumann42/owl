@@ -97,8 +97,39 @@ proc moduleName(path: string): string {.raises: [].} =
   let name = splitFile(path).name
   if name.len > 0: name else: path
 
+proc modulePath(node: SyntaxNode): string {.raises: [EvaluatorError].} =
+  result = node.requireSymbol("module name")
+  if splitFile(result).ext.len == 0:
+    result.add ".nest"
+
 proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
   dictionary(moduleEnv.bindings)
+
+proc useSymbolFilters(
+    body: seq[SyntaxNode]
+): tuple[hasIncludes: bool, includes, excludes: seq[string]] {.raises: [EvaluatorError].} =
+  for clause in body:
+    if clause.kind != Command or clause.callee.kind != Symbol:
+      raise newException(EvaluatorError, "use filters must be include, only, or exclude commands")
+    case clause.callee.symbol
+    of "include", "only":
+      result.hasIncludes = true
+      for symbol in clause.arguments:
+        result.includes.add symbol.requireSymbol("symbol to include")
+    of "exclude", "except":
+      for symbol in clause.arguments:
+        result.excludes.add symbol.requireSymbol("symbol to exclude")
+    else:
+      raise newException(EvaluatorError, "use filters must be include, only, or exclude commands")
+
+proc useSelectedSymbols(
+    env, moduleEnv: Environment, body: seq[SyntaxNode]
+) {.raises: [EvaluatorError].} =
+  let filters = useSymbolFilters(body)
+  for name, value in moduleEnv.bindings:
+    let included = not filters.hasIncludes or name in filters.includes
+    if included and name notin filters.excludes:
+      env.define(name, value)
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
   value.kind == Record and name in value.recordFields
@@ -356,27 +387,31 @@ proc useCommand(
     layout: LayoutKind,
     body: seq[SyntaxNode],
 ): Value {.stdCommand: "use", raises: [EvaluatorError].} =
-  discard layout
-  discard body
   if arguments.len < 1 or arguments.len > 2:
-    raise newException(EvaluatorError, "use expects path and optional module name")
+    raise newException(EvaluatorError, "use expects a module name and optional namespace")
+
+  if layout == ColonLayout and arguments.len == 2:
+    raise newException(EvaluatorError, "use filters cannot be combined with a module name")
+  if layout notin {NoLayout, ColonLayout}:
+    raise newException(EvaluatorError, "use filters require a colon block")
 
   let
-    path = env.eval(arguments[0]).requireText()
+    path = modulePath(arguments[0])
     node = loadSourceFile(path, arguments[0].pos)
     name =
       if arguments.len == 2:
-        if arguments[1].kind == String:
-          env.eval(arguments[1]).requireText()
-        else:
-          arguments[1].requireSymbol("module name")
+        arguments[1].requireSymbol("module namespace")
       else:
         moduleName(path)
     moduleEnv = env.child()
 
   discard moduleEnv.evalBlock(node.statements)
-  result = moduleDictionary(moduleEnv)
-  env.define(name, result)
+  if layout == ColonLayout:
+    env.useSelectedSymbols(moduleEnv, body)
+    result = nothing()
+  else:
+    result = moduleDictionary(moduleEnv)
+    env.define(name, result)
 
 proc symbolTextCommand(
     env: Environment,
@@ -541,54 +576,6 @@ proc setCommand(
     result = env.eval(node.value)
     env.setSymbol(node.bindingSymbol, result)
 
-proc commandSetCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-set", raises: [EvaluatorError].} =
-  discard layout
-  if arguments.len == 2 and body.len == 0:
-    result = env.eval(arguments[1])
-    commandEnv.setTarget(arguments[0], result)
-    return
-
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "set expects a symbol/value pair or a block")
-
-  result = nothing()
-  for node in body:
-    if node.kind != Binding:
-      raise newException(EvaluatorError, "set body entries must be bindings")
-    result = env.eval(node.value)
-    commandEnv.setSymbol(node.bindingSymbol, result)
-
-proc commandName(
-    env: Environment, node: SyntaxNode, role: string
-): string {.raises: [EvaluatorError].} =
-  let value = try:
-    env.eval(node)
-  except EvaluatorError:
-    nothing()
-  if value.kind == Text:
-    value.text
-  elif value.kind == Syntax:
-    value.syntax.requireSymbol(role)
-  else:
-    node.requireSymbol(role)
-
-proc commandGetCommand(
-  env: Environment,
-  arguments: seq[SyntaxNode],
-  layout: LayoutKind,
-  body: seq[SyntaxNode],
-): Value {.stdCommand: "command-get", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "command-get expects one symbol")
-  commandEnv.get(env.commandName(arguments[0], "command name"))
-
 proc evalCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -700,6 +687,12 @@ proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
       raise newException(EvaluatorError, &"unsupported stream operation: {name}")
   )
 
+proc streamText(value: Value): string {.raises: [].} =
+  if value.kind == Text:
+    value.text
+  else:
+    $value
+
 proc streamRecord(entries: sink Table[string, Value]): Value {.raises: [].} =
   for field in StreamFields:
     if not entries.hasKey(field):
@@ -766,7 +759,7 @@ proc stdoutStream(): Value {.raises: [].} =
       for argument in arguments:
         result = env.eval(argument)
         try:
-          stdout.write($result)
+          stdout.write(result.streamText())
         except IOError as error:
           raise newException(EvaluatorError, error.msg)
   )
@@ -783,7 +776,7 @@ proc stdoutStream(): Value {.raises: [].} =
       for argument in arguments:
         result = env.eval(argument)
         try:
-          stdout.write($result)
+          stdout.write(result.streamText())
         except IOError as error:
           raise newException(EvaluatorError, error.msg)
       try:
@@ -870,7 +863,7 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
       for argument in arguments:
         result = env.eval(argument)
         try:
-          file.write($result)
+          file.write(result.streamText())
         except IOError as error:
           raise newException(EvaluatorError, error.msg)
   )
@@ -889,7 +882,7 @@ proc openFileStream(path, mode: string): Value {.raises: [].} =
       for argument in arguments:
         result = env.eval(argument)
         try:
-          file.write($result)
+          file.write(result.streamText())
         except IOError as error:
           raise newException(EvaluatorError, error.msg)
       try:
@@ -953,7 +946,7 @@ proc openStringStream(content: string): Value {.raises: [].} =
       result = nothing()
       for argument in arguments:
         result = env.eval(argument)
-        buffer.add $result
+        buffer.add result.streamText()
   )
   entries["write-line"] = nativeCommand(
     proc(
@@ -967,7 +960,7 @@ proc openStringStream(content: string): Value {.raises: [].} =
       result = nothing()
       for argument in arguments:
         result = env.eval(argument)
-        buffer.add $result
+        buffer.add result.streamText()
       buffer.add "\n"
   )
   streamRecord(entries)
@@ -1641,6 +1634,7 @@ proc addStandardCommands*(env: Environment) {.raises: [].} =
   commandEnv.define("stdin", stdinStream())
   commandEnv.define("stdout", stdoutStream())
   commandEnv.define("nothing", nothing())
+  env.fallback = commandEnv
   env.define("stdin", stdinStream())
   env.define("stdout", stdoutStream())
   env.define("nothing", nothing())

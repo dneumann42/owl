@@ -1,6 +1,8 @@
-import std/[strutils, tables]
+import std/[algorithm, strutils, tables]
 
 import syntax
+
+const MaxRenderedLineLength = 80
 
 type
   ValueKind* = enum
@@ -26,6 +28,7 @@ type
 
   Environment* = ref object
     parent*: Environment
+    fallback*: Environment
     bindings*: Table[string, Value]
     evaluator*: proc(
       env: Environment, node: SyntaxNode
@@ -143,7 +146,95 @@ proc isTruthy*(value: Value): bool {.raises: [].} =
   else:
     true
 
-proc `$`*(value: Value): string {.raises: [].} =
+proc isIdentifierSymbol(value: string): bool {.raises: [].} =
+  if value.len == 0:
+    return false
+  if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
+    return false
+  for c in value:
+    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?'}:
+      return false
+  true
+
+proc addIndent(target: var string, amount: int) {.raises: [].} =
+  for _ in 0 ..< amount:
+    target.add ' '
+
+proc render(value: Value, indent: int): string {.raises: [].}
+
+proc renderList(value: Value, indent: int): string {.raises: [].} =
+  if value.items.len == 0:
+    return "[]"
+
+  var compactParts: seq[string]
+  var canUseCompact = true
+  for item in value.items:
+    let rendered = item.render(indent + 2)
+    if rendered.contains('\n'):
+      canUseCompact = false
+      break
+    compactParts.add rendered
+
+  let compact = "[]:\n" & repeat(" ", indent + 2) & compactParts.join(", ")
+  if canUseCompact and compact.len <= MaxRenderedLineLength:
+    return compact
+
+  result = "[]:"
+  for item in value.items:
+    result.add '\n'
+    result.addIndent(indent + 2)
+    result.add item.render(indent + 2)
+
+proc renderDictionaryLiteral(value: Value, indent: int): string {.raises: [].} =
+  if value.entries.len == 0:
+    return "{}"
+
+  result = "{}:"
+  var keys: seq[string]
+  for key in value.entries.keys:
+    keys.add key
+  keys.sort()
+
+  var compactParts: seq[string]
+  var canUseCompact = true
+  for key in keys:
+    let rendered = value.entries.getOrDefault(key).render(indent + 2)
+    if rendered.contains('\n'):
+      canUseCompact = false
+      break
+    compactParts.add key & " = " & rendered
+
+  let compact = "{}:\n" & repeat(" ", indent + 2) & compactParts.join(", ")
+  if canUseCompact and compact.len <= MaxRenderedLineLength:
+    return compact
+
+  for key in keys:
+    result.add '\n'
+    result.addIndent(indent + 2)
+    result.add key
+    result.add " = "
+    result.add value.entries.getOrDefault(key).render(indent + 2)
+
+proc renderDictionary(value: Value, indent: int): string {.raises: [].} =
+  var keys: seq[string]
+  for key in value.entries.keys:
+    keys.add key
+  keys.sort()
+
+  var canUseLiteral = true
+  for key in keys:
+    if not key.isIdentifierSymbol:
+      canUseLiteral = false
+      break
+  if canUseLiteral:
+    return value.renderDictionaryLiteral(indent)
+
+  result = "(dict)"
+  for key in keys:
+    result = "(dict-put " & result & " " & quote(key) & " " &
+      value.entries.getOrDefault(key).render(indent) & ")"
+
+proc render(value: Value, indent: int): string {.raises: [].} =
   case value.kind
   of Nothing:
     "nothing"
@@ -155,7 +246,7 @@ proc `$`*(value: Value): string {.raises: [].} =
   of Boolean:
     if value.boolean: "true" else: "false"
   of Text:
-    value.text
+    quote(value.text)
   of Stream:
     case value.stream
     of InputStream:
@@ -163,20 +254,14 @@ proc `$`*(value: Value): string {.raises: [].} =
     of OutputStream:
       "<stdout>"
   of List:
-    var parts: seq[string]
-    for item in value.items:
-      parts.add $item
-    "[" & parts.join(", ") & "]"
+    value.renderList(indent)
   of Dictionary:
-    var parts: seq[string]
-    for key, entry in value.entries:
-      parts.add key & ": " & $entry
-    "{" & parts.join(", ") & "}"
+    value.renderDictionary(indent)
   of Record:
     var parts: seq[string]
     for key in value.recordFields:
       if value.recordEntries.hasKey(key):
-        parts.add key & ": " & $value.recordEntries.getOrDefault(key)
+        parts.add key & ": " & value.recordEntries.getOrDefault(key).render(indent)
     "{" & parts.join(", ") & "}"
   of Syntax:
     $value.syntax
@@ -184,6 +269,9 @@ proc `$`*(value: Value): string {.raises: [].} =
     "<command>"
   of Native:
     "<native>"
+
+proc `$`*(value: Value): string {.raises: [].} =
+  value.render(0)
 
 proc parseNumber*(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =
   if symbol.len == 0 or (

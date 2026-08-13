@@ -253,10 +253,10 @@ define:
     expect EvaluatorError:
       discard run("length 42\n")
 
-  test "to-string pretty prints values as text":
+  test "to-string pretty prints values as owl source":
     let plain = run("to-string \"hello\"\n")
     check plain.kind == Text
-    check plain.text == "hello"
+    check plain.text == "\"hello\""
 
     let structured = run(
       """
@@ -267,7 +267,24 @@ to-string []:
 """
     )
     check structured.kind == Text
-    check structured.text == "[1, two, false]"
+    check structured.text == "[]:\n  1, \"two\", false"
+
+  test "value strings round-trip as owl source":
+    let source = $dictionary({
+      "plain": text("a\nb"),
+      "space key": number(42)
+    }.toTable())
+
+    let value = run(source)
+    check value.kind == Dictionary
+    check value.entries["plain"].text == "a\nb"
+    check value.entries["space key"].number == 42
+
+    let compact = $dictionary({
+      "answer": number(42),
+      "name": text("crow")
+    }.toTable())
+    check compact == "{}:\n  answer = 42, name = \"crow\""
 
   test "assert raises when condition is false":
     discard run("assert (= 1 1)\n")
@@ -330,7 +347,7 @@ explode
       fail()
     except EvaluatorError as error:
       let output = report(error)
-      check output.contains("/tmp/stack.nest:2:3: error: boom")
+      check output.contains("/tmp/stack.nest:2:3: error: \"boom\"")
       check output.contains("  error \"boom\"")
       check output.contains("Stack trace:")
       check output.contains("/tmp/stack.nest:3:1 in explode")
@@ -387,7 +404,7 @@ fun inc n:
     let value = evaluator.exec(
       parse(
         """
-use "mathish.nest" mathish
+use mathish
 mathish.inc mathish.imported
 """,
         dir / "main.nest",
@@ -398,6 +415,65 @@ mathish.inc mathish.imported
 
     expect EvaluatorError:
       discard evaluator.exec(parse("imported\n"))
+
+  test "use imports included module symbols into the script namespace":
+    let dir = getTempDir() / "crow-use-filter-test"
+    createDir(dir)
+    writeFile(
+      dir / "mathish.nest",
+      """
+define:
+  imported = 40
+  hidden = 99
+fun inc n:
+  + n 1
+""",
+    )
+
+    var evaluator = Evaluator.init()
+    let value = evaluator.exec(
+      parse(
+        """
+use mathish:
+  include imported inc
+  exclude hidden
+inc imported
+""",
+        dir / "main.nest",
+      )
+    )
+    check value.kind == Number
+    check value.number == 41
+    expect EvaluatorError:
+      discard evaluator.exec(parse("hidden\n"))
+
+  test "use excludes selected module symbols from the script namespace":
+    let dir = getTempDir() / "crow-use-exclude-test"
+    createDir(dir)
+    writeFile(
+      dir / "mathish.nest",
+      """
+define:
+  imported = 40
+  hidden = 99
+""",
+    )
+
+    var evaluator = Evaluator.init()
+    let value = evaluator.exec(
+      parse(
+        """
+use mathish:
+  exclude hidden
+imported
+""",
+        dir / "main.nest",
+      )
+    )
+    check value.kind == Number
+    check value.number == 40
+    expect EvaluatorError:
+      discard evaluator.exec(parse("hidden\n"))
 
   test "command defines closures that receive raw syntax":
     let value = run(
@@ -760,25 +836,26 @@ for n (range 1 4):
     check value.kind == Number
     check value.number == 13
 
-  test "command-define and command-get share a separate global scope":
+  test "command environments participate in regular lookup":
     let value = run(
       """
 command-define:
   flag = true
-command-get flag
+flag
 """
     )
     check value.kind == Boolean
     check value.boolean
 
-    expect EvaluatorError:
-      discard run(
-        """
+    let visible = run(
+      """
 command-define:
   hidden = 1
 hidden
 """
-      )
+    )
+    check visible.kind == Number
+    check visible.number == 1
 
   test "command-define evaluates values in the caller environment":
     let value = run(
@@ -787,19 +864,19 @@ define:
   base = 40
 command-define:
   answer = (+ base 2)
-+ (command-get answer) (command-get (concat "an" "swer"))
++ answer answer
 """
     )
     check value.kind == Number
     check value.number == 84
 
-  test "command-set mutates existing command state":
+  test "set mutates command environment state":
     let value = run(
       """
 command-define:
   count = 1
-command-set count 2
-command-get count
+set count 2
+count
 """
     )
     check value.kind == Number
@@ -808,7 +885,7 @@ command-get count
     expect EvaluatorError:
       discard run(
         """
-command-set missing 1
+set missing 1
 """
       )
 
@@ -823,7 +900,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "else"
-command-get seen
+seen
 """
     )
     check trueBranch.kind == Text
@@ -840,7 +917,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "else"
-command-get seen
+seen
 """
     )
     check falseBranch.kind == Text
@@ -863,7 +940,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """
     )
     check innerFalse.kind == Text
@@ -885,7 +962,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """
     )
     check outerFalse.kind == Text
@@ -911,7 +988,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer"
-command-get seen
+seen
 """
     )
     check allTrue.kind == Text
@@ -945,7 +1022,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """
     )
     check nestedTagged.kind == Text

@@ -194,13 +194,9 @@ Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is
 The arithmetic assignment commands =+==, =-==, =*==, and =/== require an existing numeric symbol and one numeric value. They update the existing symbol and return the new number.
 
 *** Command Environment
-Commands share state in a [[term-command-env][command environment]] that is separate from the main execution environment. Each [[term-evaluator][evaluator]] owns one fresh command environment with the standard commands installed.
+Commands share state in a [[term-command-env][command environment]]. Each [[term-evaluator][evaluator]] owns one fresh command environment with the standard commands installed. The command environment is a fallback scope of the main environment, so ordinary symbol lookup and =set= can read and update its bindings.
 
 =command-define= evaluates every [[term-binding][binding]] value in the caller environment and defines that symbol in the command environment. It does not require the symbol to already exist, and it writes only to the command environment.
-
-=command-set= mutates an existing symbol in the command environment. In two-argument form, =command-set target value= evaluates the value and assigns it to =target=. Block form =command-set:= accepts only [[term-binding][bindings]]. Both forms reject unknown symbols.
-
-=command-get name= returns the value stored under =name= in the command environment. The name may be a symbol, text value, or syntax that resolves to a symbol.
 
 The prelude uses the command environment to implement the statement form of =if= and the =else= command. =if= pushes its condition result onto a stack of pending results, and =else= pops the top of that stack, running its body only when the condition was falsey. Because =else= always follows its matching =if= block, the stack keeps nested pairs independent, so an outer =else= checks its own =if= even when an inner pair ran inside the body.
 
@@ -354,7 +350,7 @@ print (Vec3? my-point)
 
 <<term-command>>Command: a callable value. Commands may be native host callbacks or Crow closures.
 
-<<term-command-env>>Command environment: the global environment commands use for state shared across invocations, separate from the main execution environment. Written by =command-define= and =command-set=, read by =command-get=.
+<<term-command-env>>Command environment: the global fallback environment commands use for state shared across invocations. It is initialized by =command-define= and participates in ordinary symbol lookup and =set=.
 
 <<term-diagnostic-frame>>Diagnostic frame: source location attached while an evaluation error unwinds, used to build a stack trace.
 

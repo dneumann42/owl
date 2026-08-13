@@ -4,14 +4,18 @@ import syntax
 import values
 export values
 
-proc newEnvironment*(parent: Environment = nil): Environment {.raises: [].} =
-  result = Environment(parent: parent, bindings: initTable[string, Value]())
+proc newEnvironment*(
+    parent: Environment = nil, fallback: Environment = nil
+): Environment {.raises: [].} =
+  result = Environment(
+    parent: parent, fallback: fallback, bindings: initTable[string, Value]()
+  )
   if parent != nil:
     result.evaluator = parent.evaluator
     result.commandCaller = parent.commandCaller
 
 proc child*(env: Environment): Environment {.raises: [].} =
-  newEnvironment(env)
+  newEnvironment(env, env.fallback)
 
 proc define*(env: Environment, symbol: string, value: Value) {.raises: [].} =
   env.bindings[symbol] = value
@@ -42,6 +46,8 @@ proc find*(env: Environment, symbol: string): Environment {.raises: [].} =
     if current.bindings.hasKey(symbol):
       return current
     current = current.parent
+  if env.fallback != nil:
+    return env.fallback.find(symbol)
   nil
 
 proc contains*(env: Environment, symbol: string): bool {.raises: [].} =

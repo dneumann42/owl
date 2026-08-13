@@ -1,6 +1,7 @@
 import std/[os, rdstdin]
 import crow/[commands, environment, evaluator, parser, syntax, values]
-export commands, environment, evaluator, parser, syntax, values
+import data
+export commands, environment, evaluator, parser, syntax, values, data
 
 proc runRepl() =
   var evaluator = Evaluator.init()

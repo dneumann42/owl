@@ -205,7 +205,7 @@ proc appendIndent(target: var string, amount: int) {.raises: [].} =
   for _ in 0 ..< amount:
     target.add ' '
 
-proc quote(value: string): string {.raises: [].} =
+proc quote*(value: string): string {.raises: [].} =
   result.add '"'
   for c in value:
     case c

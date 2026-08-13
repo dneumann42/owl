@@ -6,7 +6,7 @@ block-command if condition:
     result = (eval condition)
     tagged = (not (empty? (statements (body-of block "then"))))
   when (not tagged):
-    command-set condition-results (cons result (command-get condition-results))
+    set condition-results (cons result condition-results)
     when result:
       eval block
   when tagged:
@@ -14,10 +14,10 @@ block-command if condition:
 
 block-command else:
   define:
-    pending = (command-get condition-results)
+    pending = condition-results
     done = (empty? pending)
   when (not done):
-    command-set condition-results (rest pending)
+    set condition-results (rest pending)
   when (not (pick done nothing (first pending))):
     eval block
 

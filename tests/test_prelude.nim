@@ -87,7 +87,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "else"
-command-get seen
+seen
 """, "if")
     checkText("""define:
   xs = []:
@@ -99,7 +99,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "else"
-command-get seen
+seen
 """, "else")
 
   test "nested statement if and else share the innermost condition":
@@ -120,7 +120,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """, "skipped")
     checkText("""define:
   xs = []:
@@ -138,7 +138,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """, "outer-else")
     checkText("""define:
   xs = []
@@ -155,7 +155,7 @@ if (empty? xs):
 else:
   command-define:
     seen = "outer-else"
-command-get seen
+seen
 """, "inner")
 
   test "else runs unconditionally":
@@ -167,7 +167,7 @@ command-get seen
     checkNumber("""if false:
   command-define:
     x = 1
-length (command-get condition-results)
+length condition-results
 """, 1)
     checkNumber("""if false:
   command-define:
@@ -175,7 +175,7 @@ length (command-get condition-results)
 else:
   command-define:
     x = 2
-length (command-get condition-results)
+length condition-results
 """, 0)
 
   test "list-from builds a list from binding syntax":
