@@ -1,5 +1,5 @@
 import std/[os, rdstdin]
-import crow/[commands, environment, evaluator, parser, syntax, values]
+import owl/[commands, environment, evaluator, parser, syntax, values]
 import data
 export commands, environment, evaluator, parser, syntax, values, data
 
@@ -22,12 +22,12 @@ proc runRepl() =
     history.add line
     try:
       echo evaluator.exec(parse(line, "<repl>"))
-    except CrowError as error:
+    except OwlError as error:
       stderr.write report(error, useColor = true)
     except CatchableError as error:
       stderr.writeLine error.msg
 
-const FormatScript = staticRead("../scripts/formatter.nest")
+const FormatScript = staticRead("../scripts/formatter.owl")
 
 proc runScript(path: string) =
   let content = readFile path
@@ -47,7 +47,7 @@ proc start() =
       return
     if cmds[0] == "--eval":
       if cmds.len < 2:
-        quit "usage: crow --eval <source>", 2
+        quit "usage: owl --eval <source>", 2
       evalSource cmds[1]
       quit 0
     if cmds[0] == "--format":
@@ -59,11 +59,11 @@ proc start() =
         echo a
       quit 0
     if cmds[0] != "run" or cmds.len < 2:
-      quit "usage: crow [--eval <source>|run <path>]", 2
+      quit "usage: owl [--eval <source>|run <path>]", 2
     let path = cmds[1]
     runScript cmds[1]
     quit 0
-  except CrowError as error:
+  except OwlError as error:
     quit report(error, useColor = true), 1
   except CatchableError as error:
     quit error.msg, 1

@@ -1,9 +1,9 @@
 import std/[strutils, unittest]
 
-import crow
-import crow/evaluator
-import crow/parser
-import crow/values
+import owl
+import owl/evaluator
+import owl/parser
+import owl/values
 
 proc run(source: string): Value =
   var evaluator = Evaluator.init()
@@ -214,14 +214,14 @@ nth values 1
 
   test "dict literal collects bindings":
     checkDict("""{}:
-  name = "crow"
+  name = "owl"
   answer = (+ 40 2)
 """)
     checkNumber("""length ({})
 """, 0)
     checkNumber("""define:
   config = {}:
-    name = "crow"
+    name = "owl"
     answer = 42
 + (length config) (field config "answer")
 """, 44)

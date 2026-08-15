@@ -17,7 +17,7 @@ type
     pos*: SourcePos
     label*: string
 
-  CrowError* = object of CatchableError
+  OwlError* = object of CatchableError
     primary*: SourcePos
     frames*: seq[DiagnosticFrame]
 
@@ -151,7 +151,7 @@ proc addLocationPreview(target: var string, pos: SourcePos, useColor: bool) {.ra
     target.add marks
   target.add '\n'
 
-proc addFrame*(error: ref CrowError, pos: SourcePos, label: string) {.raises: [].} =
+proc addFrame*(error: ref OwlError, pos: SourcePos, label: string) {.raises: [].} =
   if not pos.hasSource:
     return
   if error.primary.hasSource:
@@ -161,7 +161,7 @@ proc addFrame*(error: ref CrowError, pos: SourcePos, label: string) {.raises: []
   else:
     error.primary = pos
 
-proc report*(error: ref CrowError, useColor = false): string {.raises: [].} =
+proc report*(error: ref OwlError, useColor = false): string {.raises: [].} =
   let message =
     if useColor:
       BoldRed & "error: " & Reset & error.msg

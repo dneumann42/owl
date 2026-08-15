@@ -2,7 +2,7 @@ import std/[strformat, tables]
 
 import commands, environment, parser, syntax, values, environment
 
-const PreludeSource = staticRead("prelude.nest")
+const PreludeSource = staticRead("prelude.owl")
 
 type Evaluator* = object
   env*: Environment
@@ -98,7 +98,7 @@ proc evalCore(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorErr
 
 proc loadPrelude(env: Environment) {.raises: [EvaluatorError].} =
   try:
-    discard env.eval(parse(PreludeSource, "crow/prelude.nest"))
+    discard env.eval(parse(PreludeSource, "owl/prelude.owl"))
   except CatchableError as error:
     raise newException(EvaluatorError, "invalid prelude: " & error.msg)
 

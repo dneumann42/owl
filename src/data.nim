@@ -1,4 +1,4 @@
-import crow/values
+import owl/values
 
 proc toOwl*(n: SomeNumber): Value =
   result = number(float64(when n is SomeInteger: n.toFloat() else: n))

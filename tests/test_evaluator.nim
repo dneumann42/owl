@@ -1,9 +1,9 @@
 import std/[os, strutils, tables, unittest]
 
-import crow
-import crow/evaluator
-import crow/parser
-import crow/values
+import owl
+import owl/evaluator
+import owl/parser
+import owl/values
 
 type ProbeNative = ref object of NativeValue
   label: string
@@ -43,6 +43,17 @@ define:
     )
     check value.kind == Number
     check value.number == 42
+
+  test "define rejects duplicate symbols in the current environment":
+    expect EvaluatorError:
+      discard run(
+        """
+define:
+  count = 0
+define:
+  count = 0
+"""
+      )
 
   test "define shadows captured symbols and set mutates them":
     let value = run(
@@ -242,13 +253,13 @@ define:
     2
     3
   config = {}:
-    name = "crow"
+    name = "owl"
     answer = 42
-+ (length values) (length config) (length "crow")
++ (length values) (length config) (length "owl")
 """
     )
     check value.kind == Number
-    check value.number == 9
+    check value.number == 8
 
     expect EvaluatorError:
       discard run("length 42\n")
@@ -282,9 +293,9 @@ to-string []:
 
     let compact = $dictionary({
       "answer": number(42),
-      "name": text("crow")
+      "name": text("owl")
     }.toTable())
-    check compact == "{}:\n  answer = 42, name = \"crow\""
+    check compact == "{}:\n  answer = 42, name = \"owl\""
 
   test "assert raises when condition is false":
     discard run("assert (= 1 1)\n")
@@ -341,16 +352,16 @@ not (= 1 2)
 fun explode:
   error "boom"
 explode
-""", "/tmp/stack.nest",
+""", "/tmp/stack.owl",
         )
       )
       fail()
     except EvaluatorError as error:
       let output = report(error)
-      check output.contains("/tmp/stack.nest:2:3: error: \"boom\"")
+      check output.contains("/tmp/stack.owl:2:3: error: \"boom\"")
       check output.contains("  error \"boom\"")
       check output.contains("Stack trace:")
-      check output.contains("/tmp/stack.nest:3:1 in explode")
+      check output.contains("/tmp/stack.owl:3:1 in explode")
 
   test "parse returns syntax evaluated in the caller environment":
     let value = run(
@@ -364,10 +375,10 @@ eval (parse "+ x 2")
     check value.number == 42
 
   test "import evaluates another source file in the caller environment":
-    let dir = getTempDir() / "crow-import-test"
+    let dir = getTempDir() / "owl-import-test"
     createDir(dir)
     writeFile(
-      dir / "defs.nest",
+      dir / "defs.owl",
       """
 define:
   imported = 40
@@ -378,20 +389,20 @@ define:
     let value = evaluator.exec(
       parse(
         """
-import "defs.nest"
+import "defs.owl"
 + imported 2
 """,
-        dir / "main.nest",
+        dir / "main.owl",
       )
     )
     check value.kind == Number
     check value.number == 42
 
   test "use evaluates another source file as a module dictionary":
-    let dir = getTempDir() / "crow-use-test"
+    let dir = getTempDir() / "owl-use-test"
     createDir(dir)
     writeFile(
-      dir / "mathish.nest",
+      dir / "mathish.owl",
       """
 define:
   imported = 40
@@ -407,7 +418,7 @@ fun inc n:
 use mathish
 mathish.inc mathish.imported
 """,
-        dir / "main.nest",
+        dir / "main.owl",
       )
     )
     check value.kind == Number
@@ -417,10 +428,10 @@ mathish.inc mathish.imported
       discard evaluator.exec(parse("imported\n"))
 
   test "use imports included module symbols into the script namespace":
-    let dir = getTempDir() / "crow-use-filter-test"
+    let dir = getTempDir() / "owl-use-filter-test"
     createDir(dir)
     writeFile(
-      dir / "mathish.nest",
+      dir / "mathish.owl",
       """
 define:
   imported = 40
@@ -439,7 +450,7 @@ use mathish:
   exclude hidden
 inc imported
 """,
-        dir / "main.nest",
+        dir / "main.owl",
       )
     )
     check value.kind == Number
@@ -448,10 +459,10 @@ inc imported
       discard evaluator.exec(parse("hidden\n"))
 
   test "use excludes selected module symbols from the script namespace":
-    let dir = getTempDir() / "crow-use-exclude-test"
+    let dir = getTempDir() / "owl-use-exclude-test"
     createDir(dir)
     writeFile(
-      dir / "mathish.nest",
+      dir / "mathish.owl",
       """
 define:
   imported = 40
@@ -467,7 +478,7 @@ use mathish:
   exclude hidden
 imported
 """,
-        dir / "main.nest",
+        dir / "main.owl",
       )
     )
     check value.kind == Number
@@ -502,7 +513,7 @@ run:
     check value.kind == Number
     check value.number == 7
 
-  test "prelude defines list literals in crow":
+  test "prelude defines list literals in owl":
     let value = run(
       """
 []:
@@ -517,16 +528,16 @@ run:
     check value.items[1].number == 2
     check value.items[2].number == 3
 
-  test "prelude defines dictionary literals in crow":
+  test "prelude defines dictionary literals in owl":
     let value = run(
       """
 {}:
-  name = "crow"
+  name = "owl"
   answer = (+ 40 2)
 """
     )
     check value.kind == Dictionary
-    check value.entries["name"].text == "crow"
+    check value.entries["name"].text == "owl"
     check value.entries["answer"].number == 42
 
   test "dictionary entries can be read with dict-get and field":
@@ -534,7 +545,7 @@ run:
       """
 define:
   config = {}:
-    name = "crow"
+    name = "owl"
     answer = (+ 40 2)
 + (dict-get config "answer") (field config "answer")
 """
@@ -547,7 +558,7 @@ define:
       """
 define:
   config = (dict)
-set config (dict-put config "name" "crow")
+set config (dict-put config "name" "owl")
 set config (dict-put config "answer" (+ 40 2))
 dict-get config "answer"
 """
@@ -580,7 +591,7 @@ define:
     20
   config = (dict)
 set values.[1] 30
-set config.["name"] "crow"
+set config.["name"] "owl"
 set config.answer 12
 + values.[1] config.answer
 """
@@ -710,20 +721,19 @@ capture x (+ 20 22):
     check value.kind == Native
     check ProbeNative(value.native).label == "from-native"
 
-  test "prelude defines if in crow":
+  test "prelude defines if in owl":
     let value = run(
       """
 if (= 1 2):
-  then:
-    "bad"
-  else:
-    "good"
+  "bad"
+else:
+  "good"
 """
     )
     check value.kind == Text
     check value.text == "good"
 
-  test "prelude defines cond in crow":
+  test "prelude defines cond in owl":
     let value = run(
       """
 define:
@@ -771,8 +781,7 @@ cond:
 define:
   n = 0
 while (< n 3):
-  define:
-    n = (+ n 1)
+  set n (+ n 1)
 n
 """
     )
@@ -789,7 +798,7 @@ value-of answer
     )
     check value.kind == Command
 
-  test "prelude defines range iterators in crow":
+  test "prelude defines range iterators in owl":
     let value = run(
       """
 define:
@@ -800,7 +809,7 @@ define:
     check value.kind == Number
     check value.number == 6
 
-  test "prelude defines countdown iterators in crow":
+  test "prelude defines countdown iterators in owl":
     let value = run(
       """
 define:
@@ -811,7 +820,7 @@ define:
     check value.kind == Number
     check value.number == 6
 
-  test "prelude defines list and once iterators in crow":
+  test "prelude defines list and once iterators in owl":
     let value = run(
       """
 define:
@@ -826,7 +835,7 @@ define:
     check value.kind == Number
     check value.number == 33
 
-  test "prelude defines for over iterators in crow":
+  test "prelude defines for over iterators in owl":
     let value = run(
       """
 for n (range 1 4):
@@ -994,14 +1003,13 @@ seen
     check allTrue.kind == Text
     check allTrue.text == "deep"
 
-  test "prelude if tagged form coexists with standalone else":
+  test "prelude if standalone form coexists with standalone else":
     let tagged = run(
       """
 if (= 1 2):
-  then:
-    "bad"
-  else:
-    "good"
+  "bad"
+else:
+  "good"
 """
     )
     check tagged.kind == Text
@@ -1013,12 +1021,11 @@ define:
   xs = []
 if (empty? xs):
   if (= 1 2):
-    then:
-      command-define:
-        seen = "clause-then"
-    else:
-      command-define:
-        seen = "clause-else"
+    command-define:
+      seen = "clause-then"
+  else:
+    command-define:
+      seen = "clause-else"
 else:
   command-define:
     seen = "outer-else"

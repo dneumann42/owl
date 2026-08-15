@@ -1,4 +1,4 @@
-#+TITLE: Error handling in Crow
+#+TITLE: Error handling in Owl
 
 #+begin_src nest
 ;; In nest, we care about what we can do with a thing, not what things are

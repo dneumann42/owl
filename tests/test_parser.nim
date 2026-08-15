@@ -1,7 +1,7 @@
 import std/[strutils, unittest]
 
-import crow/parser
-import crow/syntax
+import owl/parser
+import owl/syntax
 
 proc symbols(node: SyntaxNode): seq[string] =
   case node.kind
@@ -147,7 +147,7 @@ pos3 = (Vec3:
   test "parses dictionary literal command with binding entries":
     let tree = parse("""
 config = {}:
-  name = "crow"
+  name = "owl"
   answer = (+ 40 2)
 """)
     let value = tree.statements[0].value
@@ -157,7 +157,7 @@ config = {}:
     check value.body.len == 2
     check value.body[0].kind == Binding
     check value.body[0].bindingSymbol == "name"
-    check value.body[0].value.stringValue == "crow"
+    check value.body[0].value.stringValue == "owl"
     check value.body[1].kind == Binding
     check value.body[1].bindingSymbol == "answer"
     check value.body[1].value.callee.symbol == "+"
@@ -308,32 +308,32 @@ block-command ([]):
 
   test "reports source path, line, column, and preview":
     try:
-      discard parse("define:\n  x = \"\\x\"\n", "/tmp/bad.nest")
+      discard parse("define:\n  x = \"\\x\"\n", "/tmp/bad.owl")
       fail()
     except ParserError as error:
       let output = report(error)
-      check output.contains("/tmp/bad.nest:2:9: error: invalid string escape")
+      check output.contains("/tmp/bad.owl:2:9: error: invalid string escape")
       check output.contains("  x = \"\\x\"")
       check output.contains("^")
 
   test "reports interpolation parse errors at the original source position":
     try:
-      discard parse("define:\n  x = \"before \\(.)\"\n", "/tmp/bad-interpolation.nest")
+      discard parse("define:\n  x = \"before \\(.)\"\n", "/tmp/bad-interpolation.owl")
       fail()
     except ParserError as error:
       let output = report(error)
       check output.contains(
-        "/tmp/bad-interpolation.nest:2:17: error: expected command callee"
+        "/tmp/bad-interpolation.owl:2:17: error: expected command callee"
       )
       check output.contains("  x = \"before \\(.)\"")
 
   test "reuses source registry entries for identical source and path":
     let before = registeredSourceCount()
-    discard parse("a\nb\n", "/tmp/reused.nest")
+    discard parse("a\nb\n", "/tmp/reused.owl")
     check registeredSourceCount() == before + 1
-    discard parse("a\nb\n", "/tmp/reused.nest")
+    discard parse("a\nb\n", "/tmp/reused.owl")
     check registeredSourceCount() == before + 1
-    discard parse("a\nc\n", "/tmp/reused.nest")
+    discard parse("a\nc\n", "/tmp/reused.owl")
     check registeredSourceCount() == before + 2
 
 suite "formatter":

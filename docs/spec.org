@@ -78,7 +78,7 @@ Lexical constants:
 | =LF=                | line feed                                                                                                                 |
 | comment           | =;= through the end of a physical line; discarded by the lexer                                                              |
 * Evaluation
-Crow evaluates parsed [[term-syntax-node][syntax nodes]] into [[term-value][runtime values]] in an  [[term-env][environment]]. Evaluators are created with an environment loaded with native commands. Before execution the prelude script is loaded.
+Owl evaluates parsed [[term-syntax-node][syntax nodes]] into [[term-value][runtime values]] in an  [[term-env][environment]]. Evaluators are created with an environment loaded with native commands. Before execution the prelude script is loaded.
 
 The [[term-value][runtime value]]s are
 
@@ -112,9 +112,9 @@ Evaluator evaluates each expression of a script in order. The value of the last 
 
 [[term-string][Strings]] evaluate to text.
 
-[[term-command][Commands]] evaluate through the [[term-call-protocol][command call protocol]]. Before resolving a command call, Crow has one shorthand rule: if a command has a symbol [[term-callee][callee]], no [[term-argument][arguments]], and no [[term-layout-body][layout body]], that symbol may evaluate directly to a literal or bound non-command value. This is why =x= reads a variable but =x 1= calls the command stored in =x=.
+[[term-command][Commands]] evaluate through the [[term-call-protocol][command call protocol]]. Before resolving a command call, Owl has one shorthand rule: if a command has a symbol [[term-callee][callee]], no [[term-argument][arguments]], and no [[term-layout-body][layout body]], that symbol may evaluate directly to a literal or bound non-command value. This is why =x= reads a variable but =x 1= calls the command stored in =x=.
 
-For any other command call, Crow evaluates the [[term-callee][callee]] expression. The callee must produce a command value. The [[term-parser][parser]] stores continuation indentation as raw [[term-argument][arguments]] on the command node. This lets indentation group command arguments in the same places where parenthesized calls can be written, for example:
+For any other command call, Owl evaluates the [[term-callee][callee]] expression. The callee must produce a command value. The [[term-parser][parser]] stores continuation indentation as raw [[term-argument][arguments]] on the command node. This lets indentation group command arguments in the same places where parenthesized calls can be written, for example:
 
 #+begin_src nest
 print
@@ -142,7 +142,7 @@ abc =
     9
 #+end_src
 
-When a colon follows an argument on the same line, Crow resolves the ambiguity lexically. Identifier-like argument symbols leave the colon for the outer command, so =if condition:= and =block-command name:= keep their existing block form. Operator-like argument symbols take the colon as their own command layout, so =print []:= parses as a call to =print= with one argument, the =[]= command with a colon body. Parenthesizing an operator-like symbol keeps the colon on the outer command, as in =block-command ([]):=.
+When a colon follows an argument on the same line, Owl resolves the ambiguity lexically. Identifier-like argument symbols leave the colon for the outer command, so =if condition:= and =block-command name:= keep their existing block form. Operator-like argument symbols take the colon as their own command layout, so =print []:= parses as a call to =print= with one argument, the =[]= command with a colon body. Parenthesizing an operator-like symbol keeps the colon on the outer command, as in =block-command ([]):=.
 
 The raw [[term-argument][argument]] syntax, [[term-layout-kind][layout kind]], and colon [[term-layout-body][layout body]] syntax are then passed to that command. [[term-native-command][Native commands]] and [[term-closure][closures]] decide which arguments to evaluate.
 
@@ -171,9 +171,9 @@ Native commands are responsible for [[term-arity][arity]] checks, type checks, [
 
 When a closure is called, the argument count must exactly match the [[term-parameter][parameter]] count. If the call provides a body and the closure does not accept one, evaluation fails.
 
-For argument-evaluating closures, Crow creates the [[term-call-scope][call scope]] as a child of the closure's [[term-capture][captured environment]]. Each parameter is [[term-binding-value][bound]] to the evaluated argument value. This is the behavior of =fun=, =fn=, and =lambda=.
+For argument-evaluating closures, Owl creates the [[term-call-scope][call scope]] as a child of the closure's [[term-capture][captured environment]]. Each parameter is [[term-binding-value][bound]] to the evaluated argument value. This is the behavior of =fun=, =fn=, and =lambda=.
 
-For [[term-raw-syntax][raw-syntax]] closures, Crow creates the call scope as a child of the [[term-caller-env][caller environment]]. Each parameter is bound to a =syntax= value for the raw argument node paired with the caller environment. This is the behavior of =command= and =block-command=.
+For [[term-raw-syntax][raw-syntax]] closures, Owl creates the call scope as a child of the [[term-caller-env][caller environment]]. Each parameter is bound to a =syntax= value for the raw argument node paired with the caller environment. This is the behavior of =command= and =block-command=.
 
 Every closure call also binds:
 
@@ -187,7 +187,7 @@ The closure body evaluates in the [[term-call-scope][call scope]] and returns it
 ** Environments And Assignment
 =define= evaluates every [[term-binding][binding]] value in its body and defines that symbol in the current [[term-env][environment]]. It does not require the symbol to already exist, and it writes only to the current [[term-scope][scope]].
 
-=set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=. If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated. If =target= is not a symbol, Crow evaluates it as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
+=set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=. If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated. If =target= is not a symbol, Owl evaluates it as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
 
 Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is evaluated and the named symbol is updated. Unlike the lower-level environment setter, the public =set= command rejects unknown symbols.
 
@@ -203,7 +203,7 @@ The prelude uses the command environment to implement the statement form of =if=
 ** Syntax Values
 [[term-syntax-value][Syntax values]] preserve both a [[term-syntax-node][syntax node]] and the [[term-env][environment]] where that syntax was [[term-capture][captured]]. This is what makes [[term-raw-syntax][raw-syntax]] commands and macros predictable.
 
-=eval= evaluates each [[term-argument][argument]]. If the evaluated value is syntax, Crow evaluates that syntax in its [[term-capture][captured environment]], falling back to the [[term-caller-env][caller environment]] when no captured environment is present. Non-syntax values pass through unchanged.
+=eval= evaluates each [[term-argument][argument]]. If the evaluated value is syntax, Owl evaluates that syntax in its [[term-capture][captured environment]], falling back to the [[term-caller-env][caller environment]] when no captured environment is present. Non-syntax values pass through unchanged.
 
 =parse= evaluates its text argument, parses it, and returns syntax paired with the [[term-caller-env][caller environment]].
 
@@ -220,7 +220,7 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 | =binding-value=  | syntax for a binding value                            |
 | =eval-with=      | evaluates syntax in a child scope with one binding    |
 
-=symbol-text= returns the text of a symbol syntax value. =define-caller-value= defines a value in the caller scope using either a symbol syntax value or a text name. These are intended for Crow-level commands that introduce names.
+=symbol-text= returns the text of a symbol syntax value. =define-caller-value= defines a value in the caller scope using either a symbol syntax value or a text name. These are intended for Owl-level commands that introduce names.
 
 ** Standard Control Flow
 =when= evaluates one condition. If it is truthy, the body evaluates in the current environment and its last value is returned. Otherwise =nothing= is returned.
@@ -233,7 +233,7 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 
 =or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value. With no arguments, it returns =false=.
 
-=if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =crow/prelude.nest= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Crow cannot yet directly create runtime commands.
+=if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =owl/prelude.owl= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Owl cannot yet directly create runtime commands.
 
 =if= has two forms. When its block contains a =then:= clause, =if condition:= acts as a conditional expression: the =then:= body evaluates when the condition is truthy and the =else:= body when it is falsey. When its block contains no =then:= clause, =if= acts as a statement whose condition result is shared with a following =else= command. It pushes the condition result onto a stack in the [[term-command-env][command environment]] and evaluates its block when the condition is truthy; the following =else= pops that result and evaluates its own block when the condition was falsey.
 
@@ -257,7 +257,7 @@ Comparison commands evaluate their two arguments:
 =concat= evaluates text arguments and returns their concatenation.
 
 ** Streams And Resources
-=Stream= is a record interface defined in =crow/prelude.nest=. Its fields are command values: =open=, =close=, =read=, =read-line=, =read-all=, =write=, and =write-line=. Unsupported operations are still present in the record and raise an evaluator error when called.
+=Stream= is a record interface defined in =owl/prelude.owl=. Its fields are command values: =open=, =close=, =read=, =read-line=, =read-all=, =write=, and =write-line=. Unsupported operations are still present in the record and raise an evaluator error when called.
 
 =stdin= and =stdout= are =Stream= records installed in the root environment.
 
@@ -270,7 +270,7 @@ Comparison commands evaluate their two arguments:
 Prelude helpers =read=, =read-line=, =readline=, =read-all=, =write=, and =write-line= call the corresponding command fields on explicit stream values. =read= reads one byte and returns it as text, or =nothing= at end of input. =read-all= returns the remaining input as text.
 
 ** Errors
-Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Crow adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
+Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Owl adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
 
 * String interpolation
 
@@ -346,9 +346,9 @@ print (Vec3? my-point)
 
 <<term-capture>>Captured environment: the environment saved with a closure or syntax value so it can be evaluated later with the same lexical context.
 
-<<term-closure>>Closure: a Crow command value implemented by Crow syntax. It stores parameters, body syntax, captured environment, and argument-evaluation flags.
+<<term-closure>>Closure: a Owl command value implemented by Owl syntax. It stores parameters, body syntax, captured environment, and argument-evaluation flags.
 
-<<term-command>>Command: a callable value. Commands may be native host callbacks or Crow closures.
+<<term-command>>Command: a callable value. Commands may be native host callbacks or Owl closures.
 
 <<term-command-env>>Command environment: the global fallback environment commands use for state shared across invocations. It is initialized by =command-define= and participates in ordinary symbol lookup and =set=.
 
@@ -360,11 +360,11 @@ print (Vec3? my-point)
 
 <<term-expr>>Expression: syntax that produces a value when evaluated.
 
-<<term-finally>>Finally step: cleanup code that runs even if body evaluation fails. Crow uses this in =with= to close resources.
+<<term-finally>>Finally step: cleanup code that runs even if body evaluation fails. Owl uses this in =with= to close resources.
 
 <<term-fold-left>>Fold left: combine values from left to right. For example, =- 10 3 2= computes =(10 - 3) - 2=.
 
-<<term-indent>>Indentation: leading spaces or tabs at the start of a line. Crow converts indentation increases/decreases into block tokens.
+<<term-indent>>Indentation: leading spaces or tabs at the start of a line. Owl converts indentation increases/decreases into block tokens.
 
 <<term-layout-body>>Layout body: the indented body attached to a command call by =:=. Continuation indentation is parsed into the command's argument list instead of its body.
 
@@ -402,7 +402,7 @@ print (Vec3? my-point)
 
 <<term-syntax-inspection>>Syntax inspection: commands that read syntax values as data, such as =statements=, =command-arg=, and =binding-value=.
 
-<<term-syntax-node>>Syntax node: parsed AST data. Crow node kinds are script, binding, command, symbol, and string.
+<<term-syntax-node>>Syntax node: parsed AST data. Owl node kinds are script, binding, command, symbol, and string.
 
 <<term-syntax-value>>Syntax value: a runtime value containing a syntax node and the environment it came from.
 

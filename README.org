@@ -1,3 +1,28 @@
-#+TITLE: Crow
+#+TITLE: Owl
 
+Owl is a command oriented scripting langauge, with a focus on simplicity. A useful little language for utilities, automating workflows, and building small applications.
+Owl is designed to be extended with a simple indentation based syntax. The runtime allows commands to evaluate their arguments as they need, much of the language of owl is defined using commands.
+
+In this example we see owl code, =command= is also a =command=, it is used to define commands within owl. 
+#+begin_src owl
+command say-hello x:
+  print "Hello " (eval x)
+
+say-hello "World"
+#+end_src
+In the previous example, we see an expression =(eval x)=, this is what makes commands powerful, =x= is a =syntax node= until it is evaluated.
+
+Often the default desired behavior is for all arguments passed to be evaluated, and so the owl runtime provides =fun=, which defines a traditional =function= where each argument is evaluated before the body of the function is ran.
+
+#+begin_src owl
+fun factorial n:
+  if (< n 2):
+    1
+  else:
+    * n (factorial (- n 1))
+#+end_src
+=if= and =else= are both defined as commands within owl's =prelude.owl= module, this module loads before any other module.
+
+We can see in the previous example, that =(= and =)= are used to group expressions, =(< n 2)= is the expression of a call to the command =<= passing the values =n= and =2=.
+=* n (factorial (- n 1))= means there's a call to =*= passing the value of =n= and the resulting value of calling =factorial= with the result of the call to =-= passing =n= and =1=.
 

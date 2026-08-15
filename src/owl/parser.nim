@@ -4,7 +4,7 @@ import syntax
 export syntax
 
 type
-  ParserError* = object of CrowError
+  ParserError* = object of OwlError
 
   TokenKind = enum
     Eof

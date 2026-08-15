@@ -100,7 +100,7 @@ proc moduleName(path: string): string {.raises: [].} =
 proc modulePath(node: SyntaxNode): string {.raises: [EvaluatorError].} =
   result = node.requireSymbol("module name")
   if splitFile(result).ext.len == 0:
-    result.add ".nest"
+    result.add ".owl"
 
 proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
   dictionary(moduleEnv.bindings)
@@ -332,9 +332,10 @@ proc defineCommand(
   for node in body:
     if node.kind != Binding:
       raise newException(EvaluatorError, "define body entries must be bindings")
-    if not env.contains(node.bindingSymbol):
-      result = env.eval(node.value)
-      env.define(node.bindingSymbol, result)
+    if env.bindings.hasKey(node.bindingSymbol):
+      raise newException(EvaluatorError, &"symbol already defined: {node.bindingSymbol}")
+    result = env.eval(node.value)
+    env.define(node.bindingSymbol, result)
 
 proc commandDefineCommand(
     env: Environment,
@@ -984,7 +985,7 @@ proc openFileCommand(
   case arguments.len
   of 1:
     let mode = env.eval(arguments[0]).requireText()
-    openFileStream(getTempDir() / "crow-example-stream.txt", mode)
+    openFileStream(getTempDir() / "owl-example-stream.txt", mode)
   of 2:
     let path = env.eval(arguments[0]).requireText()
     let mode = env.eval(arguments[1]).requireText()
@@ -1655,7 +1656,7 @@ proc getCommandPrototypes*(): seq[string] =
     for name, command in commandPrototypes:
       let rep = name.repr[1 ..< ^1]
       &"""** {rep}
-#+begin_src crow
+#+begin_src owl
 {command[3].repr}
 #+end_src"""
   result = Prototypes
