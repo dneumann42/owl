@@ -4,29 +4,37 @@ command-define:
 block-command if condition:
   define:
     result = (eval condition)
-    tagged = (not (empty? (statements (body-of block "then"))))
-  when (not tagged):
-    set condition-results (cons result condition-results)
-    when result:
-      eval block
-  when tagged:
-    eval (pick result (body-of block "then") (body-of block "else"))
+    then-result = nothing
+  when result:
+    set then-result (eval block)
+  set condition-results (cons (cons result (cons then-result (list))) condition-results)
+  then-result
 
 block-command else:
   define:
     pending = condition-results
     done = (empty? pending)
+    result = nothing
   when (not done):
     set condition-results (rest pending)
-  when (not (pick done nothing (first pending))):
-    eval block
+    define:
+      frame = (first pending)
+      condition = (first frame)
+      then-result = (first (rest frame))
+  when done:
+    set result (eval block)
+  when (not done):
+    when condition:
+      set result then-result
+    when (not condition):
+      set result (eval block)
+  result
 
 fun list-from nodes:
   if (empty? nodes):
-    then:
-      list
-    else:
-      cons (eval (first nodes)) (list-from (rest nodes))
+    list
+  else:
+    cons (eval (first nodes)) (list-from (rest nodes))
 
 block-command ([]):
   list-from (statements block)
@@ -37,31 +45,39 @@ block-command (do):
 
 fun dict-from nodes:
   if (empty? nodes):
-    then:
-      dict
-    else:
-      define:
-        entry = (first nodes)
-      dict-put (dict-from (rest nodes)) (binding-symbol entry) (eval (binding-value entry))
+    dict
+  else:
+    define:
+      entry = (first nodes)
+    dict-put (dict-from (rest nodes)) (binding-symbol entry) (eval (binding-value entry))
 
 block-command ({}):
   dict-from (statements block)
 
 fun record-fields nodes:
   if (empty? nodes):
-    then:
-      list
-    else:
-      define:
-        entry = (first nodes)
-      cons (binding-symbol entry) (record-fields (rest nodes))
+    list
+  else:
+    define:
+      entry = (first nodes)
+    cons (binding-symbol entry) (record-fields (rest nodes))
 
 fun record-defaults nodes:
   if (empty? nodes):
-    then:
-      list
+    list
+  else:
+    cons (binding-value (first nodes)) (record-defaults (rest nodes))
+
+fun field-value fields name fallback:
+  if (empty? fields):
+    fallback
+  else:
+    define:
+      entry = (first fields)
+    if (= (binding-symbol entry) name):
+      eval (binding-value entry)
     else:
-      cons (binding-value (first nodes)) (record-defaults (rest nodes))
+      field-value (rest fields) name fallback
 
 block-command record name:
   define:
@@ -85,46 +101,41 @@ record Stream:
 
 fun cond-from clauses:
   if (empty? clauses):
-    then:
-      nothing
+    nothing
+  else:
+    define:
+      clause = (first clauses)
+    when (not (= (command-symbol clause) "when")):
+      when (not (= (command-symbol clause) "|")):
+        error "cond expects when or |"
+    if (eval (command-arg clause 0)):
+      eval (command-body clause)
     else:
-      define:
-        clause = (first clauses)
-      when (not (= (command-symbol clause) "when")):
-        when (not (= (command-symbol clause) "|")):
-          error "cond expects when or |"
-      if (eval (command-arg clause 0)):
-        then:
-          eval (command-body clause)
-        else:
-          cond-from (rest clauses)
+      cond-from (rest clauses)
 
 block-command cond:
   cond-from (statements block)
 
 fun nth values index:
   if (= index 0):
-    then:
-      first values
-    else:
-      nth (rest values) (- index 1)
+    first values
+  else:
+    nth (rest values) (- index 1)
 
 fun append-value values value:
   if (empty? values):
-    then:
-      cons value (list)
-    else:
-      cons (first values) (append-value (rest values) value)
+    cons value (list)
+  else:
+    cons (first values) (append-value (rest values) value)
 
 block-command append target value:
   set (value-of target) (append-value (eval target) (eval value))
 
 fun drop-front values count:
   if (or (<= count 0) (empty? values)):
-    then:
-      values
-    else:
-      drop-front (rest values) (- count 1)
+    values
+  else:
+    drop-front (rest values) (- count 1)
 
 block-command pop-front target count:
   set (value-of target) (drop-front (eval target) (eval count))
@@ -157,13 +168,12 @@ fun range start stop:
     current = start
   fun next:
     if (< current stop):
-      then:
-        define:
-          value = current
-        += current 1
-        value
-      else:
-        nothing
+      define:
+        value = current
+      += current 1
+      value
+    else:
+      nothing
   value-of next
 
 fun countdown start stop:
@@ -171,13 +181,12 @@ fun countdown start stop:
     current = start
   fun next:
     if (> current stop):
-      then:
-        define:
-          value = current
-        -= current 1
-        value
-      else:
-        nothing
+      define:
+        value = current
+      -= current 1
+      value
+    else:
+      nothing
   value-of next
 
 fun iter values:
@@ -185,13 +194,12 @@ fun iter values:
     remaining = values
   fun next:
     if (empty? remaining):
-      then:
-        nothing
-      else:
-        define:
-          value = (first remaining)
-        set remaining (rest remaining)
-        value
+      nothing
+    else:
+      define:
+        value = (first remaining)
+      set remaining (rest remaining)
+      value
   value-of next
 
 fun once value:
@@ -199,11 +207,10 @@ fun once value:
     pending = true
   fun next:
     if pending:
-      then:
-        set pending false
-        value
-      else:
-        nothing
+      set pending false
+      value
+    else:
+      nothing
   value-of next
 
 fun for-each item iterator body:

@@ -32,36 +32,32 @@ proc checkTrue(source: string) =
   check run(source).isTruthy
 
 suite "prelude":
-  test "if with tagged clauses returns the matching branch":
+  test "if returns the matching direct branch":
     checkText("""if (= 1 1):
-  then:
-    "good"
-  else:
-    "bad"
+  "good"
+else:
+  "bad"
 """, "good")
     checkText("""if (= 1 2):
-  then:
-    "good"
-  else:
-    "bad"
+  "good"
+else:
+  "bad"
 """, "bad")
 
-  test "if with tagged clauses works without else":
+  test "if works without else":
     checkText("""if (= 1 1):
-  then:
-    "good"
+  "good"
 """, "good")
     checkTrue("""when (not (if false:
-  then:
-    true
+  true
 )):
   true
 """)
 
-  test "if with tagged clauses returns a value in an expression":
+  test "if returns a value in an expression":
     checkText("""define:
-  result = (if true:
-    then:
+  result = (do:
+    if true:
       "y"
     else:
       "z"
@@ -69,8 +65,8 @@ suite "prelude":
 result
 """, "y")
     checkText("""define:
-  result = (if false:
-    then:
+  result = (do:
+    if false:
       "a"
     else:
       "b"

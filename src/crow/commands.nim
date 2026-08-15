@@ -166,11 +166,17 @@ proc setFieldValue(
   case value.kind
   of Dictionary:
     result = value
+    result.entries = initTable[string, Value]()
+    for key, current in value.entries.pairs:
+      result.entries[key] = current
     result.entries[name] = entry
   of Record:
     if not value.hasRecordField(name):
       raise newException(EvaluatorError, &"cannot add record field: {name}")
     result = value
+    result.recordEntries = initTable[string, Value]()
+    for key, current in value.recordEntries.pairs:
+      result.recordEntries[key] = current
     result.recordEntries[name] = entry
   else:
     raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
@@ -182,6 +188,7 @@ proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].}
     if index < 0 or index >= value.items.len:
       raise newException(EvaluatorError, "list index out of range")
     result = value
+    result.items = @(value.items)
     result.items[index] = entry
   of Dictionary, Record:
     result = value.setFieldValue(key.requireText(), entry)
@@ -325,8 +332,9 @@ proc defineCommand(
   for node in body:
     if node.kind != Binding:
       raise newException(EvaluatorError, "define body entries must be bindings")
-    result = env.eval(node.value)
-    env.define(node.bindingSymbol, result)
+    if not env.contains(node.bindingSymbol):
+      result = env.eval(node.value)
+      env.define(node.bindingSymbol, result)
 
 proc commandDefineCommand(
     env: Environment,
