@@ -1,0 +1,40 @@
+; Lists, dictionaries, records, selectors, mutation, and rendering.
+define:
+  values = []:
+    10
+    + 10 10
+    30
+write-line stdout (to-string (length values))
+write-line stdout (to-string (first values))
+write-line stdout (to-string (nth values 1))
+write-line stdout (to-string (first (rest values)))
+write-line stdout (to-string (empty? (list)))
+append values 40
+write-line stdout (to-string (nth values 3))
+pop-front values 2
+write-line stdout (to-string (first values))
+define:
+  config = {}:
+    name = "owl"
+    answer = (+ 40 2)
+write-line stdout (to-string (length config))
+write-line stdout (dict-get config "name")
+write-line stdout (to-string config.answer)
+set config.answer 43
+set config.["extra"] 7
+write-line stdout (to-string (+ config.answer config.extra))
+set config (dict-put config "name" "barn")
+write-line stdout config.name
+record Vec3:
+  x = 0
+  y = 0
+  z = 0
+define:
+  point = Vec3 1 2:
+    z = 3
+write-line stdout (to-string point)
+write-line stdout (to-string (Vec3? point))
+write-line stdout (to-string (Vec3? config))
+set point.y 20
+write-line stdout (to-string (+ point.x point.y point.z))
+write-line stdout (to-string values.[0])

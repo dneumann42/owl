@@ -1,0 +1,36 @@
+; Parentheses, continuation arguments, binding value blocks, selectors, and layout metadata.
+fun total a b c:
+  + a b c
+write-line stdout (to-string (total
+  (+ 1 2 3)
+  4
+  5
+))
+define:
+  grouped = (total 1 2 3)
+  continued = total
+    4 5 6
+  block-value =
+    -
+      20
+      3
+write-line stdout (to-string grouped)
+write-line stdout (to-string continued)
+write-line stdout (to-string block-value)
+block-command layout-name:
+  layout
+block-command layout-arg ignored:
+  layout
+write-line stdout (layout-name)
+write-line stdout (layout-name:
+  "body"
+)
+write-line stdout (layout-arg
+  1
+)
+define:
+  nested = {}:
+    list = []:
+      {}:
+        answer = 42
+write-line stdout (to-string nested.list.[0].answer)

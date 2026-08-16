@@ -1,0 +1,29 @@
+; Syntax values, parse/eval, syntax inspection, caller definitions, and eval-with.
+define:
+  parsed = (parse "alpha = (+ base 2)\ncall-me 1 2:\n  + 3 4\n")
+  base = 40
+write-line stdout (to-string (length (statements parsed)))
+define:
+  first-node = (first (statements parsed))
+  second-node = (nth (statements parsed) 1)
+write-line stdout (binding-symbol first-node)
+write-line stdout (to-string (eval (binding-value first-node)))
+write-line stdout (command-symbol second-node)
+write-line stdout (to-string (eval (command-arg second-node 0)))
+write-line stdout (to-string (eval (command-arg second-node 1)))
+write-line stdout (to-string (eval (command-body second-node)))
+write-line stdout (to-string (length (statements (body-of parsed "call-me"))))
+command define-answer name:
+  define-caller-value name 42
+define-answer generated
+write-line stdout (to-string generated)
+command define-text name value:
+  define-caller-value (eval name) (eval value)
+define-text "dynamic" 99
+write-line stdout (to-string dynamic)
+define:
+  body = (parse "+ item 5")
+command eval-for name value expression:
+  eval-with name (eval value) (eval expression)
+write-line stdout (to-string (eval-for item 37 body))
+write-line stdout (to-string (eval (parse "+ base 2")))

@@ -1,0 +1,42 @@
+; Definitions, mutation, evaluated closures, raw-syntax commands, captures, and blocks.
+define:
+  base = 10
+  x = 1
+fun add-base n:
+  + base n
+write-line stdout (to-string (add-base 5))
+set x 2
+set:
+  x = (+ x 3)
+write-line stdout (to-string x)
+fun make-adder amount:
+  fn value:
+    + amount value
+define:
+  add7 = (make-adder 7)
+write-line stdout (to-string (add7 8))
+define:
+  subtract = lambda a b:
+    - a b
+write-line stdout (to-string (subtract 9 4))
+command twice expression:
+  + (eval expression) (eval expression)
+write-line stdout (to-string (twice (+ 2 3)))
+block-command run-body:
+  write-line stdout layout
+  eval block
+write-line stdout (to-string (run-body:
+  define:
+    local = 11
+  + local 1
+))
+command name-of symbol:
+  symbol-text symbol
+write-line stdout (name-of arbitrary-name)
+define:
+  hidden = 40
+command captured expression:
+  define:
+    hidden = 1
+  eval expression
+write-line stdout (to-string (captured hidden))

@@ -1,9 +1,7 @@
 #+TITLE: Owl
 
-Owl is a command oriented scripting langauge, with a focus on simplicity. A useful little language for utilities, automating workflows, and building small applications.
-Owl is designed to be extended with a simple indentation based syntax. The runtime allows commands to evaluate their arguments as they need, much of the language of owl is defined using commands.
-
-In this example we see owl code, =command= is also a =command=, it is used to define commands within owl. 
+Owl is a command oriented scripting language with a focus on simplicity. A useful little language for utilities, workflow automation and building small applications. Owl is designed to be extended, allowing each domain to define the features it needs. 
+In this example we see owl code, =command= defines custom commands like =say-hello=.
 #+begin_src owl
 command say-hello x:
   print "Hello " (eval x)

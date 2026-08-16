@@ -1,0 +1,28 @@
+; Numeric operations, compound assignment, comparisons, truthiness, and short-circuiting.
+write-line stdout (to-string (+ 1 2 3))
+write-line stdout (to-string (- 10 3 2))
+write-line stdout (to-string (* 2 3 4))
+write-line stdout (to-string (/ 20 2 5))
+write-line stdout (to-string (floor 3.9))
+define:
+  n = 6
++= n 4
+*= n 3
+-= n 9
+/= n 3
+write-line stdout (to-string n)
+write-line stdout (to-string (< 1 2))
+write-line stdout (to-string (<= 2 2))
+write-line stdout (to-string (> 3 2))
+write-line stdout (to-string (>= 3 4))
+write-line stdout (to-string (not false))
+write-line stdout (to-string (not nothing))
+write-line stdout (to-string (not 0))
+write-line stdout (to-string (and))
+write-line stdout (to-string (and true 7))
+write-line stdout (to-string (and true false (error "unreachable")))
+write-line stdout (to-string (or))
+write-line stdout (to-string (or false 7))
+write-line stdout (to-string (or true (error "unreachable")))
+write-line stdout (to-string (pick true "yes" (error "bad")))
+write-line stdout (to-string (pick false (error "bad") "no"))

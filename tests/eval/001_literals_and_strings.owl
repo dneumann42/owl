@@ -1,0 +1,16 @@
+; Literals, rendering, comments, comma-separated statements, strings, escapes, and interpolation.
+write-line stdout (to-string nothing)
+write-line stdout (to-string true)
+write-line stdout (to-string T)
+write-line stdout (to-string false)
+write-line stdout (to-string F)
+write-line stdout (to-string 42)
+write-line stdout (to-string -10.5)
+write-line stdout (to-string 1.25e+2)
+write-line stdout (to-string "plain")
+write-line stdout "line\nbreak"
+write-line stdout "tab\tseparated"
+write-line stdout "quote: \" slash: \\"
+write-line stdout "sum \(+ 2 3)"
+write-line stdout (concat "a" "b" "c")
+write-line stdout (to-string (= "x" "x")), write-line stdout (to-string (= "x" "y"))

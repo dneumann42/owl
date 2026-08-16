@@ -1,0 +1,5 @@
+define:
+  exported = 10
+  hidden = 99
+fun inc n:
+  + n 1

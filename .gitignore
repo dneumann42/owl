@@ -5,3 +5,5 @@ build/
 /crow
 tests/*
 !tests/*.nim
+!tests/eval/
+!tests/eval/**

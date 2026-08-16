@@ -1,0 +1,58 @@
+; when, while, expression if/else, statement if/else, cond, do, and iterators.
+define:
+  total = 0
+when true:
+  set total 1
+when false:
+  set total 99
+write-line stdout (to-string total)
+while (< total 4):
+  += total 1
+write-line stdout (to-string total)
+define:
+  chosen = (do:
+    if (= total 4):
+      "then"
+    else:
+      "else"
+  )
+write-line stdout chosen
+if (= total 5):
+  command-define:
+    branch = "if"
+else:
+  command-define:
+    branch = "else"
+write-line stdout branch
+define:
+  word = "world"
+write-line stdout (cond:
+  when (= word "hello"):
+    "hello"
+  | (= word "world"):
+    "world"
+  when true:
+    "fallback"
+)
+write-line stdout (to-string (do:
+  1
+  2
+))
+define:
+  sum = 0
+for n (range 1 4):
+  += sum n
+write-line stdout (to-string sum)
+define:
+  down = (countdown 3 0)
+write-line stdout (to-string (+ (down) (down) (down)))
+define:
+  items = (iter ([]:
+    5
+    6
+  ))
+write-line stdout (to-string (+ (items) (items)))
+define:
+  once-value = (once "solo")
+write-line stdout (once-value)
+write-line stdout (to-string (once-value))

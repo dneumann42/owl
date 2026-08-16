@@ -1,0 +1,27 @@
+; Streams, with/open/close behavior, file IO, imports, use, filters, and command-line arguments.
+with (open-string "a\nb\nrest") input:
+  write-line stdout (read input)
+  write-line stdout (read-line input)
+  write-line stdout (read-all input)
+define:
+  buffer = (open-string "")
+with buffer output:
+  write output "x"
+  write-line output "y"
+with buffer input:
+  write-line stdout (read-all input)
+define:
+  path = "tests/eval/tmp-stream-output.txt"
+with (open-file path "w") file:
+  write-line file "file-line"
+with (open-file path "r") file:
+  write-line stdout (read-line file)
+import "support/imported.owl"
+write-line stdout (to-string (+ imported 2))
+use support/mathish module
+write-line stdout (to-string (module.inc 4))
+use (support/mathish):
+  include exported inc
+  exclude hidden
+write-line stdout (to-string (inc exported))
+write-line stdout (to-string (length (command-line-arguments)))
