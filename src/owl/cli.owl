@@ -1,0 +1,29 @@
+define:
+  cmds = (command-line-arguments)
+
+when (= (length cmds) 0):
+  repl
+
+when (= cmds.[0] "--eval"):
+  when (< (length cmds) 2):
+    write-line stdout "usage: owl --eval <source>"
+    exit 2
+  eval-source cmds.[1]
+  exit 0
+
+when (= cmds.[0] "--format"):
+  eval-file cmds.[1]
+  exit 0
+
+when (= cmds.[0] "--std"):
+  for entry (iter (standard-commands)):
+    write-line stdout entry
+  exit 0
+
+when (or (not (= cmds.[0] "run")) (< (length cmds) 2)):
+  write-line stdout "usage: owl [--eval <source>|run <path>]"
+  exit 2
+
+when true:
+  eval-file cmds.[1]
+  exit 0

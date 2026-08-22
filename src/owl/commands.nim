@@ -602,6 +602,53 @@ proc evalCommand(
       else:
         value
 
+proc evalSourceCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "eval-source", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len < 1 or arguments.len > 2:
+    raise newException(EvaluatorError, "eval-source expects source and optional path")
+  let source = env.eval(arguments[0]).requireText()
+  let path =
+    if arguments.len == 2:
+      env.eval(arguments[1]).requireText()
+    else:
+      "<eval>"
+  try:
+    env.eval(parse(source, path))
+  except ParserError as error:
+    let converted = newException(EvaluatorError, error.msg)
+    converted.primary = error.primary
+    converted.frames = error.frames
+    raise converted
+
+proc evalFileCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "eval-file", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "eval-file expects one path")
+  let path = env.eval(arguments[0]).requireText()
+  try:
+    env.eval(parse(readFile(path), path))
+  except IOError as error:
+    raise newException(EvaluatorError, path & ": " & error.msg)
+  except OSError as error:
+    raise newException(EvaluatorError, path & ": " & error.msg)
+  except ParserError as error:
+    let converted = newException(EvaluatorError, error.msg)
+    converted.primary = error.primary
+    converted.frames = error.frames
+    raise converted
+
 proc parseCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -647,6 +694,12 @@ proc callCommand(
     raise newException(EvaluatorError, &"call expected command, got {command}")
   env.call(command.command, arguments[1 .. ^1])
 
+proc streamText(value: Value): string {.raises: [].} =
+  if value.kind == Text:
+    value.text
+  else:
+    $value
+
 proc printCommand(
     env: Environment,
     arguments: seq[SyntaxNode],
@@ -659,7 +712,7 @@ proc printCommand(
   result = nothing()
   for argument in arguments:
     result = env.eval(argument)
-    parts.add $result
+    parts.add result.streamText()
   try:
     stdout.write parts.join("")
   except:
@@ -695,12 +748,6 @@ proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
       discard body
       raise newException(EvaluatorError, &"unsupported stream operation: {name}")
   )
-
-proc streamText(value: Value): string {.raises: [].} =
-  if value.kind == Text:
-    value.text
-  else:
-    $value
 
 proc streamRecord(entries: sink Table[string, Value]): Value {.raises: [].} =
   for field in StreamFields:
@@ -1624,6 +1671,76 @@ proc commandLineArgumentsCommand(
   """
   let args = (try: commandLineParams() except: @[])
   list(args.mapIt(text(it)))
+
+proc standardCommandsCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "standard-commands", raises: [EvaluatorError].} =
+  discard env
+  discard layout
+  discard body
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "standard-commands expects no arguments")
+  const Prototypes = collect:
+    for name, command in commandPrototypes:
+      let rep = name.repr[1 ..< ^1]
+      &"""** {rep}
+#+begin_src owl
+{command[3].repr}
+#+end_src"""
+  list(Prototypes.mapIt(text(it)))
+
+proc replCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "repl", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "repl expects no arguments")
+
+  proc writeOutput(value: Value) {.raises: [EvaluatorError].} =
+    try:
+      stdout.writeLine value
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+
+  proc writeError(message: string) {.raises: [EvaluatorError].} =
+    try:
+      stderr.write message
+    except IOError as error:
+      raise newException(EvaluatorError, error.msg)
+
+  var history: seq[string]
+  result = nothing()
+  while true:
+    var line: string
+    if not readLineFromStdin("> ", line):
+      break
+    case line
+    of "q", "quit":
+      break
+    of "history":
+      try:
+        stdout.writeLine history
+      except IOError as error:
+        raise newException(EvaluatorError, error.msg)
+      continue
+    else:
+      discard
+
+    history.add line
+    try:
+      result = env.eval(parse(line, "<repl>"))
+      writeOutput result
+    except OwlError as error:
+      writeError report(error, useColor = true)
+    except CatchableError as error:
+      writeError error.msg & "\n"
 
 proc exitCommand(
     env: Environment,

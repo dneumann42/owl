@@ -1,72 +1,28 @@
-import std/[os, rdstdin]
 import owl/[commands, environment, evaluator, parser, syntax, values]
 import data
 export commands, environment, evaluator, parser, syntax, values, data
 
-proc runRepl() =
-  var evaluator = Evaluator.init()
-  var history: seq[string]
-  while true:
-    var line: string
-    if not readLineFromStdin("> ", line):
-      break
-    case line
-    of "q", "quit":
-      break
-    of "history":
-      echo history
-      continue
-    else:
-      discard
-
-    history.add line
-    try:
-      echo evaluator.exec(parse(line, "<repl>"))
-    except OwlError as error:
-      stderr.write report(error, useColor = true)
-    except CatchableError as error:
-      stderr.writeLine error.msg
-
-const FormatScript = staticRead("../scripts/formatter.owl")
-
-proc runScript(path: string) =
+proc runScript*(path: string): Value {.discardable.} =
   let content = readFile path
   var evaluator = Evaluator.init()
   let ast = parse(content, path)
-  discard evaluator.exec(ast)
+  result = evaluator.exec(ast)
 
-proc evalSource(source: string) =
-  var evaluator = Evaluator.init()
-  echo evaluator.exec(parse(source, "<eval>"))
+proc evalSource*(source: string, path = "<eval>", evaluator = Evaluator.init()): Value {.discardable.} =
+  var evaluator = evaluator
+  result = evaluator.exec(parse(source, path))
+
+const OwlCLISource = staticRead"owl/cli.owl"
 
 proc start() =
-  let cmds = commandLineParams()
   try:
-    if cmds.len == 0:
-      runRepl()
-      return
-    if cmds[0] == "--eval":
-      if cmds.len < 2:
-        quit "usage: owl --eval <source>", 2
-      evalSource cmds[1]
-      quit 0
-    if cmds[0] == "--format":
-      runScript cmds[1]
-      quit 0
-    if cmds[0] == "--std":
-      let protos = getCommandPrototypes()
-      for a in protos:
-        echo a
-      quit 0
-    if cmds[0] != "run" or cmds.len < 2:
-      quit "usage: owl [--eval <source>|run <path>]", 2
-    let path = cmds[1]
-    runScript cmds[1]
-    quit 0
+    evalSource OwlCLISource, "owl/cli.owl"
   except OwlError as error:
-    quit report(error, useColor = true), 1
+    stderr.write report(error, useColor = true)
+    quit 1
   except CatchableError as error:
-    quit error.msg, 1
+    stderr.writeLine error.msg
+    quit 1
 
 when isMainModule:
   start()
