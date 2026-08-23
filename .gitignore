@@ -7,3 +7,5 @@ tests/*
 !tests/*.nim
 !tests/eval/
 !tests/eval/**
+tests/eval/tmp-stream-output.txt
+owl

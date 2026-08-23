@@ -1,4 +1,4 @@
-import std/[algorithm, strutils, tables]
+import std/[algorithm, streams, strutils, tables]
 
 import syntax
 
@@ -273,6 +273,9 @@ proc render(value: Value, indent: int): string {.raises: [].} =
 
 proc `$`*(value: Value): string {.raises: [].} =
   value.render(0)
+
+proc write*(stream: streams.Stream, value: Value) {.raises: [IOError, OSError].} =
+  stream.write($value)
 
 proc parseNumber*(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =
   if symbol.len == 0 or (
