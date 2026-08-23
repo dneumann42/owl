@@ -1,0 +1,198 @@
+#+TITLE: Using Owl From Nim
+
+This page shows the basic ways to run Owl code from a Nim program.
+
+* Evaluate source
+
+Use =evalSource= when you just want to run a string.
+
+#+begin_src nim
+import owl
+
+let value = evalSource("""
+define:
+  name = "Owl"
+name
+""")
+
+echo value
+#+end_src
+
+=evalSource= returns the value of the last expression.
+
+You can pass a path name for error messages:
+
+#+begin_src nim
+discard evalSource("""
++ 1 2
+""", "config.owl")
+#+end_src
+
+* Reuse an evaluator
+
+Create an =Evaluator= when you want to register host values or run more than one
+piece of source with the same environment.
+
+#+begin_src nim
+import owl
+
+var evaluator = Evaluator.init()
+
+discard evalSource("""
+define:
+  count = 1
+""", evaluator = evaluator)
+
+let value = evalSource("""
++ count 41
+""", evaluator = evaluator)
+
+echo value
+#+end_src
+
+* Add a single native command
+
+A native command receives the current Owl environment, raw argument syntax,
+layout information, and block body syntax. Evaluate arguments yourself when the
+command wants evaluated values.
+
+#+begin_src nim
+import owl
+
+var evaluator = Evaluator.init()
+
+evaluator.native "host-add":
+  discard layout
+  discard bodyNodes
+
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "host-add expects two numbers")
+
+  let a = env.eval(arguments[0])
+  let b = env.eval(arguments[1])
+
+  if a.kind != Number or b.kind != Number:
+    raise newException(EvaluatorError, "host-add expects two numbers")
+
+  number(a.number + b.number)
+
+let value = evalSource("""
+host-add 20 22
+""", evaluator = evaluator)
+
+echo value
+#+end_src
+
+* Register a native module
+
+Use a native module when an application has many related commands and values.
+Register modules before calling =evalSource=. Owl code can then load the module
+with =use=.
+
+#+begin_src nim
+import owl
+
+var editor = nativeModule("editor")
+
+editor.define("version", text("0.1.0"))
+
+editor.native "message":
+  discard layout
+  discard bodyNodes
+
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "message expects text")
+
+  let value = env.eval(arguments[0])
+  if value.kind != Text:
+    raise newException(EvaluatorError, "message expects text")
+
+  echo value.text
+  nothing()
+
+var evaluator = Evaluator.init()
+evaluator.registerModule(editor)
+
+discard evalSource("""
+use editor
+editor.message editor.version
+""", evaluator = evaluator)
+#+end_src
+
+After =use editor=, the module exports are available as fields on =editor=.
+
+* Register several modules
+
+Module names can contain slashes. The default namespace is the last path part.
+
+#+begin_src nim
+import owl
+
+var ui = nativeModule("nest/ui")
+ui.define("default-width", number(800))
+
+var files = nativeModule("nest/files")
+files.define("config-name", text("editor.owl"))
+
+var evaluator = Evaluator.init()
+evaluator.registerModule(ui)
+evaluator.registerModule(files)
+
+let value = evalSource("""
+use nest/ui
+use nest/files
++ ui.default-width 1
+""", evaluator = evaluator)
+
+echo value
+#+end_src
+
+=use nest/ui= binds the module as =ui=. You can also choose the namespace:
+
+#+begin_src owl
+use nest/ui controls
++ controls.default-width 1
+#+end_src
+
+* Import selected exports
+
+A =use= block can import selected names into the current scope.
+
+#+begin_src owl
+use nest/ui:
+  include default-width
+
++ default-width 24
+#+end_src
+
+Use =exclude= when you want everything except a few names.
+
+#+begin_src owl
+use nest/ui:
+  exclude internal-state
+#+end_src
+
+* Register a dictionary directly
+
+You can also build a dictionary value yourself and register it as a module.
+
+#+begin_src nim
+import std/tables
+import owl
+
+var exports = initTable[string, Value]()
+exports["name"] = text("demo")
+exports["enabled"] = boolean(true)
+
+var evaluator = Evaluator.init()
+evaluator.registerModule("app/config", dictionary(exports))
+
+let value = evalSource("""
+use app/config config
+config.name
+""", evaluator = evaluator)
+
+echo value
+#+end_src
+
+The registered value must be a dictionary.

@@ -1,4 +1,4 @@
-import std/[os, strutils, tables, unittest]
+import std/[os, strformat, strutils, tables, unittest]
 
 import owl
 import owl/evaluator
@@ -485,6 +485,51 @@ imported
     check value.number == 40
     expect EvaluatorError:
       discard evaluator.exec(parse("hidden\n"))
+
+  test "use exposes native modules registered on an evaluator":
+    var module = nativeModule("host/math")
+    module.define("base", number(40))
+    module.native "inc":
+      discard layout
+      discard bodyNodes
+      if arguments.len != 1:
+        raise newException(EvaluatorError, "inc expects one number")
+      let value = env.eval(arguments[0])
+      if value.kind != Number:
+        raise newException(EvaluatorError, &"expected number, got {value}")
+      number(value.number + 1)
+
+    var evaluator = Evaluator.init()
+    evaluator.registerModule(module)
+    let value = evalSource(
+      """
+use host/math
++ math.base (math.inc 1)
+""",
+      evaluator = evaluator,
+    )
+    check value.kind == Number
+    check value.number == 42
+
+  test "use imports selected native module symbols":
+    var module = nativeModule("host/config")
+    module.define("title", text("Nest"))
+    module.define("private", text("hidden"))
+
+    var evaluator = Evaluator.init()
+    evaluator.registerModule(module)
+    let value = evalSource(
+      """
+use host/config:
+  include title
+title
+""",
+      evaluator = evaluator,
+    )
+    check value.kind == Text
+    check value.text == "Nest"
+    expect EvaluatorError:
+      discard evaluator.exec(parse("private\n"))
 
   test "command defines closures that receive raw syntax":
     let value = run(

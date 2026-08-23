@@ -4,11 +4,25 @@ import syntax
 import values
 export values
 
+type NativeModule* = object
+  name*: string
+  exports*: Table[string, Value]
+
 proc newEnvironment*(
     parent: Environment = nil, fallback: Environment = nil
 ): Environment {.raises: [].} =
+  let nativeModules =
+    if parent != nil:
+      parent.nativeModules
+    elif fallback != nil:
+      fallback.nativeModules
+    else:
+      new Table[string, Value]
   result = Environment(
-    parent: parent, fallback: fallback, bindings: initTable[string, Value]()
+    parent: parent,
+    fallback: fallback,
+    bindings: initTable[string, Value](),
+    nativeModules: nativeModules,
   )
   if parent != nil:
     result.evaluator = parent.evaluator
@@ -25,7 +39,56 @@ proc defineNative*(
 ) {.raises: [].} =
   env.define(symbol, nativeCommand(command))
 
+proc nativeModule*(name: string): NativeModule {.raises: [].} =
+  NativeModule(name: name, exports: initTable[string, Value]())
+
+proc define*(module: var NativeModule, symbol: string, value: Value) {.raises: [].} =
+  module.exports[symbol] = value
+
+proc defineNative*(
+    module: var NativeModule, symbol: string, command: NativeCommand
+) {.raises: [].} =
+  module.define(symbol, nativeCommand(command))
+
+proc moduleValue*(module: NativeModule): Value {.raises: [].} =
+  dictionary(module.exports)
+
+proc registerModule*(
+    env: Environment, name: string, exports: Value
+) {.raises: [EvaluatorError].} =
+  if exports.kind != Dictionary:
+    raise newException(EvaluatorError, "native module exports must be a dictionary")
+  env.nativeModules[][name] = exports
+
+proc registerModule*(env: Environment, module: NativeModule) {.raises: [].} =
+  env.nativeModules[][module.name] = module.moduleValue()
+
+proc hasNativeModule*(env: Environment, name: string): bool {.raises: [].} =
+  not env.nativeModules.isNil and env.nativeModules[].hasKey(name)
+
+proc getNativeModule*(
+    env: Environment, name: string
+): Value {.raises: [EvaluatorError].} =
+  if not env.hasNativeModule(name):
+    raise newException(EvaluatorError, &"unknown native module: {name}")
+  env.nativeModules[].getOrDefault(name)
+
 template native*(target: Environment, symbol: string, body: untyped) =
+  target.defineNative(symbol, proc(
+      env {.inject.}: Environment,
+      arguments {.inject.}: seq[SyntaxNode],
+      layout {.inject.}: LayoutKind,
+      bodyNodes {.inject.}: seq[SyntaxNode],
+  ): Value {.raises: [EvaluatorError].} =
+    try:
+      body
+    except EvaluatorError as error:
+      raise error
+    except CatchableError as error:
+      raise newException(EvaluatorError, error.msg)
+  )
+
+template native*(target: var NativeModule, symbol: string, body: untyped) =
   target.defineNative(symbol, proc(
       env {.inject.}: Environment,
       arguments {.inject.}: seq[SyntaxNode],

@@ -119,6 +119,14 @@ proc defineNative*(
 ) {.raises: [].} =
   evaluator.env.defineNative(symbol, command)
 
+proc registerModule*(
+    evaluator: var Evaluator, name: string, exports: Value
+) {.raises: [EvaluatorError].} =
+  evaluator.env.registerModule(name, exports)
+
+proc registerModule*(evaluator: var Evaluator, module: NativeModule) {.raises: [].} =
+  evaluator.env.registerModule(module)
+
 template native*(evaluator: var Evaluator, symbol: string, body: untyped) =
   evaluator.defineNative(symbol, proc(
       env {.inject.}: Environment,

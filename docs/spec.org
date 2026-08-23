@@ -116,7 +116,7 @@ Evaluator evaluates each expression of a script in order. The value of the last 
 
 For any other command call, Owl evaluates the [[term-callee][callee]] expression. The callee must produce a command value. The [[term-parser][parser]] stores continuation indentation as raw [[term-argument][arguments]] on the command node. This lets indentation group command arguments in the same places where parenthesized calls can be written, for example:
 
-#+begin_src nest
+#+begin_src owl
 print
   +
     1
@@ -128,14 +128,14 @@ print
 
 This parses like =print (+ 1 2 3) "test" T=. Continuation argument lines may contain more than one argument item, so:
 
-#+begin_src nest
+#+begin_src owl
 world = +
   1 2 3
 #+end_src
 
 parses =world = (+ 1 2 3)=. A binding may also put its single value on the next indented line:
 
-#+begin_src nest
+#+begin_src owl
 abc =
   -
     1
@@ -274,7 +274,7 @@ Evaluation errors are =EvaluatorError= values with [[term-source-context][source
 
 * String interpolation
 
-#+begin_src nest
+#+begin_src owl
 define:
   hello = + 1 2 3
   my-string "Compute: \(+ hello 4)"
@@ -289,7 +289,7 @@ You can attach type tags to syntax nodes, after parse time the ast gets type che
 
 *** List
 A sequence of indexable objects
-#+begin_src nest
+#+begin_src owl
 define:
   my-empty-list = (list) ; call to the list command
   my-list = []:
@@ -301,7 +301,7 @@ define:
 *** Record
 Records are fixed-field runtime values. They read like dictionaries, but new keys cannot be added after construction. Existing fields can be updated through =set=. Defining =record Name:= also defines a =Name?= predicate command that returns true only for records constructed by =Name=.
 
-#+begin_src nest
+#+begin_src owl
 record Vec3:
   x = 0
   y = 0

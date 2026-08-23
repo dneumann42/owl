@@ -30,6 +30,7 @@ type
     parent*: Environment
     fallback*: Environment
     bindings*: Table[string, Value]
+    nativeModules*: ref Table[string, Value]
     evaluator*: proc(
       env: Environment, node: SyntaxNode
     ): Value {.closure, raises: [EvaluatorError].}
@@ -152,7 +153,7 @@ proc isIdentifierSymbol(value: string): bool {.raises: [].} =
   if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
     return false
   for c in value:
-    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?'}:
+    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?', '/'}:
       return false
   true
 

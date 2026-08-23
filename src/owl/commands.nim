@@ -123,13 +123,18 @@ proc useSymbolFilters(
       raise newException(EvaluatorError, "use filters must be include, only, or exclude commands")
 
 proc useSelectedSymbols(
-    env, moduleEnv: Environment, body: seq[SyntaxNode]
+    env: Environment, entries: Table[string, Value], body: seq[SyntaxNode]
 ) {.raises: [EvaluatorError].} =
   let filters = useSymbolFilters(body)
-  for name, value in moduleEnv.bindings:
+  for name, value in entries:
     let included = not filters.hasIncludes or name in filters.includes
     if included and name notin filters.excludes:
       env.define(name, value)
+
+proc useSelectedSymbols(
+    env, moduleEnv: Environment, body: seq[SyntaxNode]
+) {.raises: [EvaluatorError].} =
+  env.useSelectedSymbols(moduleEnv.bindings, body)
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
   value.kind == Record and name in value.recordFields
@@ -404,16 +409,31 @@ proc useCommand(
   if layout notin {NoLayout, ColonLayout}:
     raise newException(EvaluatorError, "use filters require a colon block")
 
-  let
-    path = modulePath(arguments[0])
-    node = loadSourceFile(path, arguments[0].pos)
-    name =
-      if arguments.len == 2:
-        arguments[1].requireSymbol("module namespace")
-      else:
-        moduleName(path)
-    moduleEnv = env.child()
+  let requested = arguments[0].requireSymbol("module name")
+  if env.hasNativeModule(requested):
+    result = env.getNativeModule(requested)
+    if result.kind != Dictionary:
+      raise newException(EvaluatorError, "native module exports must be a dictionary")
+    if layout == ColonLayout:
+      env.useSelectedSymbols(result.entries, body)
+      result = nothing()
+    else:
+      let name =
+        if arguments.len == 2:
+          arguments[1].requireSymbol("module namespace")
+        else:
+          moduleName(requested)
+      env.define(name, result)
+    return
 
+  let path = modulePath(arguments[0])
+  let node = loadSourceFile(path, arguments[0].pos)
+  let name =
+    if arguments.len == 2:
+      arguments[1].requireSymbol("module namespace")
+    else:
+      moduleName(path)
+  let moduleEnv = env.child()
   discard moduleEnv.evalBlock(node.statements)
   if layout == ColonLayout:
     env.useSelectedSymbols(moduleEnv, body)

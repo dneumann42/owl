@@ -445,7 +445,7 @@ proc isIdentifierSymbol(value: string): bool {.raises: [].} =
   if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
     return false
   for c in value:
-    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?'}:
+    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?', '/'}:
       return false
   true
 
