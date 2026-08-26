@@ -7,6 +7,14 @@ const PreludeSource = staticRead("prelude.owl")
 type Evaluator* = object
   env*: Environment
 
+let
+  emptyScript = script(@[])
+  layoutNames = [
+    NoLayout: text("NoLayout"),
+    ColonLayout: text("ColonLayout"),
+    ContinuationLayout: text("ContinuationLayout"),
+  ]
+
 proc callClosure(
     env: Environment,
     command: CommandValue,
@@ -31,8 +39,13 @@ proc callClosure(
       else:
         syntaxValue(arguments[index], env)
     local.define(parameter, value)
-  local.define("block", syntaxValue(script(body), env))
-  local.define("layout", text($layout))
+  # Binding these costs an allocation each, and almost no closure reads them,
+  # so `closureCommand` works out up front whether the body mentions them.
+  if command.usesBlock:
+    local.define("block", syntaxValue(
+      if body.len == 0: emptyScript else: script(body), env))
+  if command.usesLayout:
+    local.define("layout", layoutNames[layout])
   local.evalBlock(command.body)
 
 proc literalValue(symbol: string): tuple[ok: bool, value: Value] {.raises: [].} =

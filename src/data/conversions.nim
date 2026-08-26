@@ -109,10 +109,10 @@ proc fromOwl*[T](value: Value, target: var seq[T]) =
 
 proc fromOwl*[N, T](value: Value, target: var array[N, T]) =
   value.requireKind(List)
-  if value.items.len != target.len:
-    raise dataError(&"expected array length {target.len}, got {value.items.len}")
+  if value.listLen != target.len:
+    raise dataError(&"expected array length {target.len}, got {value.listLen}")
   for index in 0 ..< target.len:
-    fromOwl(value.items[index], target[index])
+    fromOwl(value.at(index), target[index])
 
 proc toOwl*[T](values: set[T]): Value =
   var items: seq[Value]

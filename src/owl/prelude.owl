@@ -30,26 +30,12 @@ block-command else:
       set result (eval block)
   result
 
-fun list-from nodes:
-  if (empty? nodes):
-    list
-  else:
-    cons (eval (first nodes)) (list-from (rest nodes))
-
 block-command ([]):
   list-from (statements block)
 
 block-command (do):
   when true:
     eval block
-
-fun dict-from nodes:
-  if (empty? nodes):
-    dict
-  else:
-    define:
-      entry = (first nodes)
-    dict-put (dict-from (rest nodes)) (binding-symbol entry) (eval (binding-value entry))
 
 block-command ({}):
   dict-from (statements block)
@@ -116,30 +102,6 @@ fun cond-from clauses:
 block-command cond:
   cond-from (statements block)
 
-fun nth values index:
-  if (= index 0):
-    first values
-  else:
-    nth (rest values) (- index 1)
-
-fun append-value values value:
-  if (empty? values):
-    cons value (list)
-  else:
-    cons (first values) (append-value (rest values) value)
-
-block-command append target value:
-  set (value-of target) (append-value (eval target) (eval value))
-
-fun drop-front values count:
-  if (or (<= count 0) (empty? values)):
-    values
-  else:
-    drop-front (rest values) (- count 1)
-
-block-command pop-front target count:
-  set (value-of target) (drop-front (eval target) (eval count))
-
 fun close stream:
   call stream.close
 
@@ -187,19 +149,6 @@ fun countdown start stop:
       value
     else:
       nothing
-  value-of next
-
-fun iter values:
-  define:
-    remaining = values
-  fun next:
-    if (empty? remaining):
-      nothing
-    else:
-      define:
-        value = (first remaining)
-      set remaining (rest remaining)
-      value
   value-of next
 
 fun once value:

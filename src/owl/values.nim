@@ -20,6 +20,9 @@ type
 
   EvaluatorError* = object of OwlError
 
+  ListBuffer* = ref object
+    values*: seq[Value]
+
   NativeValue* = ref object of RootObj
 
   StreamKind* = enum
@@ -58,6 +61,8 @@ type
       captured*: Environment
       evaluatesArguments*: bool
       acceptsBlock*: bool
+      usesBlock*: bool ## body mentions `block`, so a call must bind it
+      usesLayout*: bool ## body mentions `layout`, so a call must bind it
 
   Value* = object
     case kind*: ValueKind
@@ -72,7 +77,11 @@ type
     of Stream:
       stream*: StreamKind
     of List:
-      items*: seq[Value]
+      ## A view onto a shared buffer: `count` elements starting at `start`.
+      ## Taking a tail is O(1) because the tail shares the buffer, and a view
+      ## can only ever see the elements its own `count` covers.
+      buffer*: ListBuffer
+      start*, count*: int
     of Dictionary:
       entries*: Table[string, Value]
     of Record:
@@ -103,7 +112,53 @@ proc stream*(value: StreamKind): Value {.raises: [].} =
   Value(kind: Stream, stream: value)
 
 proc list*(items: sink seq[Value]): Value {.raises: [].} =
-  Value(kind: List, items: items)
+  let count = items.len
+  Value(kind: List, buffer: ListBuffer(values: items), start: 0, count: count)
+
+proc listLen*(value: Value): int {.inline, raises: [].} =
+  ## How many elements this list view covers.
+  value.count
+
+iterator items*(value: Value): Value =
+  for index in value.start ..< value.start + value.count:
+    yield value.buffer.values[index]
+
+proc at*(value: Value, index: int): Value {.inline, raises: [].} =
+  ## The element at `index` within this view. The caller checks the bounds.
+  value.buffer.values[value.start + index]
+
+proc listSeq*(value: Value): seq[Value] {.raises: [].} =
+  ## Copy the view out as a plain sequence.
+  if value.buffer.isNil or value.count <= 0:
+    @[]
+  else:
+    value.buffer.values[value.start ..< value.start + value.count]
+
+proc listRest*(value: Value): Value {.raises: [].} =
+  ## Everything after the first element, sharing the buffer rather than
+  ## copying it. This is what keeps a recursive walk linear.
+  if value.count <= 1:
+    list(@[])
+  else:
+    Value(kind: List, buffer: value.buffer, start: value.start + 1,
+        count: value.count - 1)
+
+proc listAppended*(value: Value, item: sink Value): Value {.raises: [].} =
+  ## This list with `item` on the end.
+  ##
+  ## When the view already ends the buffer the item is written straight into
+  ## it: every other view keeps its own smaller `count`, so none of them can
+  ## see the new element. Otherwise the view is copied out first.
+  if value.buffer.isNil:
+    return list(@[item])
+  if value.start + value.count == value.buffer.values.len:
+    value.buffer.values.add item
+    Value(kind: List, buffer: value.buffer, start: value.start,
+        count: value.count + 1)
+  else:
+    var copied = value.listSeq()
+    copied.add item
+    list(copied)
 
 proc dictionary*(entries: sink Table[string, Value]): Value {.raises: [].} =
   Value(kind: Dictionary, entries: entries)
@@ -122,6 +177,33 @@ proc nativeCommand*(native: NativeCommand): Value {.raises: [].} =
 proc nativeValue*(native: NativeValue): Value {.raises: [].} =
   Value(kind: Native, native: native)
 
+proc referencesSymbol(node: SyntaxNode, name: string): bool {.raises: [].}
+
+proc referencesSymbol(nodes: seq[SyntaxNode], name: string): bool {.raises: [].} =
+  for node in nodes:
+    if node.referencesSymbol(name):
+      return true
+
+proc referencesSymbol(node: SyntaxNode, name: string): bool {.raises: [].} =
+  ## Whether `name` appears anywhere in this subtree, nested closures included.
+  ##
+  ## Answered once when a closure is created so that calling it can skip
+  ## binding names the body never reads.
+  if node.isNil:
+    return false
+  case node.kind
+  of Symbol:
+    node.symbol == name
+  of String:
+    false
+  of Binding:
+    node.value.referencesSymbol(name)
+  of Script:
+    node.statements.referencesSymbol(name)
+  of Command:
+    node.callee.referencesSymbol(name) or node.arguments.referencesSymbol(name) or
+      node.body.referencesSymbol(name)
+
 proc closureCommand*(
     parameters: sink seq[string], body: sink seq[SyntaxNode], captured: Environment,
     evaluatesArguments, acceptsBlock: bool
@@ -130,6 +212,8 @@ proc closureCommand*(
     kind: Command,
     command: CommandValue(
       kind: ClosureCommandKind,
+      usesBlock: body.referencesSymbol("block"),
+      usesLayout: body.referencesSymbol("layout"),
       parameters: parameters,
       body: body,
       captured: captured,
@@ -164,7 +248,7 @@ proc addIndent(target: var string, amount: int) {.raises: [].} =
 proc render(value: Value, indent: int): string {.raises: [].}
 
 proc renderList(value: Value, indent: int): string {.raises: [].} =
-  if value.items.len == 0:
+  if value.listLen == 0:
     return "[]"
 
   var compactParts: seq[string]

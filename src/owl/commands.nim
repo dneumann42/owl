@@ -55,7 +55,7 @@ proc syntaxEnvironment(
 proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
   if value.kind != List:
     raise newException(EvaluatorError, &"expected list, got {value}")
-  value.items
+  value.listSeq
 
 proc requireText(value: Value): string {.raises: [EvaluatorError].} =
   if value.kind != Text:
@@ -156,9 +156,9 @@ proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
   case value.kind
   of List:
     let index = key.requireNumber().int
-    if index < 0 or index >= value.items.len:
+    if index < 0 or index >= value.listLen:
       raise newException(EvaluatorError, "list index out of range")
-    value.items[index]
+    value.at(index)
   of Dictionary, Record:
     value.field(key.requireText())
   else:
@@ -190,11 +190,11 @@ proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].}
   case value.kind
   of List:
     let index = key.requireNumber().int
-    if index < 0 or index >= value.items.len:
+    if index < 0 or index >= value.listLen:
       raise newException(EvaluatorError, "list index out of range")
-    result = value
-    result.items = @(value.items)
-    result.items[index] = entry
+    var updated = value.listSeq
+    updated[index] = entry
+    result = list(updated)
   of Dictionary, Record:
     result = value.setFieldValue(key.requireText(), entry)
   else:
@@ -531,15 +531,9 @@ proc recordConstructorCommand(
       if callArguments.len > fieldOrder.len:
         raise newException(EvaluatorError, "record got too many arguments")
 
-      var entries = initTable[string, Value]()
-      for index, field in fieldOrder:
-        entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(
-            defaultValues[index].syntax
-          )
-
-      for index, argument in callArguments:
-        entries[fieldOrder[index]] = callEnv.eval(argument)
-
+      # Which fields the call supplies is settled before any default is
+      # evaluated, so a default that is about to be overwritten is never
+      # evaluated at all. Most record literals set most of their fields.
       var seenOverrides: seq[string]
       for node in callBody:
         if node.kind != Binding:
@@ -552,6 +546,20 @@ proc recordConstructorCommand(
             EvaluatorError, &"duplicate record override: {node.bindingSymbol}"
           )
         seenOverrides.add node.bindingSymbol
+
+      var entries = initTable[string, Value](
+        max(nextPowerOfTwo(fieldOrder.len * 2), 4))
+      for index, field in fieldOrder:
+        if index < callArguments.len or field in seenOverrides:
+          continue
+        entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(
+            defaultValues[index].syntax
+          )
+
+      for index, argument in callArguments:
+        entries[fieldOrder[index]] = callEnv.eval(argument)
+
+      for node in callBody:
         entries[node.bindingSymbol] = callEnv.eval(node.value)
 
       record(typeName, entries, fieldOrder)
@@ -1365,8 +1373,9 @@ proc consCommand(
   discard body
   if arguments.len != 2:
     raise newException(EvaluatorError, "cons expects value and list")
-  result = list(@[env.eval(arguments[0])])
-  result.items.add env.eval(arguments[1]).requireList()
+  var items = @[env.eval(arguments[0])]
+  items.add env.eval(arguments[1]).requireList()
+  list(items)
 
 proc firstCommand(
     env: Environment,
@@ -1393,11 +1402,10 @@ proc restCommand(
   discard body
   if arguments.len != 1:
     raise newException(EvaluatorError, "rest expects one list")
-  let items = env.eval(arguments[0]).requireList()
-  if items.len == 0:
-    list(@[])
-  else:
-    list(items[1 .. ^1])
+  let values = env.eval(arguments[0])
+  if values.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {values}")
+  values.listRest
 
 proc emptyCommand(
     env: Environment,
@@ -1424,7 +1432,7 @@ proc lengthCommand(
   let value = env.eval(arguments[0])
   case value.kind
   of List:
-    number(value.items.len.float64)
+    number(value.listLen.float64)
   of Dictionary:
     number(value.entries.len.float64)
   of Text:
@@ -1432,6 +1440,195 @@ proc lengthCommand(
   else:
     raise
       newException(EvaluatorError, &"expected list, dictionary, or text, got {value}")
+
+proc syntaxItems(value: Value, commandID: string): seq[Value] {.raises: [
+    EvaluatorError].} =
+  if value.kind != List:
+    raise newException(EvaluatorError, &"{commandID} expects a list, got {value}")
+  value.listSeq
+
+proc evalItem(env: Environment, item: Value): Value {.raises: [EvaluatorError].} =
+  if item.kind == Syntax:
+    item.syntaxEnvironment(env).eval(item.syntax)
+  else:
+    item
+
+proc listFromCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "list-from", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "list-from expects one list")
+  let nodes = env.eval(arguments[0]).syntaxItems("list-from")
+  var items = newSeqOfCap[Value](nodes.len)
+  for node in nodes:
+    items.add env.evalItem(node)
+  list(items)
+
+proc dictFromCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "dict-from", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "dict-from expects one list")
+  let nodes = env.eval(arguments[0]).syntaxItems("dict-from")
+  # Sized once rather than grown, and filled last-to-first: the recursive
+  # version put the head entry in on top of the tail, so an earlier binding
+  # wins a repeated key and the later ones are evaluated first.
+  var entries = initTable[string, Value](max(nextPowerOfTwo(nodes.len * 2), 4))
+  for index in countdown(nodes.high, 0):
+    let node = nodes[index].requireSyntax()
+    if node.kind != Binding:
+      raise newException(EvaluatorError, "dict-from expects binding syntax")
+    entries[node.bindingSymbol] =
+      nodes[index].syntaxEnvironment(env).eval(node.value)
+  dictionary(entries)
+
+proc listIndex(value: Value, index: float64,
+    commandID: string): int {.raises: [EvaluatorError].} =
+  if value.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {value}")
+  result = int(index)
+  if result.float64 != index or result < 0 or result >= value.listLen:
+    raise newException(EvaluatorError,
+        &"{commandID}: index {index} is outside a list of {value.listLen}")
+
+proc nthCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "nth", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "nth expects a list and an index")
+  let values = env.eval(arguments[0])
+  values.at(values.listIndex(env.eval(arguments[1]).requireNumber, "nth"))
+
+proc appendValueCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "append-value", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "append-value expects a list and a value")
+  let original = env.eval(arguments[0])
+  if original.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {original}")
+  original.listAppended(env.eval(arguments[1]))
+
+proc appendCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "append", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "append expects a list and a value")
+  let value = env.eval(arguments[1])
+  # Growing the binding in place is what keeps this O(1). Rebuilding the list
+  # through cons/rest made a single append cost a full copy of the list, so
+  # filling an n-item list cost O(n^3) value copies.
+  if arguments[0].kind == Symbol or (arguments[0].kind == Command and
+      arguments[0].callee.kind == Symbol and arguments[0].arguments.len == 0 and
+      arguments[0].layout == NoLayout and arguments[0].body.len == 0):
+    let name = arguments[0].requireSymbol("list name")
+    let owner = env.find(name)
+    if owner != nil:
+      var appended = false
+      owner.bindings.withValue(name, existing):
+        if existing[].kind == List:
+          existing[] = existing[].listAppended(value)
+          appended = true
+      if appended:
+        return nothing()
+  let current = env.eval(arguments[0])
+  if current.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {current}")
+  env.setTarget(arguments[0], current.listAppended(value))
+  nothing()
+
+proc dropFrontCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "drop-front", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "drop-front expects a list and a count")
+  let values = env.eval(arguments[0])
+  if values.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {values}")
+  let count = max(int(env.eval(arguments[1]).requireNumber), 0)
+  if count >= values.listLen:
+    return list(@[])
+  list(values.listSeq[count .. ^1])
+
+proc popFrontCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "pop-front", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 2:
+    raise newException(EvaluatorError, "pop-front expects a list and a count")
+  let values = env.eval(arguments[0])
+  if values.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {values}")
+  let count = max(int(env.eval(arguments[1]).requireNumber), 0)
+  let remaining =
+    if count >= values.listLen: list(@[])
+    else: list(values.listSeq[count .. ^1])
+  env.setTarget(arguments[0], remaining)
+  nothing()
+
+proc iterCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "iter", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "iter expects one list")
+  let values = env.eval(arguments[0])
+  if values.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {values}")
+  # Walking by index rather than re-slicing the tail keeps iteration linear;
+  # the previous `rest`-based iterator copied the remaining list every step.
+  var index = 0
+  nativeCommand(proc(
+      stepEnv: Environment, stepArguments: seq[SyntaxNode],
+      stepLayout: LayoutKind, stepBody: seq[SyntaxNode],
+  ): Value {.closure, raises: [EvaluatorError].} =
+    discard stepEnv
+    discard stepArguments
+    discard stepLayout
+    discard stepBody
+    if index >= values.listLen:
+      return nothing()
+    result = values.at(index)
+    inc index
+  )
 
 proc notCommand(
     env: Environment,

@@ -18,10 +18,11 @@ proc newEnvironment*(
       fallback.nativeModules
     else:
       new Table[string, Value]
+  # `bindings` is left default so it allocates on first use. Most call frames
+  # bind only a parameter or two, and many bind nothing at all.
   result = Environment(
     parent: parent,
     fallback: fallback,
-    bindings: initTable[string, Value](),
     nativeModules: nativeModules,
   )
   if parent != nil:

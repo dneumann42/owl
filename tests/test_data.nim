@@ -122,7 +122,7 @@ suite "data conversions":
     let node = %* {"name": "owl", "items": [1, true, nil]}
     let owl = node.toOwl()
     check owl.kind == Dictionary
-    check owl.entries["items"].items[1].boolean
+    check owl.entries["items"].at(1).boolean
 
     let back = fromOwl(owl, JsonNode)
     check back["name"].getStr() == "owl"
@@ -138,11 +138,11 @@ a = 41
 """)
 
     check loaded.kind == List
-    check loaded.items.len == 3
-    check loaded.items[0].number == 1
-    check loaded.items[1].number == 42
-    check loaded.items[2].kind == Dictionary
-    check loaded.items[2].entries["a"].number == 41
+    check loaded.listLen == 3
+    check loaded.at(0).number == 1
+    check loaded.at(1).number == 42
+    check loaded.at(2).kind == Dictionary
+    check loaded.at(2).entries["a"].number == 41
 
   test "data files can define procedures for later values":
     let loaded = loadOwlSource("""
@@ -151,7 +151,7 @@ fun inc n:
 answer = inc 41
 """)
 
-    let bindings = loaded.items[^1]
+    let bindings = loaded.at(loaded.listLen - 1)
     check bindings.entries["answer"].number == 42
 
   test "restricted mode blocks dangerous commands":
@@ -160,4 +160,4 @@ answer = inc 41
 
   test "unrestricted mode allows evaluator commands":
     let loaded = loadOwlSource("""eval-source "1"""", mode = unrestrictedOwlData)
-    check loaded.items[0].number == 1
+    check loaded.at(0).number == 1

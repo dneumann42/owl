@@ -22,7 +22,7 @@ proc checkText(source: string, expected: string) =
 proc checkList(source: string, expected: int) =
   let value = run(source)
   check value.kind == List
-  check value.items.len == expected
+  check value.listLen == expected
 
 proc checkDict(source: string) =
   let value = run(source)

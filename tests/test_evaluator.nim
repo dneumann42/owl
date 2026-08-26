@@ -568,10 +568,10 @@ run:
 """
     )
     check value.kind == List
-    check value.items.len == 3
-    check value.items[0].number == 1
-    check value.items[1].number == 2
-    check value.items[2].number == 3
+    check value.listLen == 3
+    check value.at(0).number == 1
+    check value.at(1).number == 2
+    check value.at(2).number == 3
 
   test "prelude defines dictionary literals in owl":
     let value = run(
