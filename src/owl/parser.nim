@@ -63,6 +63,9 @@ proc tokenize*(
 ): seq[Token] {.raises: [ParserError].} =
   var
     indents = @[0]
+    # Indent-stack depth recorded when each still-open '(' was seen, so a ')'
+    # can close the levels that were opened inside it.
+    parenIndents: seq[int]
     atLineStart = true
     pendingIndent = 0
     i = 0
@@ -218,9 +221,19 @@ proc tokenize*(
       result.add(RBracket, "]", line, column)
       advance()
     of '(':
+      parenIndents.add indents.len
       result.add(LParen, "(", line, column)
       advance()
     of ')':
+      # A group may be closed on the same line as the last line of its indented
+      # body -- `(f\n  a\n  b)`. The dedents for those levels would otherwise
+      # not be emitted until the next line, leaving the body unterminated and
+      # the enclosing block short one dedent.
+      if parenIndents.len > 0:
+        let opened = parenIndents.pop()
+        while indents.len > opened:
+          discard indents.pop()
+          result.add(Dedent, "", line, column)
       result.add(RParen, ")", line, column)
       advance()
     of '"':

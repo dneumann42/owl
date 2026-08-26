@@ -170,6 +170,36 @@ config = {}:
     check value.body.len == 0
     check value.arguments.len == 3
 
+  test "grouped continuation layout may close on its last body line":
+    let tree = parse("pos = (Vec3\n  1\n  2\n  3)\n")
+    let value = tree.statements[0].value
+    check value.callee.symbol == "Vec3"
+    check value.layout == ContinuationLayout
+    check value.body.len == 0
+    check value.arguments.len == 3
+
+  test "closing a group on its last body line leaves the enclosing block open":
+    let tree = parse("""
+join
+  (concat
+    a
+    b)
+  ", "
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "join"
+    check call.arguments.len == 2
+    check call.arguments[0].callee.symbol == "concat"
+    check call.arguments[0].arguments.len == 2
+    check call.arguments[1].stringValue == ", "
+
+  test "grouped colon layout may close on its last body line":
+    let tree = parse("x = (cond:\n  a\n  b)\n")
+    let value = tree.statements[0].value
+    check value.callee.symbol == "cond"
+    check value.layout == ColonLayout
+    check value.body.len == 2
+
   test "parses indentation as nested call grouping":
     let tree = parse("""
 print
