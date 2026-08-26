@@ -49,6 +49,9 @@ type
     ClosureCommandKind
 
   CommandValue* = ref object
+    id*: string
+    description*: string
+    interactive*: bool
     case kind*: CommandKind
     of NativeCommandKind:
       native*: NativeCommand
@@ -116,20 +119,26 @@ proc record*(
 proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].} =
   Value(kind: Syntax, syntax: node, syntaxEnv: env)
 
-proc nativeCommand*(native: NativeCommand): Value {.raises: [].} =
-  Value(kind: Command, command: CommandValue(kind: NativeCommandKind, native: native))
+proc nativeCommand*(native: NativeCommand, id = "", description = "",
+    interactive = false): Value {.raises: [].} =
+  Value(kind: Command, command: CommandValue(kind: NativeCommandKind,
+      id: id, description: description, interactive: interactive, native: native))
 
 proc nativeValue*(native: NativeValue): Value {.raises: [].} =
   Value(kind: Native, native: native)
 
 proc closureCommand*(
     parameters: sink seq[string], body: sink seq[SyntaxNode], captured: Environment,
-    evaluatesArguments, acceptsBlock: bool
+    evaluatesArguments, acceptsBlock: bool, id = "", description = "",
+    interactive = false
 ): Value {.raises: [].} =
   Value(
     kind: Command,
     command: CommandValue(
       kind: ClosureCommandKind,
+      id: id,
+      description: description,
+      interactive: interactive,
       parameters: parameters,
       body: body,
       captured: captured,

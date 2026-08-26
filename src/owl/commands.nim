@@ -1,4 +1,4 @@
-import std/[macros, os, rdstdin, strformat, strutils, tables, math, sequtils, macrocache, sugar]
+import std/[algorithm, macros, os, rdstdin, sets, strformat, strutils, tables, math, sequtils, macrocache, sugar]
 
 import environment, parser, syntax, values
 
@@ -220,11 +220,22 @@ proc callOptionalField(
   let value = env.call(fieldValue.command)
   if value.kind == Nothing: receiver else: value
 
+proc commandDoc(body: seq[SyntaxNode]): tuple[description: string,
+    body: seq[SyntaxNode]] {.raises: [].} =
+  result = ("", body)
+  if body.len > 0 and body[0].kind == String:
+    result.description = body[0].stringValue
+    if body.len == 1:
+      result.body = @[]
+    else:
+      result.body = body[1 .. ^1]
+
 proc defineClosure(
     env: Environment,
     arguments: seq[SyntaxNode],
     body: seq[SyntaxNode],
     evaluatesArguments, acceptsBlock: bool,
+    interactive = false,
 ): Value {.raises: [EvaluatorError].} =
   if arguments.len == 0:
     raise newException(EvaluatorError, "expected command name")
@@ -232,7 +243,10 @@ proc defineClosure(
   var parameters: seq[string]
   for argument in arguments[1 .. ^1]:
     parameters.add argument.requireSymbol("parameter")
-  result = closureCommand(parameters, body, env, evaluatesArguments, acceptsBlock)
+  let doc = commandDoc(body)
+  result = closureCommand(parameters, doc.body, env, evaluatesArguments,
+      acceptsBlock, id = commandName, description = doc.description,
+      interactive = interactive)
   env.define(commandName, result)
 
 proc setSymbol(
@@ -304,6 +318,16 @@ proc funCommand(
 ): Value {.stdCommand: "fun", raises: [EvaluatorError].} =
   discard layout
   env.defineClosure(arguments, body, evaluatesArguments = true, acceptsBlock = false)
+
+proc defcommandCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "defcommand", raises: [EvaluatorError].} =
+  discard layout
+  env.defineClosure(arguments, body, evaluatesArguments = true,
+      acceptsBlock = false, interactive = true)
 
 proc fnCommand(
     env: Environment,
@@ -698,6 +722,81 @@ proc valueOfCommand(
   if arguments.len != 1:
     raise newException(EvaluatorError, "value-of expects one symbol")
   env.get(arguments[0].requireSymbol("value name"))
+
+proc commandIdCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "command-id", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "command-id expects one command")
+  let value = env.eval(arguments[0])
+  if value.kind != Command:
+    raise newException(EvaluatorError, &"command-id expected command, got {value}")
+  text(value.command.id)
+
+proc commandDescriptionCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "command-description", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 1:
+    raise newException(EvaluatorError, "command-description expects one command")
+  let value = env.eval(arguments[0])
+  if value.kind != Command:
+    raise newException(EvaluatorError,
+        &"command-description expected command, got {value}")
+  text(value.command.description)
+
+proc interactiveCommandsCommand(
+    env: Environment,
+    arguments: seq[SyntaxNode],
+    layout: LayoutKind,
+    body: seq[SyntaxNode],
+): Value {.stdCommand: "interactive-commands", raises: [EvaluatorError].} =
+  discard layout
+  discard body
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "interactive-commands expects no arguments")
+  proc collectInteractive(current: Environment, seenEnv: var HashSet[int],
+      seenCommand: var HashSet[string], collected: var seq[tuple[id: string,
+      value: Value]]) {.raises: [].} =
+    if current.isNil:
+      return
+    let key = cast[int](current)
+    if key in seenEnv:
+      return
+    seenEnv.incl key
+    for name, value in current.bindings.pairs:
+      if value.kind != Command or not value.command.interactive:
+        continue
+      let id =
+        if value.command.id.len > 0:
+          value.command.id
+        else:
+          name
+      if id in seenCommand:
+        continue
+      seenCommand.incl id
+      collected.add((id, value))
+    collectInteractive(current.parent, seenEnv, seenCommand, collected)
+    collectInteractive(current.fallback, seenEnv, seenCommand, collected)
+
+  var
+    seenEnv = initHashSet[int]()
+    seenCommand = initHashSet[string]()
+    collected: seq[tuple[id: string, value: Value]]
+  collectInteractive(env, seenEnv, seenCommand, collected)
+  collected.sort(proc(a, b: tuple[id: string, value: Value]): int =
+    cmp(a.id.toLowerAscii(), b.id.toLowerAscii())
+  )
+  list(collect(for entry in collected: entry.value))
 
 proc callCommand(
     env: Environment,

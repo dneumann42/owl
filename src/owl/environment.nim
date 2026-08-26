@@ -37,7 +37,7 @@ proc define*(env: Environment, symbol: string, value: Value) {.raises: [].} =
 proc defineNative*(
     env: Environment, symbol: string, command: NativeCommand
 ) {.raises: [].} =
-  env.define(symbol, nativeCommand(command))
+  env.define(symbol, nativeCommand(command, id = symbol))
 
 proc nativeModule*(name: string): NativeModule {.raises: [].} =
   NativeModule(name: name, exports: initTable[string, Value]())
@@ -48,7 +48,7 @@ proc define*(module: var NativeModule, symbol: string, value: Value) {.raises: [
 proc defineNative*(
     module: var NativeModule, symbol: string, command: NativeCommand
 ) {.raises: [].} =
-  module.define(symbol, nativeCommand(command))
+  module.define(symbol, nativeCommand(command, id = symbol))
 
 proc moduleValue*(module: NativeModule): Value {.raises: [].} =
   dictionary(module.exports)
@@ -169,3 +169,17 @@ proc call*(
   if env.commandCaller == nil:
     raise newException(EvaluatorError, "environment cannot call commands")
   env.commandCaller(env, command, arguments, layout, body)
+
+proc invokeCommand*(
+    env: Environment, commandName: string, arguments: openArray[Value] = []
+): Value {.raises: [EvaluatorError].} =
+  let resolved = env.get(commandName)
+  if resolved.kind != Command:
+    raise newException(EvaluatorError, &"symbol is not a command: {commandName}")
+  let caller = env.child()
+  var syntaxArguments: seq[SyntaxNode]
+  for index, argument in arguments:
+    let symbolName = "__owl_invoke_" & $index
+    caller.define(symbolName, argument)
+    syntaxArguments.add symbol(symbolName)
+  caller.call(resolved.command, syntaxArguments)
