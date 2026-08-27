@@ -123,6 +123,27 @@ proc symbol*(value: sink string, pos = noSourcePos()): SyntaxNode {.raises: [].}
 proc stringLiteral*(value: sink string, pos = noSourcePos()): SyntaxNode {.raises: [].} =
   SyntaxNode(kind: String, pos: pos, stringValue: value)
 
+proc isIdentifierSymbol*(value: string): bool {.raises: [].} =
+  ## Whether an atom reads as a name rather than punctuation or a number.
+  if value.len == 0 or value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
+    return false
+  for c in value:
+    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?', '/'}:
+      return false
+  result = true
+
+proc isNumericSymbol*(value: string): bool {.raises: [].} =
+  ## Whether an atom starts the way a number literal does.
+  value.len > 0 and (
+    value[0] in {'0' .. '9'} or
+    value.len > 1 and value[0] in {'+', '-'} and value[1] in {'0' .. '9'}
+  )
+
+proc isOperatorSymbol*(value: string): bool {.raises: [].} =
+  ## Punctuation-like atoms such as `[]`, `{}`, or `+`. They bind a trailing
+  ## colon as their own layout instead of leaving it to the enclosing command.
+  not value.isIdentifierSymbol and not value.isNumericSymbol
+
 proc loc*(pos: SourcePos): string {.raises: [].} =
   if pos.hasSource:
     &"{pos.sourcePath}:{pos.line}:{pos.column}"
@@ -245,7 +266,7 @@ proc shouldSeparateStatements(left, right: SyntaxNode): bool {.raises: [].} =
     return false
   if left.isClause or right.isClause:
     return false
-  left.isBlockStatement or right.isBlockStatement
+  result = left.isBlockStatement or right.isBlockStatement
 
 proc renderBody(nodes: seq[SyntaxNode], indent: int, separate = true): string {.raises: [].} =
   for index, node in nodes:

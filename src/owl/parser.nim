@@ -33,6 +33,13 @@ type
     pos: int
     source: SourceID
 
+const
+  # Tokens that can begin an expression, an argument, or a callee.
+  PrimaryStart = {Atom, StringLit, Equal, LBracket, LParen}
+  # `END` in the grammar: everything a statement or argument line may stop at
+  # without a newline of its own.
+  BlockEnd = {Dedent, RParen, Eof}
+
 proc fail(
     message: string, source: SourceID, line, column: int
 ) {.raises: [ParserError].} =
@@ -52,6 +59,16 @@ proc isAtomPartChar(c: char): bool {.raises: [].} =
 proc isNumberDot(source: string, index: int): bool {.raises: [].} =
   index > 0 and index + 1 < source.len and source[index] == '.' and
     source[index - 1] in {'0' .. '9'} and source[index + 1] in {'0' .. '9'}
+
+proc escapeChar(c: char): char {.raises: [].} =
+  ## The character `\c` stands for, or `\0` when `c` is not an escape.
+  case c
+  of '"': '"'
+  of '\\': '\\'
+  of 'n': '\n'
+  of 'r': '\r'
+  of 't': '\t'
+  else: '\0'
 
 proc add(
     tokens: var seq[Token], kind: TokenKind, lexeme: sink string, line, column: int
@@ -89,81 +106,6 @@ proc tokenize*(
         if pendingIndent != indents[^1]:
           fail("inconsistent indentation", sourceId, line, 1)
       atLineStart = false
-
-  proc handleStringInterpolation(
-      str: string, columns: seq[int], ts: var seq[Token], startLine,
-          startColumn: int
-  ) =
-    var
-      index = 0
-      strStart = 0
-      foundOne = false
-
-    template addStringPart(start, stop: int) =
-      if start < stop:
-        ts.add(StringLit, str[start ..< stop], startLine, columns[start])
-
-    template addInterpolationTokens(substr: string, sourceColumn: int) =
-      let subTokens =
-        try:
-          tokenize(substr, sourceId)
-        except ParserError as error:
-          if error.primary.hasSource and error.primary.line == 1:
-            error.primary = sourcePos(
-              sourceId, startLine, sourceColumn + error.primary.column.int - 1
-            )
-          raise error
-      for token in subTokens:
-        if token.kind in {Newline, Eof}:
-          continue
-        var shifted = token
-        shifted.line = startLine
-        shifted.column = sourceColumn + token.column - 1
-        ts.add shifted
-
-    while index < str.len:
-      if str[index] != '\\':
-        inc index
-        continue
-      inc index
-      if index >= str.len:
-        break
-      if str[index] == '(':
-        if not foundOne:
-          ts.add(LParen, "(", startLine, startColumn)
-          ts.add(Atom, "concat", startLine, startColumn + str.len)
-        foundOne = true
-        addStringPart(strStart, index - 1)
-        inc index
-        let start = index
-        while index < str.len and str[index] != ')':
-          inc index
-        if index >= str.len:
-          fail(
-            "Unexpected EOF in string interpolation", sourceId, startLine,
-            columns[start - 2],
-          )
-        let substr = str[start ..< index]
-        let interpolationColumn =
-          if start < columns.len:
-            columns[start]
-          else:
-            startColumn
-        inc index
-        strStart = index
-        ts.add(LParen, "(", startLine, startColumn)
-        ts.add(Atom, "to-string", startLine, startColumn)
-        ts.add(LParen, "(", startLine, startColumn)
-        addInterpolationTokens(substr, interpolationColumn)
-        ts.add(RParen, ")", startLine, startColumn)
-        ts.add(RParen, ")", startLine, startColumn)
-      else:
-        inc index
-    if foundOne:
-      addStringPart(strStart, str.len)
-      ts.add(RParen, ")", startLine, startColumn)
-    else:
-      ts.add(StringLit, str, startLine, startColumn)
 
   while i < source.len:
     let c = source[i]
@@ -237,52 +179,101 @@ proc tokenize*(
       result.add(RParen, ")", line, column)
       advance()
     of '"':
-      let startLine = line
-      let startColumn = column
+      # A string becomes one `StringLit`, or, once it interpolates, the token
+      # stream for `(concat <part> ... (to-string (<form>)) ...)`. Splitting it
+      # here is what lets an interpolated form be any form at all.
+      let
+        startLine = line
+        startColumn = column
       advance()
-      var value = ""
-      var valueColumns: seq[int]
+      var
+        parts: seq[Token]
+        interpolations = 0
+        literal = ""
+        literalColumn = column
+
+      template addLiteral(c: char, at: int) =
+        if literal.len == 0:
+          literalColumn = at
+        literal.add c
+
+      template flushLiteral() =
+        if literal.len > 0:
+          parts.add(StringLit, literal, startLine, literalColumn)
+          literal = ""
+
       while i < source.len and source[i] != '"':
         if source[i] in {'\r', '\n'}:
           fail("unterminated string", sourceId, startLine, startColumn)
-        if source[i] == '\\':
-          let escapeColumn = column
+        if source[i] != '\\':
+          addLiteral(source[i], column)
           advance()
-          if i >= source.len:
-            fail("unterminated string escape", sourceId, startLine, startColumn)
-          case source[i]
-          of '"':
-            value.add '"'
-            valueColumns.add escapeColumn
-          of '\\':
-            value.add '\\'
-            valueColumns.add escapeColumn
-          of 'n':
-            value.add '\n'
-            valueColumns.add escapeColumn
-          of 'r':
-            value.add '\r'
-            valueColumns.add escapeColumn
-          of 't':
-            value.add '\t'
-            valueColumns.add escapeColumn
-          of '(':
-            # Preserve the interpolation marker for the second pass.
-            value.add '\\'
-            valueColumns.add escapeColumn
-            value.add '('
-            valueColumns.add column
-          else:
+          continue
+
+        let escapeColumn = column
+        advance()
+        if i >= source.len:
+          fail("unterminated string escape", sourceId, startLine, startColumn)
+        if source[i] != '(':
+          let escaped = escapeChar(source[i])
+          if escaped == '\0':
             fail("invalid string escape", sourceId, line, column)
+          addLiteral(escaped, escapeColumn)
           advance()
-        else:
-          value.add source[i]
-          valueColumns.add column
-          advance()
+          continue
+
+        advance() # past '('
+        let
+          codeColumn = column
+          codeStart = i
+        var depth = 1
+        while depth > 0:
+          if i >= source.len or source[i] in {'\r', '\n'}:
+            fail("unterminated string interpolation", sourceId, startLine, escapeColumn)
+          case source[i]
+          of '(':
+            inc depth
+          of ')':
+            dec depth
+          else:
+            discard
+          if depth > 0:
+            advance()
+        let code = source[codeStart ..< i]
+        advance() # past ')'
+
+        flushLiteral()
+        inc interpolations
+        let interpolated =
+          try:
+            tokenize(code, sourceId)
+          except ParserError as error:
+            if error.primary.hasSource and error.primary.line == 1:
+              error.primary =
+                sourcePos(sourceId, startLine, codeColumn + error.primary.column.int - 1)
+            raise error
+        parts.add(LParen, "(", startLine, codeColumn)
+        parts.add(Atom, "to-string", startLine, codeColumn)
+        parts.add(LParen, "(", startLine, codeColumn)
+        for token in interpolated:
+          if token.kind notin {Newline, Eof}:
+            parts.add(token.kind, token.lexeme, startLine,
+                codeColumn + token.column - 1)
+        parts.add(RParen, ")", startLine, codeColumn)
+        parts.add(RParen, ")", startLine, codeColumn)
+
       if i >= source.len:
         fail("unterminated string", sourceId, startLine, startColumn)
-      advance()
-      handleStringInterpolation(value, valueColumns, result, startLine, startColumn)
+      advance() # past the closing quote
+
+      if interpolations == 0:
+        result.add(StringLit, literal, startLine, startColumn)
+      else:
+        flushLiteral()
+        result.add(LParen, "(", startLine, startColumn)
+        result.add(Atom, "concat", startLine, startColumn)
+        result.add parts
+        result.add(RParen, ")", startLine, startColumn)
     else:
       if not isAtomStartChar(c):
         fail(&"unexpected character {c}", sourceId, line, column)
@@ -299,14 +290,19 @@ proc tokenize*(
     result.add(Dedent, "", line, 1)
   result.add(Eof, "", line, column)
 
-proc peek(parser: Parser): Token {.raises: [].} =
-  parser.tokens[parser.pos]
-
-proc peek(parser: Parser, offset: int): Token {.raises: [].} =
+proc peek(parser: Parser, offset = 0): Token {.raises: [].} =
   parser.tokens[parser.pos + offset]
 
 proc at(parser: Parser, kind: TokenKind): bool {.raises: [].} =
   parser.peek.kind == kind
+
+proc startsPrimary(parser: Parser): bool {.raises: [].} =
+  parser.peek.kind in PrimaryStart
+
+proc startsSuite(parser: Parser): bool {.raises: [].} =
+  ## A newline followed by an indent, which is how a layout tail or an indented
+  ## binding value begins.
+  parser.at(Newline) and parser.peek(1).kind == Indent
 
 proc take(parser: var Parser): Token {.raises: [].} =
   result = parser.tokens[parser.pos]
@@ -315,44 +311,39 @@ proc take(parser: var Parser): Token {.raises: [].} =
 proc pos(parser: Parser, token: Token): SourcePos {.raises: [].} =
   sourcePos(parser.source, token.line, token.column)
 
+proc fail(parser: Parser, message: string) {.raises: [ParserError].} =
+  let token = parser.peek
+  fail(message, parser.source, token.line, token.column)
+
 proc expect(
     parser: var Parser, kind: TokenKind, message: string
 ): Token {.raises: [ParserError].} =
   if not parser.at(kind):
-    let token = parser.peek
-    fail(message, parser.source, token.line, token.column)
+    parser.fail(message)
   parser.take()
+
+proc endStatement(parser: var Parser, message: string) {.raises: [ParserError].} =
+  if parser.at(Newline):
+    discard parser.take()
+  elif parser.peek.kind notin BlockEnd:
+    parser.fail(message)
 
 proc parseStatementList(
   parser: var Parser, stop: set[TokenKind]
 ): seq[SyntaxNode] {.raises: [ParserError].}
 
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].}
-proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [ParserError].}
+proc parseArgument(
+  parser: var Parser, inSuite: bool
+): SyntaxNode {.raises: [ParserError].}
 
-proc parseIndentedBody(parser: var Parser): seq[SyntaxNode] {.raises: [
-    ParserError].} =
+proc parseIndentedBody(
+    parser: var Parser
+): seq[SyntaxNode] {.raises: [ParserError].} =
   discard parser.expect(Newline, "expected newline before indented body")
   discard parser.expect(Indent, "expected indented body")
   result = parser.parseStatementList({Dedent})
   discard parser.expect(Dedent, "expected end of indented body")
-
-proc startsPrimary(kind: TokenKind): bool {.raises: [].} =
-  kind in {Atom, StringLit, Equal, LBracket, LParen}
-
-proc startsArgumentItem(kind: TokenKind): bool {.raises: [].} =
-  startsPrimary(kind)
-
-proc parseArgumentLine(parser: var Parser): seq[SyntaxNode] {.raises: [
-    ParserError].} =
-  result.add parser.parseArgumentItem()
-  while startsArgumentItem(parser.peek.kind):
-    result.add parser.parseArgumentItem()
-  if parser.at(Newline):
-    discard parser.take()
-  elif parser.peek.kind notin {Dedent, RParen, Eof}:
-    let token = parser.peek
-    fail("expected newline after argument", parser.source, token.line, token.column)
 
 proc parseIndentedArguments(
     parser: var Parser
@@ -362,144 +353,78 @@ proc parseIndentedArguments(
   while not parser.at(Dedent):
     if parser.at(Newline):
       discard parser.take()
-    else:
-      result.add parser.parseArgumentLine()
+      continue
+    result.add parser.parseArgument(inSuite = true)
+    while parser.startsPrimary:
+      result.add parser.parseArgument(inSuite = true)
+    parser.endStatement("expected newline after argument")
   discard parser.expect(Dedent, "expected end of indented arguments")
 
-proc parseLayoutTail(
-    parser: var Parser
-): tuple[kind: LayoutKind, body: seq[SyntaxNode]] {.raises: [ParserError].} =
-  if parser.at(Colon):
-    discard parser.take()
-    result = (ColonLayout, parser.parseIndentedBody())
-  else:
-    result = (ContinuationLayout, parser.parseIndentedArguments())
-
 proc attachLayoutTail(
-    parser: Parser, node: var SyntaxNode, layout: LayoutKind, body: sink seq[SyntaxNode]
+    parser: var Parser, node: var SyntaxNode
 ) {.raises: [ParserError].} =
+  ## Consume `":" suite` or a continuation argument block and hang it on `node`.
+  let (layout, body) =
+    if parser.at(Colon):
+      discard parser.take()
+      (ColonLayout, parser.parseIndentedBody())
+    else:
+      (ContinuationLayout, parser.parseIndentedArguments())
   if node.kind == Symbol:
     node = command(node, @[], node.pos)
   if not node.attachLayout(layout, body):
-    let token = parser.peek
-    fail(
-      "layout can only be attached to a command", parser.source, token.line,
-      token.column,
-    )
-
-proc parseSymbol(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  let token = parser.expect(Atom, "expected symbol")
-  symbol(token.lexeme, parser.pos(token))
+    parser.fail("layout can only be attached to a command")
 
 proc parseSymbolLike(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  case parser.peek.kind
-  of Atom:
-    result = parser.parseSymbol()
-  of Equal:
-    let token = parser.take()
-    result = symbol(token.lexeme, parser.pos(token))
-  of LBracket:
-    let token = parser.take()
+  ## A plain atom, or the punctuation accepted where a symbol is expected.
+  if parser.peek.kind notin {Atom, Equal, LBracket}:
+    parser.fail("expected symbol")
+  let token = parser.take()
+  if token.kind == LBracket:
     let closeToken = parser.expect(RBracket, "expected ']'")
     result = symbol(token.lexeme & closeToken.lexeme, parser.pos(token))
   else:
-    let token = parser.peek
-    fail("expected symbol", parser.source, token.line, token.column)
+    result = symbol(token.lexeme, parser.pos(token))
 
 proc parsePostfix(
     parser: var Parser, base: SyntaxNode
 ): SyntaxNode {.raises: [ParserError].} =
+  ## Selectors desugar to ordinary calls: `a.b` is `field a "b"` and `a.[i]`
+  ## is `index a i`, so chains nest without any further evaluator support.
   result = base
   while parser.at(Dot):
     let dot = parser.take()
+    let dotPos = parser.pos(dot)
     if parser.at(Atom):
       let fieldToken = parser.take()
       result = command(
-        symbol("field", parser.pos(dot)),
+        symbol("field", dotPos),
         @[result, stringLiteral(fieldToken.lexeme, parser.pos(fieldToken))],
-        parser.pos(dot),
+        dotPos,
       )
     elif parser.at(LBracket):
       discard parser.take()
       let index = parser.parseForm()
       discard parser.expect(RBracket, "expected ']'")
-      result =
-        command(symbol("index", parser.pos(dot)), @[result, index], parser.pos(dot))
+      result = command(symbol("index", dotPos), @[result, index], dotPos)
     else:
-      let token = parser.peek
-      fail(
-        "expected field name or index after '.'", parser.source, token.line,
-        token.column,
-      )
+      parser.fail("expected field name or index after '.'")
 
-proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [
-    ParserError].} =
+proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   let open = parser.expect(LParen, "expected '('")
   result = parser.parseForm()
-  if parser.at(Colon) or parser.at(Newline):
-    let tail = parser.parseLayoutTail()
-    parser.attachLayoutTail(result, tail.kind, tail.body)
-  # A layout body can dedent to another form before the closing paren. Keep
-  # those forms together as a single expression script.
-  if not parser.at(RParen):
-    var statements = @[result]
-    statements.add parser.parseStatementList({RParen})
-    result = script(statements, parser.pos(open))
+  if parser.at(Colon) or parser.startsSuite:
+    parser.attachLayoutTail(result)
+  # A layout body can dedent to further forms before the closing paren -- an
+  # `if`/`else` pair written as one expression arrives this way. Keep those
+  # forms together as a single expression script.
+  let rest = parser.parseStatementList({RParen})
+  if rest.len > 0:
+    result = script(@[result] & rest, parser.pos(open))
   discard parser.expect(RParen, "expected ')'")
   result = parser.parsePostfix(result)
 
-proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  case parser.peek.kind
-  of LParen:
-    result = parser.parseGroupedForm()
-  of Atom, Equal, LBracket:
-    result = parser.parsePostfix(parser.parseSymbolLike())
-  else:
-    let token = parser.peek
-    fail("expected command callee", parser.source, token.line, token.column)
-
-proc isIdentifierSymbol(value: string): bool {.raises: [].} =
-  if value.len == 0:
-    return false
-  if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
-    return false
-  for c in value:
-    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?', '/'}:
-      return false
-  true
-
-proc isNumericSymbol(value: string): bool {.raises: [].} =
-  value.len > 0 and (
-    value[0] in {'0' .. '9'} or
-    value.len > 1 and value[0] in {'+', '-'} and value[1] in {'0' .. '9'}
-  )
-
-proc parseArgument(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  case parser.peek.kind
-  of Atom, Equal, LBracket:
-    result = parser.parseSymbolLike()
-    let takesSameLineLayout =
-      not result.symbol.isIdentifierSymbol and
-      not result.symbol.isNumericSymbol and
-      parser.at(Colon)
-    if takesSameLineLayout:
-      let tail = parser.parseLayoutTail()
-      parser.attachLayoutTail(result, tail.kind, tail.body)
-    result = parser.parsePostfix(result)
-  of StringLit:
-    let token = parser.take()
-    result = parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
-  of LParen:
-    result = parser.parseGroupedForm()
-  else:
-    let token = parser.peek
-    fail("expected argument", parser.source, token.line, token.column)
-
-proc startsArgument(kind: TokenKind): bool {.raises: [].} =
-  startsPrimary(kind)
-
-proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [
-    ParserError].} =
+proc parsePrimary(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   case parser.peek.kind
   of Atom, Equal, LBracket:
     result = parser.parseSymbolLike()
@@ -509,71 +434,85 @@ proc parseArgumentItem(parser: var Parser): SyntaxNode {.raises: [
   of LParen:
     result = parser.parseGroupedForm()
   else:
-    let token = parser.peek
-    fail("expected argument", parser.source, token.line, token.column)
+    parser.fail("expected argument")
 
-  if parser.at(Colon) or (parser.at(Newline) and parser.peek(1).kind == Indent):
-    let tail = parser.parseLayoutTail()
-    parser.attachLayoutTail(result, tail.kind, tail.body)
+proc parseArgument(
+    parser: var Parser, inSuite: bool
+): SyntaxNode {.raises: [ParserError].} =
+  ## `inSuite` marks an argument written on its own line inside a continuation
+  ## block, where any argument may open a layout body.
+  ##
+  ## On a command line the colon is resolved lexically instead: an
+  ## identifier-like or numeric argument leaves it to the enclosing command, so
+  ## `if condition:` keeps its block form, while an operator-like one such as
+  ## `[]` takes it as its own layout.
+  result = parser.parsePrimary()
+  let takesLayout =
+    if inSuite:
+      parser.at(Colon) or parser.startsSuite
+    else:
+      parser.at(Colon) and result.kind == Symbol and result.symbol.isOperatorSymbol
+  if takesLayout:
+    parser.attachLayoutTail(result)
   result = parser.parsePostfix(result)
 
-proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+proc parseCallee(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+  case parser.peek.kind
+  of LParen:
+    result = parser.parseGroupedForm()
+  of Atom, Equal, LBracket:
+    result = parser.parsePostfix(parser.parseSymbolLike())
+  else:
+    parser.fail("expected command callee")
+
+proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
+  if parser.at(StringLit):
+    let token = parser.take()
+    return parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
   let callee = parser.parseCallee()
   var arguments: seq[SyntaxNode]
-  while startsArgument(parser.peek.kind):
-    arguments.add parser.parseArgument()
+  while parser.startsPrimary:
+    arguments.add parser.parseArgument(inSuite = false)
+  # A group with no arguments after it is just the grouped form; wrapping it
+  # would turn `(x)` into a call to whatever `x` holds.
   if callee.kind != Symbol and arguments.len == 0:
     result = callee
   else:
     result = command(callee, arguments, callee.pos)
 
-proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  if parser.at(StringLit):
-    let token = parser.take()
-    result = parser.parsePostfix(stringLiteral(token.lexeme, parser.pos(token)))
-  else:
-    result = parser.parseCommand()
-
-proc parseIndentedBindingValue(parser: var Parser): SyntaxNode {.raises: [
-    ParserError].} =
+proc parseIndentedBindingValue(
+    parser: var Parser
+): SyntaxNode {.raises: [ParserError].} =
   let values = parser.parseIndentedBody()
   if values.len == 0:
-    let token = parser.peek
-    fail("expected indented binding value", parser.source, token.line, token.column)
+    parser.fail("expected indented binding value")
   if values.len == 1:
-    values[0]
+    result = values[0]
   else:
-    script(values, values[0].pos)
+    result = script(values, values[0].pos)
 
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if not parser.at(Atom) or parser.peek(1).kind != Equal:
     return parser.parseExpression()
   let bindingToken = parser.take()
   discard parser.take()
-  result =
-    if parser.at(Newline) and parser.peek(1).kind == Indent:
-      binding(bindingToken.lexeme, parser.parseIndentedBindingValue(), parser.pos(bindingToken))
+  let value =
+    if parser.startsSuite:
+      parser.parseIndentedBindingValue()
     else:
-      binding(bindingToken.lexeme, parser.parseExpression(), parser.pos(bindingToken))
+      parser.parseExpression()
+  result = binding(bindingToken.lexeme, value, parser.pos(bindingToken))
 
-proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [
-    ParserError].} =
+proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
   var first = parser.parseForm()
-  if parser.at(Colon) or (parser.at(Newline) and parser.peek(1).kind == Indent):
-    let tail = parser.parseLayoutTail()
-    parser.attachLayoutTail(first, tail.kind, tail.body)
-    result.add first
-    return
-
+  if parser.at(Colon) or parser.startsSuite:
+    parser.attachLayoutTail(first)
+    return @[first]
   result.add first
   while parser.at(Comma):
     discard parser.take()
     result.add parser.parseForm()
-  if parser.at(Newline):
-    discard parser.take()
-  elif parser.peek.kind notin {Dedent, RParen, Eof}:
-    let token = parser.peek
-    fail("expected newline after statement", parser.source, token.line, token.column)
+  parser.endStatement("expected newline after statement")
 
 proc parseStatementList(
     parser: var Parser, stop: set[TokenKind]
@@ -584,16 +523,13 @@ proc parseStatementList(
     else:
       result.add parser.parseStatement()
 
-proc parse*(source: string, path = "<input>"): SyntaxNode {.raises: [
-    ParserError].} =
+proc parse*(source: string, path = "<input>"): SyntaxNode {.raises: [ParserError].} =
   let sourceId = registerSource(source, path)
-  var parser = Parser(tokens: tokenize(source, sourceId), pos: 0,
-      source: sourceId)
+  var parser =
+    Parser(tokens: tokenize(source, sourceId), pos: 0, source: sourceId)
   let statements = parser.parseStatementList({Eof})
   discard parser.expect(Eof, "expected end of file")
-  let scriptPos =
-    if statements.len > 0:
-      statements[0].pos
-    else:
-      sourcePos(sourceId, 1, 1)
-  script(statements, scriptPos)
+  result = script(
+    statements,
+    if statements.len > 0: statements[0].pos else: sourcePos(sourceId, 1, 1),
+  )

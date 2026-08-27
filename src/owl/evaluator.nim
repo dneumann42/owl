@@ -1,6 +1,6 @@
 import std/[strformat, tables]
 
-import commands, environment, parser, syntax, values, environment
+import commands, environment, parser, syntax, values
 
 const PreludeSource = staticRead("prelude.owl")
 
@@ -139,18 +139,3 @@ proc registerModule*(
 
 proc registerModule*(evaluator: var Evaluator, module: NativeModule) {.raises: [].} =
   evaluator.env.registerModule(module)
-
-template native*(evaluator: var Evaluator, symbol: string, body: untyped) =
-  evaluator.defineNative(symbol, proc(
-      env {.inject.}: Environment,
-      arguments {.inject.}: seq[SyntaxNode],
-      layout {.inject.}: LayoutKind,
-      bodyNodes {.inject.}: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    try:
-      body
-    except EvaluatorError as error:
-      raise error
-    except CatchableError as error:
-      raise newException(EvaluatorError, error.msg)
-  )

@@ -14,7 +14,7 @@ proc evalSource*(source: string, path = "<eval>", evaluator = Evaluator.init()):
 
 const OwlCLISource = staticRead"owl/cli.owl"
 
-proc start() =
+when isMainModule:
   try:
     evalSource OwlCLISource, "owl/cli.owl"
   except OwlError as error:
@@ -23,6 +23,3 @@ proc start() =
   except CatchableError as error:
     stderr.writeLine error.msg
     quit 1
-
-when isMainModule:
-  start()

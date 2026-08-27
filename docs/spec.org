@@ -11,13 +11,14 @@ The [[term-lexer][lexer]] produces tokens before the [[term-parser][parser]] bui
 |-----------------------+-----------------------------------------------|
 | ' ', '\t', '\r', '\n' | Whitespace                                    |
 | ';'                   | Starts a comment                              |
-| ','                   | Comma (not used)                              |
+| ','                   | Separates forms written on one line           |
 | '(' ')'               | Used for grouping calls                       |
 | '[' ']'               | Empty list symbol and selector index grouping |
 | '.'                   | Starts a selector                             |
 | ':'                   | Starts a code block                           |
 | '='                   | Used for assignment                           |
 | '"'                   | String start and terminal (refer to escaping) |
+| '\'                   | String escape; =\(= opens an interpolation    |
 *** EBNF
 The [[term-lexer][lexer]] discards horizontal spacing, comments, and physical blank lines. It emits newline, indent, and dedent tokens for the [[term-parser][parser]].
 #+begin_src ebnf
@@ -30,13 +31,11 @@ suite           = NL, INDENT, stmts, DEDENT .
 argument_block  = NL, INDENT, { NL | argument_item, { argument_item }, END }, DEDENT .
 
 form            = binding | expr .
-binding         = symbol, "=", (expr | binding_value_block) .
-binding_value_block
-                = single_form_suite .
-expr            = string | command .
+binding         = symbol, "=", (expr | suite) .
+expr            = string, selectors | command .
 command         = callee, { inline_argument } .
 
-callee          = (symbol_like | group), selectors .
+callee          = symbol_like, selectors | group .
 inline_argument = (argument_primary | same_line_layout_argument), selectors .
 argument_primary
                 = symbol_like | string | group .
@@ -45,25 +44,34 @@ same_line_layout_argument
 argument_item   = (layout_item | argument_primary), selectors .
 layout_item     = (symbol_like | group), layout_tail .
 
-group           = "(", form, [ layout_tail ], ")" .
+group           = "(", form, [ layout_tail ], stmts, ")", selectors .
 selectors       = { ".", (symbol | "[", form, "]") } .
 
-symbol_like     = symbol .
+symbol_like     = symbol | "=" | "[", "]" .
 symbol          = atom .
-operator_symbol = symbol_like .
 string          = DQUOTE, { string_char | escape | interpolation }, DQUOTE .
 escape          = BS, (DQUOTE | BS | "n" | "r" | "t") .
 interpolation   = BS, "(", form, ")" .
 atom            = atom_start, { atom_char } .
 #+end_src
 
+A [[term-binding][binding]] whose value is a =suite= is an expression script: the forms evaluate in
+order and the last value is the binding's value.
+
+A [[term-group][group]] holds one form, optionally a [[term-layout-tail][layout tail]], and then any further
+statements before the closing parenthesis. This is what lets an =if=/=else= pair
+be written as a single grouped expression.
+
+An =interpolation= is scanned to its matching =)=, so parentheses and quoted
+strings nest inside it. =\\\\= is an escaped backslash, so ~"a\\\\(b)"~ is the literal
+text =a\\(b)= and not an interpolation.
+
 Lexical constants:
 
 | constant          | definition                                                                                                                |
 |-------------------+---------------------------------------------------------------------------------------------------------------------------|
-| =symbol_like=       | a normal atom, or structural punctuation accepted where a symbol is expected, such as equals or empty bracket punctuation |
 | =operator_symbol=   | a =symbol_like= that is neither identifier-like nor numeric                                                                 |
-| =single_form_suite= | an indented suite containing exactly one statement                                                                        |
+| identifier-like   | starts with a letter or underscore, and continues with letters, digits, =_=, =-=, =?=, or =/=                                     |
 | =atom_start=        | any non-whitespace char except double quote, parentheses, brackets, dot, comma, colon, equals, or semicolon               |
 | =atom_char=         | any char except whitespace, double quote, parentheses, brackets, comma, colon, or semicolon; dot only between two digits  |
 | =string_char=       | any char except =DQUOTE=, =BS=, =CR=, or =LF=                                                                                     |
@@ -162,7 +170,8 @@ There are two [[term-command][command]] kinds.
 
 Native commands are responsible for [[term-arity][arity]] checks, type checks, [[term-argument][argument]] evaluation, and body evaluation. For example, =and= and =or= [[term-short-circuit][short-circuit]] because their native implementations choose when to evaluate arguments.
 
-[[term-closure][Closure commands]] are created by =command=, =block-command=, =fun=, =fn=, and =lambda=. A closure stores [[term-parameter][parameters]], body syntax, the environment [[term-capture][captured]] at definition time, and two flags:
+[[term-closure][Closure commands]] are created by =command=, =block-command=, =fun=, =fn=, =lambda=, and
+=component=. =component= is another name for =command=, and =lambda= for =fn=. A closure stores [[term-parameter][parameters]], body syntax, the environment [[term-capture][captured]] at definition time, and two flags:
 
 | flag                 | effect                                                   |
 |----------------------+----------------------------------------------------------|
@@ -175,21 +184,28 @@ For argument-evaluating closures, Owl creates the [[term-call-scope][call scope]
 
 For [[term-raw-syntax][raw-syntax]] closures, Owl creates the call scope as a child of the [[term-caller-env][caller environment]]. Each parameter is bound to a =syntax= value for the raw argument node paired with the caller environment. This is the behavior of =command= and =block-command=.
 
-Every closure call also binds:
+A closure call also binds:
 
 | name   | value                                               |
 |--------+-----------------------------------------------------|
 | block  | syntax value containing the call's body as a [[term-script][script]] |
 | layout | text form of the [[term-layout-kind][layout kind]]                        |
 
+Each is bound only when the closure body mentions that name, and never when the
+closure already declares a [[term-parameter][parameter]] of that name.
+
 The closure body evaluates in the [[term-call-scope][call scope]] and returns its last value.
 
 ** Environments And Assignment
-=define= evaluates every [[term-binding][binding]] value in its body and defines that symbol in the current [[term-env][environment]]. It does not require the symbol to already exist, and it writes only to the current [[term-scope][scope]].
+=define= evaluates every [[term-binding][binding]] value in its body and defines that symbol in the current [[term-env][environment]]. It does not require the symbol to already exist, and it writes only to the current [[term-scope][scope]]. A symbol already bound in that same scope is an error; use =set= to update it. A symbol bound in an enclosing scope is shadowed, not an error.
 
 The right-hand side of a binding may be an indented expression script. Its indentation supplies the boundary; each contained form evaluates in order and the script returns its last value. This applies to any expressions, commands, blocks, or values, not only control flow.
 
-=set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=. If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated. If =target= is not a symbol, Owl evaluates it as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
+=set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=.
+
+- If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated.
+- If =target= is a selector, that is a =field= or =index= call with two arguments, Owl rewrites the container and assigns the rewritten value back through the same rule. This is what makes =set point.y 100= and =set xs.[0] 20= work, and it applies recursively through nested selectors.
+- Otherwise Owl evaluates =target= as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
 
 Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is evaluated and the named symbol is updated. Unlike the lower-level environment setter, the public =set= command rejects unknown symbols.
 
@@ -231,11 +247,11 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 
 =pick= evaluates the condition, then evaluates only the selected branch [[term-expr][expression]].
 
-=and= evaluates arguments left to right and returns the first [[term-truthiness][falsey]] value. With no arguments, it returns =true=.
+=and= evaluates arguments left to right and returns the first [[term-truthiness][falsey]] value, or the last value when every argument is [[term-truthiness][truthy]]. With no arguments, it returns =true=.
 
-=or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value. With no arguments, it returns =false=.
+=or= evaluates arguments left to right and returns the first [[term-truthiness][truthy]] value, or the last value when every argument is [[term-truthiness][falsey]]. With no arguments, it returns =false=.
 
-=if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =owl/prelude.owl= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Owl cannot yet directly create runtime commands.
+=if=, =else=, =cond=, =not=, =do=, list literal =[]=, dictionary literal ={ }=, =record=, =for=, and the iterators =range=, =countdown=, =iter=, and =once= are not special [[term-parser][parser]] forms. They are commands defined in =owl/prelude.owl= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Owl cannot yet directly create runtime commands. The evaluator itself supplies only the primitives these are built from: =when=, =while=, =pick=, the closure constructors, and the data and syntax intrinsics.
 
 =if= and =else= are =block-command=s defined in =owl/prelude.owl=, not evaluator special forms. Together they are expressions: =if condition:= evaluates and returns its body when the condition is truthy; a following =else:= returns the =if= result when it was truthy or evaluates and returns its own body when it was falsey. =if= pushes its condition result onto a stack in the [[term-command-env][command environment]], and =else= pops that result. This keeps nested pairs independent.
 
@@ -251,6 +267,20 @@ else:
 
 =cond:= evaluates =when condition:= and =| condition:= clauses in order, returning the first matching body. An =else:= clause is an unconditional fallback, so =cond= no longer needs =when true:= for its final branch.
 
+*** Iterators
+An iterator is any [[term-command][command]] that takes no [[term-argument][arguments]] and answers the next value, or =nothing= once it is spent. Nothing in the evaluator knows about them; the protocol is just that shape.
+
+| command                    | yields                                        |
+|----------------------------+-----------------------------------------------|
+| =range start stop=           | =start= up to but not including =stop=            |
+| =countdown start stop=       | =start= down to but not including =stop=          |
+| =iter list=                  | each item of the list                         |
+| =once value=                 | the value, then nothing                       |
+
+=for name iterator:= evaluates the iterator expression, then evaluates its body once per value with =name= bound to that value in a child [[term-scope][scope]]. It returns the last body value, or =nothing= when the iterator was empty. =for-each name iterator body= is the same thing taking the body as [[term-syntax-value][syntax]], which is what =for= is built from.
+
+=assert condition= fails when the condition is [[term-truthiness][falsey]], and otherwise returns it.
+
 ** Data Commands
 Arithmetic commands =+=, =-=, =*=, and =/= require at least one argument. They evaluate all arguments as numbers and [[term-fold-left][fold left]].
 
@@ -264,16 +294,36 @@ Comparison commands evaluate their two arguments:
 | ~>~       | numeric left is greater than right          |
 | ~>=~      | numeric left is greater than or equal       |
 
-=list= creates an empty list. =cons value list= returns a new list with the evaluated value prepended to the evaluated list. =first= returns the first item of a non-empty list. =rest= returns a list without the first item, or an empty list for an empty input. =empty?= returns whether a list is empty. =length= returns the size of a list, dictionary, or text value.
+The arithmetic assignment commands are covered under [[*Environments And Assignment][Environments And Assignment]]. =floor= returns the largest integer not greater than its argument.
 
-=dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key.
+Lists are values, so reading never mutates and writing answers a new list. The exceptions are =append= and =pop-front=, which rewrite a named list in place so that building a list stays linear.
 
-=concat= evaluates text arguments and returns their concatenation.
+| command                | result                                                             |
+|------------------------+--------------------------------------------------------------------|
+| =list=                   | an empty list                                                      |
+| =cons value list=        | a new list with the value in front                                 |
+| =first list=             | the first item; a non-empty list is required                       |
+| =rest list=              | everything after the first item, or an empty list                  |
+| =empty? list=            | whether the list has no items                                      |
+| =nth list index=         | the item at a position                                             |
+| =append-value list value= | a new list with the value on the end                              |
+| =drop-front list count=  | a new list without the leading items                               |
+| =append list value=      | adds to the end of a named list in place; answers =nothing=          |
+| =pop-front list count=   | drops leading items from a named list in place; answers =nothing=    |
+| =list-from syntax-list=  | evaluates a list of [[term-syntax-value][syntax values]] into a list of values           |
+
+=length= returns the size of a list, dictionary, or text value.
+
+=dict= creates an empty dictionary. =dict-put dict key value= evaluates all inputs, stores the evaluated value under the text key, and returns the dictionary value. =dict-put= also accepts records, but record keys must already be declared. =dict-get= and =field= read a text key from a dictionary or record and fail if it is missing. =index= reads a numeric list index or a text dictionary/record key. =dict-from= evaluates a list of [[term-binding][binding]] syntax values into a dictionary, and is what ={ }= is built from.
+
+=concat= evaluates text arguments and returns their concatenation. =to-string= renders any value as the Owl source that would produce it.
+
+The full list of [[term-native-command][native commands]], with the arguments each takes, is what =standard-commands= returns; =owl --std= prints it.
 
 ** Streams And Resources
 =Stream= is a record interface defined in =owl/prelude.owl=. Its fields are command values: =open=, =close=, =read=, =read-line=, =read-all=, =write=, and =write-line=. Unsupported operations are still present in the record and raise an evaluator error when called.
 
-=stdin= and =stdout= are =Stream= records installed in the root environment.
+=stdin= and =stdout= are =Stream= records installed in the root environment. Host-built streams are records named =Stream= too, so the =Stream?= predicate defined alongside the record recognizes them.
 
 =open-file= returns a file-backed =Stream=. It accepts either a mode, or a path and mode. Supported modes are =r=, =rb=, =w=, =wb=, =a=, and =ab=.
 
@@ -281,7 +331,7 @@ Comparison commands evaluate their two arguments:
 
 =with resource name:= evaluates the resource, calls its optional =open= field, creates a child [[term-env][environment]] with =name= bound to the opened resource, evaluates the body there, then calls the resource's optional =close= field in a [[term-finally][=finally= step]]. If =open= or =close= returns =nothing=, the original resource remains the value used by =with=.
 
-Prelude helpers =read=, =read-line=, =readline=, =read-all=, =write=, and =write-line= call the corresponding command fields on explicit stream values. =read= reads one byte and returns it as text, or =nothing= at end of input. =read-all= returns the remaining input as text.
+Prelude helpers =close=, =read=, =read-line=, =read-all=, =write=, and =write-line= call the corresponding command fields on explicit stream values. =read= reads one byte and returns it as text, or =nothing= at end of input. =read-all= returns the remaining input as text.
 
 ** Errors
 Evaluation errors are =EvaluatorError= values with [[term-source-context][source context]]. When evaluation fails, Owl adds a [[term-diagnostic-frame][diagnostic frame]] for the syntax node being evaluated, except for script nodes. Command frames use the callee text, binding frames use the binding symbol, symbol frames use the symbol text, and string frames use =string=. Reports include the primary source preview and a [[term-stack-trace][stack trace]] when frames are available.
@@ -378,9 +428,13 @@ print (Vec3? my-point)
 
 <<term-fold-left>>Fold left: combine values from left to right. For example, =- 10 3 2= computes =(10 - 3) - 2=.
 
+<<term-group>>Group: a parenthesized expression. It holds one form, an optional [[term-layout-tail][layout tail]], and any statements that follow before the closing parenthesis.
+
 <<term-indent>>Indentation: leading spaces or tabs at the start of a line. Owl converts indentation increases/decreases into block tokens.
 
 <<term-layout-body>>Layout body: the indented body attached to a command call by =:=. Continuation indentation is parsed into the command's argument list instead of its body.
+
+<<term-layout-tail>>Layout tail: the =:= suite or continuation argument block written after a form to give it a [[term-layout-body][layout body]] or extra [[term-argument][arguments]].
 
 <<term-layout-kind>>Layout kind: how indentation was attached. =NoLayout= means no indentation, =ColonLayout= means a body followed =:=, and =ContinuationLayout= means arguments followed a newline without =:=.
 

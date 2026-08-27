@@ -1,52 +1,58 @@
+; Owl's prelude. Everything here is written in Owl; the evaluator supplies
+; only the primitives these are built from.
+
+fun not value:
+  pick value false true
+
+; --- if / else -------------------------------------------------------------
+; `if` and `else` are two statements, so `if` leaves its condition and result
+; where a following `else` can find them. The results form a stack, which is
+; what keeps nested pairs independent: an inner pair pushes and pops entirely
+; inside the outer `if` body.
+
 command-define:
   condition-results = (list)
 
 block-command if condition:
   define:
     result = (eval condition)
-    then-result = nothing
-  when result:
-    set then-result (eval block)
+    then-result = (pick result (eval block) nothing)
   set condition-results (cons (cons result (cons then-result (list))) condition-results)
   then-result
 
-block-command else:
+fun take-condition-result:
   define:
-    pending = condition-results
-    done = (empty? pending)
-    result = nothing
-  when (not done):
-    set condition-results (rest pending)
-    define:
-      frame = (first pending)
-      condition = (first frame)
-      then-result = (first (rest frame))
-  when done:
-    set result (eval block)
-  when (not done):
-    when condition:
-      set result then-result
-    when (not condition):
-      set result (eval block)
-  result
+    frame = (first condition-results)
+  set condition-results (rest condition-results)
+  frame
+
+fun else-value frame else-block:
+  ; The `if` already ran, so reuse its value; otherwise run the `else` body.
+  pick (first frame) (first (rest frame)) (eval else-block)
+
+block-command else:
+  pick (empty? condition-results)
+    (eval block)
+    (else-value (take-condition-result) block)
+
+; --- literals --------------------------------------------------------------
 
 block-command ([]):
   list-from (statements block)
 
-block-command (do):
-  when true:
-    eval block
-
 block-command ({}):
   dict-from (statements block)
+
+block-command (do):
+  eval block
+
+; --- records ---------------------------------------------------------------
 
 fun record-fields nodes:
   if (empty? nodes):
     list
   else:
-    define:
-      entry = (first nodes)
-    cons (binding-symbol entry) (record-fields (rest nodes))
+    cons (binding-symbol (first nodes)) (record-fields (rest nodes))
 
 fun record-defaults nodes:
   if (empty? nodes):
@@ -54,24 +60,18 @@ fun record-defaults nodes:
   else:
     cons (binding-value (first nodes)) (record-defaults (rest nodes))
 
-fun field-value fields name fallback:
-  if (empty? fields):
-    fallback
-  else:
-    define:
-      entry = (first fields)
-    if (= (binding-symbol entry) name):
-      eval (binding-value entry)
-    else:
-      field-value (rest fields) name fallback
-
 block-command record name:
   define:
     record-name = (symbol-text name)
-    fields = (record-fields (statements block))
-    defaults = (record-defaults (statements block))
-  define-caller-value name (record-constructor record-name fields defaults)
+    fields = (statements block)
+  define-caller-value name
+    (record-constructor record-name (record-fields fields) (record-defaults fields))
   define-caller-value (concat record-name "?") (record-predicate record-name)
+
+; --- streams ---------------------------------------------------------------
+; `Stream` is the interface every stream answers to. Fields left unsupported
+; stay present and fail when they are called, so a stream is always a whole
+; record.
 
 fun unsupported-stream-operation:
   error "unsupported stream operation"
@@ -85,6 +85,26 @@ record Stream:
   write = (value-of unsupported-stream-operation)
   write-line = (value-of unsupported-stream-operation)
 
+fun close stream:
+  call stream.close
+
+fun read stream:
+  call stream.read
+
+fun read-line stream:
+  call stream.read-line
+
+fun read-all stream:
+  call stream.read-all
+
+fun write stream value:
+  call stream.write value
+
+fun write-line stream value:
+  call stream.write-line value
+
+; --- cond ------------------------------------------------------------------
+
 fun cond-from clauses:
   if (empty? clauses):
     nothing
@@ -95,9 +115,8 @@ fun cond-from clauses:
     if (= clause-symbol "else"):
       eval (command-body clause)
     else:
-      when (not (= clause-symbol "when")):
-        when (not (= clause-symbol "|")):
-          error "cond expects when, |, or else"
+      when (not (or (= clause-symbol "when") (= clause-symbol "|"))):
+        error "cond expects when, |, or else"
       if (eval (command-arg clause 0)):
         eval (command-body clause)
       else:
@@ -106,28 +125,9 @@ fun cond-from clauses:
 block-command cond:
   cond-from (statements block)
 
-fun close stream:
-  call stream.close
-
-fun read-line stream:
-  call stream.read-line
-
-fun read stream:
-  call stream.read
-
-fun read-all stream:
-  call stream.read-all
-
-fun write-line stream value:
-  call stream.write-line value
-
-fun write stream value:
-  call stream.write value
-
-fun assert condition:
-  when (not condition):
-    error "assertion failed"
-  condition
+; --- iterators -------------------------------------------------------------
+; An iterator is a command that answers the next value, or `nothing` once it
+; is spent. `for` and `for-each` drive anything shaped that way.
 
 fun range start stop:
   define:
@@ -155,6 +155,20 @@ fun countdown start stop:
       nothing
   value-of next
 
+fun iter values:
+  define:
+    index = 0
+    count = (length values)
+  fun next:
+    if (< index count):
+      define:
+        value = (nth values index)
+      += index 1
+      value
+    else:
+      nothing
+  value-of next
+
 fun once value:
   define:
     pending = true
@@ -177,3 +191,10 @@ fun for-each item iterator body:
 
 block-command for item iterator:
   for-each item (eval iterator) block
+
+; --- misc ------------------------------------------------------------------
+
+fun assert condition:
+  when (not condition):
+    error "assertion failed"
+  condition

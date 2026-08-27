@@ -74,22 +74,12 @@ proc getNativeModule*(
     raise newException(EvaluatorError, &"unknown native module: {name}")
   env.nativeModules[].getOrDefault(name)
 
-template native*(target: Environment, symbol: string, body: untyped) =
-  target.defineNative(symbol, proc(
-      env {.inject.}: Environment,
-      arguments {.inject.}: seq[SyntaxNode],
-      layout {.inject.}: LayoutKind,
-      bodyNodes {.inject.}: seq[SyntaxNode],
-  ): Value {.raises: [EvaluatorError].} =
-    try:
-      body
-    except EvaluatorError as error:
-      raise error
-    except CatchableError as error:
-      raise newException(EvaluatorError, error.msg)
-  )
-
-template native*(target: var NativeModule, symbol: string, body: untyped) =
+template native*(target: untyped, symbol: string, body: untyped) =
+  ## Define a native command on an environment, a `NativeModule`, or anything
+  ## else with a `defineNative`. The body sees `env`, `arguments`, `layout`,
+  ## and `bodyNodes`; any other exception it raises becomes an
+  ## `EvaluatorError`.
+  mixin defineNative
   target.defineNative(symbol, proc(
       env {.inject.}: Environment,
       arguments {.inject.}: seq[SyntaxNode],
@@ -112,7 +102,7 @@ proc find*(env: Environment, symbol: string): Environment {.raises: [].} =
     current = current.parent
   if env.fallback != nil:
     return env.fallback.find(symbol)
-  nil
+  result = nil
 
 proc contains*(env: Environment, symbol: string): bool {.raises: [].} =
   env.find(symbol) != nil
@@ -121,7 +111,7 @@ proc get*(env: Environment, symbol: string): Value {.raises: [EvaluatorError].} 
   let owner = env.find(symbol)
   if owner == nil:
     raise newException(EvaluatorError, &"unknown symbol: {symbol}")
-  owner.bindings.getOrDefault(symbol)
+  result = owner.bindings.getOrDefault(symbol)
 
 proc set*(env: Environment, symbol: string, value: Value) {.raises: [].} =
   let owner = env.find(symbol)

@@ -1,4 +1,7 @@
-import std/[macros, os, rdstdin, strformat, strutils, tables, math, sequtils, macrocache, sugar]
+import std/[
+  algorithm, macrocache, macros, math, os, rdstdin, sequtils, strformat, strutils,
+  sugar, tables,
+]
 
 import environment, parser, syntax, values
 
@@ -6,135 +9,182 @@ type CommandRegistration = object
   name: string
   command: NativeCommand
 
-var commandRegistry {.threadvar.}: seq[CommandRegistration]
-var commandEnv {.threadvar.}: Environment
+var
+  commandRegistry {.threadvar.}: seq[CommandRegistration]
+  commandAliases {.threadvar.}: seq[tuple[alias, target: string]]
+  commandEnv {.threadvar.}: Environment
 
-const commandPrototypes = CacheTable"CommandPrototypes"
+const commandDocs = CacheTable"OwlCommandDocs"
 
-macro stdCommand*(name: static[string], node: untyped): untyped =
-  commandPrototypes[name] = node
-  
-  let procName = node[0]
+proc documentation(name, usage, doc: string): string {.compileTime.} =
+  result = "** " & name & "\n#+begin_src owl\n" & name
+  if usage.len > 0:
+    result.add ' '
+    result.add usage
+  result.add "\n#+end_src"
+  if doc.len > 0:
+    result.add '\n'
+    result.add doc
+
+macro stdCommand(
+    name, usage: static[string], arity: untyped, body: untyped
+): untyped =
+  ## Define and register a native command.
+  ##
+  ## `usage` names the arguments as `standard-commands` should show them and as
+  ## an arity failure should report them. `arity` is an exact count, a `lo ..
+  ## hi` range, or `any`. The body sees `env`, `arguments`, `layout`, and
+  ## `body`, and a leading doc comment becomes the command's documentation.
+  var
+    doc = ""
+    statements = body
+  if body.kind == nnkStmtList and body.len > 0 and body[0].kind == nnkCommentStmt:
+    doc = body[0].strVal
+    statements = newStmtList()
+    for index in 1 ..< body.len:
+      statements.add body[index]
+  commandDocs[name] = newLit(documentation(name, usage, doc))
+
+  let expected =
+    if usage.len == 0: name & " expects no arguments" else: name & " expects " & usage
+  let check =
+    case arity.kind
+    of nnkIntLit:
+      let count = arity.intVal.int
+      quote do:
+        if arguments.len != `count`:
+          raise newException(EvaluatorError, `expected`)
+    of nnkInfix: # `lo .. hi`
+      let (low, high) = (arity[1], arity[2])
+      quote do:
+        if arguments.len < `low` or arguments.len > `high`:
+          raise newException(EvaluatorError, `expected`)
+    else: # `any`
+      newStmtList()
+
+  # The proc is assembled from plain identifiers rather than `quote`, so that
+  # the body written at the call site binds to these parameters.
+  let
+    procName = genSym(nskProc, "owlCommand")
+    nodes = nnkBracketExpr.newTree(ident"seq", ident"SyntaxNode")
+    procBody = newStmtList()
+  for parameter in ["env", "arguments", "layout", "body"]:
+    procBody.add nnkDiscardStmt.newTree(ident(parameter))
+  procBody.add check
+  procBody.add statements
+
+  let registration = quote do:
+    commandRegistry.add CommandRegistration(name: `name`, command: `procName`)
+
   result = newStmtList(
-    node,
-    quote do:
-      commandRegistry.add CommandRegistration(name: `name`, command: `procName`)
-    ,
+    newProc(
+      name = procName,
+      params = [
+        ident"Value",
+        newIdentDefs(ident"env", ident"Environment"),
+        newIdentDefs(ident"arguments", nodes),
+        newIdentDefs(ident"layout", ident"LayoutKind"),
+        newIdentDefs(ident"body", nodes),
+      ],
+      body = procBody,
+      pragmas = nnkPragma.newTree(
+        nnkExprColonExpr.newTree(
+          ident"raises", nnkBracket.newTree(ident"EvaluatorError")
+        )
+      ),
+    ),
+    registration,
   )
 
-proc requireSymbol(
-    node: SyntaxNode, role: string
-): string {.raises: [EvaluatorError].} =
-  case node.kind
-  of Symbol:
-    node.symbol
-  of Command:
-    if node.callee.kind == Symbol and node.arguments.len == 0 and node.layout == NoLayout and
-        node.body.len == 0:
-      node.callee.symbol
+macro stdAlias(alias, target: static[string], doc: static[string]): untyped =
+  ## Register `alias` as a second name for an existing command.
+  commandDocs[alias] =
+    newLit(documentation(alias, "", doc & " Same as `" & target & "`."))
+  result = quote do:
+    commandAliases.add (`alias`, `target`)
+
+proc requireSymbol(node: SyntaxNode, role: string): string {.raises: [EvaluatorError].} =
+  ## A bare name reaches a command as either a symbol or an argument-less
+  ## command node, depending on where it was written.
+  let symbolNode =
+    if node.kind == Command and node.callee.kind == Symbol and
+        node.arguments.len == 0 and node.layout == NoLayout and node.body.len == 0:
+      node.callee
     else:
-      raise newException(EvaluatorError, &"expected {role} to be a symbol")
-  else:
+      node
+  if symbolNode.kind != Symbol:
     raise newException(EvaluatorError, &"expected {role} to be a symbol")
+  result = symbolNode.symbol
 
 proc requireNumber(value: Value): float64 {.raises: [EvaluatorError].} =
   if value.kind != Number:
     raise newException(EvaluatorError, &"expected number, got {value}")
-  value.number
-
-proc requireSyntax(value: Value): SyntaxNode {.raises: [EvaluatorError].} =
-  if value.kind != Syntax:
-    raise newException(EvaluatorError, &"expected syntax, got {value}")
-  value.syntax
-
-proc syntaxEnvironment(
-    value: Value, fallback: Environment
-): Environment {.raises: [].} =
-  if value.kind == Syntax and value.syntaxEnv != nil: value.syntaxEnv else: fallback
-
-proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
-  if value.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {value}")
-  value.listSeq
+  result = value.number
 
 proc requireText(value: Value): string {.raises: [EvaluatorError].} =
   if value.kind != Text:
     raise newException(EvaluatorError, &"expected text, got {value}")
-  value.text
+  result = value.text
 
-proc resolveSourcePath(
-    path: string, pos: SourcePos
-): string {.raises: [EvaluatorError].} =
-  if path.isAbsolute:
-    return path.normalizedPath
-  let base =
-    try:
-      if pos.hasSource:
-        pos.sourcePath.parentDir
-      else:
-        getCurrentDir()
-    except OSError as error:
-      raise newException(EvaluatorError, error.msg)
-  (base / path).normalizedPath
+proc requireSyntax(value: Value): SyntaxNode {.raises: [EvaluatorError].} =
+  if value.kind != Syntax:
+    raise newException(EvaluatorError, &"expected syntax, got {value}")
+  result = value.syntax
 
-proc loadSourceFile(
-    path: string, pos: SourcePos
-): SyntaxNode {.raises: [EvaluatorError].} =
-  let resolved = resolveSourcePath(path, pos)
-  try:
-    parse(readFile(resolved), resolved)
-  except IOError as error:
-    raise newException(EvaluatorError, resolved & ": " & error.msg)
-  except OSError as error:
-    raise newException(EvaluatorError, resolved & ": " & error.msg)
-  except ParserError as error:
-    let converted = newException(EvaluatorError, error.msg)
-    converted.primary = error.primary
-    converted.frames = error.frames
-    raise converted
+proc requireListValue(value: Value): Value {.raises: [EvaluatorError].} =
+  if value.kind != List:
+    raise newException(EvaluatorError, &"expected list, got {value}")
+  result = value
 
-proc moduleName(path: string): string {.raises: [].} =
-  let name = splitFile(path).name
-  if name.len > 0: name else: path
+proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
+  value.requireListValue().listSeq
 
-proc modulePath(node: SyntaxNode): string {.raises: [EvaluatorError].} =
-  result = node.requireSymbol("module name")
-  if splitFile(result).ext.len == 0:
-    result.add ".owl"
+proc syntaxEnvironment(value: Value, fallback: Environment): Environment {.raises: [].} =
+  if value.kind == Syntax and value.syntaxEnv != nil: value.syntaxEnv else: fallback
 
-proc moduleDictionary(moduleEnv: Environment): Value {.raises: [].} =
-  dictionary(moduleEnv.bindings)
+proc syntaxArg(
+    env: Environment, node: SyntaxNode
+): tuple[node: SyntaxNode, env: Environment] {.raises: [EvaluatorError].} =
+  ## Evaluate an argument that must be a syntax value, keeping the environment
+  ## the syntax was captured in so it can be evaluated where it was written.
+  let value = env.eval(node)
+  result = (value.requireSyntax(), value.syntaxEnvironment(env))
 
-proc useSymbolFilters(
-    body: seq[SyntaxNode]
-): tuple[hasIncludes: bool, includes, excludes: seq[string]] {.raises: [EvaluatorError].} =
-  for clause in body:
-    if clause.kind != Command or clause.callee.kind != Symbol:
-      raise newException(EvaluatorError, "use filters must be include, only, or exclude commands")
-    case clause.callee.symbol
-    of "include", "only":
-      result.hasIncludes = true
-      for symbol in clause.arguments:
-        result.includes.add symbol.requireSymbol("symbol to include")
-    of "exclude", "except":
-      for symbol in clause.arguments:
-        result.excludes.add symbol.requireSymbol("symbol to exclude")
-    else:
-      raise newException(EvaluatorError, "use filters must be include, only, or exclude commands")
+proc scriptArg(
+    env: Environment, node: SyntaxNode, role: string
+): tuple[node: SyntaxNode, env: Environment] {.raises: [EvaluatorError].} =
+  result = env.syntaxArg(node)
+  if result.node.kind != Script:
+    raise newException(EvaluatorError, &"{role} expects script syntax")
 
-proc useSelectedSymbols(
-    env: Environment, entries: Table[string, Value], body: seq[SyntaxNode]
-) {.raises: [EvaluatorError].} =
-  let filters = useSymbolFilters(body)
-  for name, value in entries:
-    let included = not filters.hasIncludes or name in filters.includes
-    if included and name notin filters.excludes:
-      env.define(name, value)
+proc commandArg(
+    env: Environment, node: SyntaxNode, role: string
+): tuple[node: SyntaxNode, env: Environment] {.raises: [EvaluatorError].} =
+  result = env.syntaxArg(node)
+  if result.node.kind != Command:
+    raise newException(EvaluatorError, &"{role} expects command syntax")
 
-proc useSelectedSymbols(
-    env, moduleEnv: Environment, body: seq[SyntaxNode]
-) {.raises: [EvaluatorError].} =
-  env.useSelectedSymbols(moduleEnv.bindings, body)
+proc bindingArg(
+    env: Environment, node: SyntaxNode, role: string
+): tuple[node: SyntaxNode, env: Environment] {.raises: [EvaluatorError].} =
+  result = env.syntaxArg(node)
+  if result.node.kind != Binding:
+    raise newException(EvaluatorError, &"{role} expects binding syntax")
+
+proc evalSyntax(env: Environment, value: Value): Value {.raises: [EvaluatorError].} =
+  ## Syntax evaluates where it was captured; anything else is already a value.
+  if value.kind == Syntax:
+    value.syntaxEnvironment(env).eval(value.syntax)
+  else:
+    value
+
+proc bindingBody(
+    body: seq[SyntaxNode], role: string
+): seq[SyntaxNode] {.raises: [EvaluatorError].} =
+  for node in body:
+    if node.kind != Binding:
+      raise newException(EvaluatorError, &"{role} entries must be bindings")
+  result = body
 
 proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
   value.kind == Record and name in value.recordFields
@@ -152,6 +202,21 @@ proc field(value: Value, name: string): Value {.raises: [EvaluatorError].} =
   else:
     raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
 
+proc optionalField(value: Value, name: string): Value {.raises: [].} =
+  case value.kind
+  of Dictionary: value.entries.getOrDefault(name, nothing())
+  of Record: value.recordEntries.getOrDefault(name, nothing())
+  else: nothing()
+
+proc listIndex(
+    value: Value, index: float64, role: string
+): int {.raises: [EvaluatorError].} =
+  result = int(index)
+  if result.float64 != index or result < 0 or result >= value.listLen:
+    raise newException(
+      EvaluatorError, &"{role}: index {index} is outside a list of {value.listLen}"
+    )
+
 proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
   case value.kind
   of List:
@@ -162,26 +227,23 @@ proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
   of Dictionary, Record:
     value.field(key.requireText())
   else:
-    raise
-      newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
+    raise newException(
+      EvaluatorError, &"expected list, dictionary, or record, got {value}"
+    )
 
 proc setFieldValue(
     value: Value, name: string, entry: Value
 ): Value {.raises: [EvaluatorError].} =
+  ## Dictionaries and records are updated by copy, so other holders of the
+  ## original value keep seeing it unchanged.
   case value.kind
   of Dictionary:
     result = value
-    result.entries = initTable[string, Value]()
-    for key, current in value.entries.pairs:
-      result.entries[key] = current
     result.entries[name] = entry
   of Record:
     if not value.hasRecordField(name):
       raise newException(EvaluatorError, &"cannot add record field: {name}")
     result = value
-    result.recordEntries = initTable[string, Value]()
-    for key, current in value.recordEntries.pairs:
-      result.recordEntries[key] = current
     result.recordEntries[name] = entry
   else:
     raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
@@ -189,41 +251,35 @@ proc setFieldValue(
 proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].} =
   case value.kind
   of List:
-    let index = key.requireNumber().int
-    if index < 0 or index >= value.listLen:
-      raise newException(EvaluatorError, "list index out of range")
     var updated = value.listSeq
-    updated[index] = entry
+    updated[value.listIndex(key.requireNumber(), "index")] = entry
     result = list(updated)
   of Dictionary, Record:
     result = value.setFieldValue(key.requireText(), entry)
   else:
-    raise
-      newException(EvaluatorError, &"expected list, dictionary, or record, got {value}")
-
-proc optionalField(value: Value, name: string): Value {.raises: [].} =
-  if value.kind == Dictionary and value.entries.hasKey(name):
-    value.entries.getOrDefault(name)
-  elif value.kind == Record and value.recordEntries.hasKey(name):
-    value.recordEntries.getOrDefault(name)
-  else:
-    nothing()
+    raise newException(
+      EvaluatorError, &"expected list, dictionary, or record, got {value}"
+    )
 
 proc callOptionalField(
     env: Environment, receiver: Value, name: string
 ): Value {.raises: [EvaluatorError].} =
+  ## Call `receiver.name` when it exists, otherwise leave the receiver alone. A
+  ## handler that answers `nothing` also leaves the receiver as it was.
   let fieldValue = receiver.optionalField(name)
   if fieldValue.kind == Nothing:
     return receiver
   if fieldValue.kind != Command:
     raise newException(EvaluatorError, &"field is not a command: {name}")
   let value = env.call(fieldValue.command)
-  if value.kind == Nothing: receiver else: value
+  result = if value.kind == Nothing: receiver else: value
+
+proc streamText(value: Value): string {.raises: [].} =
+  if value.kind == Text: value.text else: $value
 
 proc defineClosure(
     env: Environment,
-    arguments: seq[SyntaxNode],
-    body: seq[SyntaxNode],
+    arguments, body: seq[SyntaxNode],
     evaluatesArguments, acceptsBlock: bool,
 ): Value {.raises: [EvaluatorError].} =
   if arguments.len == 0:
@@ -245,524 +301,714 @@ proc setSymbol(
 proc setTarget(
     env: Environment, target: SyntaxNode, value: Value
 ) {.raises: [EvaluatorError].} =
+  ## Assign through a symbol, a selector such as `point.x` or `xs.[0]`, or a
+  ## syntax value naming a symbol in the scope it was captured from.
   if target.kind == Symbol:
     env.setSymbol(target.symbol, value)
     return
 
   if target.kind == Command and target.callee.kind == Symbol and
-      target.arguments.len == 2 and target.layout == NoLayout and target.body.len == 0:
-    case target.callee.symbol
-    of "field":
-      let container = env.eval(target.arguments[0])
-      let key = env.eval(target.arguments[1]).requireText()
-      env.setTarget(target.arguments[0], container.setFieldValue(key, value))
-      return
-    of "index":
-      let container = env.eval(target.arguments[0])
-      let key = env.eval(target.arguments[1])
-      env.setTarget(target.arguments[0], container.setIndexValue(key, value))
-      return
+      target.arguments.len == 2 and target.layout == NoLayout and target.body.len == 0 and
+      target.callee.symbol in ["field", "index"]:
+    let container = env.eval(target.arguments[0])
+    let key = env.eval(target.arguments[1])
+    let updated =
+      if target.callee.symbol == "field":
+        container.setFieldValue(key.requireText(), value)
+      else:
+        container.setIndexValue(key, value)
+    env.setTarget(target.arguments[0], updated)
+    return
+
+  let (node, targetEnv) = env.syntaxArg(target)
+  targetEnv.setSymbol(node.requireSymbol("set target"), value)
+
+proc asEvaluatorError(error: ref ParserError): ref EvaluatorError {.raises: [].} =
+  result = newException(EvaluatorError, error.msg)
+  result.primary = error.primary
+  result.frames = error.frames
+
+proc parseSource(
+    source, path: string
+): SyntaxNode {.raises: [EvaluatorError].} =
+  try:
+    parse(source, path)
+  except ParserError as error:
+    raise error.asEvaluatorError()
+
+proc readSource(path: string): string {.raises: [EvaluatorError].} =
+  try:
+    readFile(path)
+  except IOError as error:
+    raise newException(EvaluatorError, path & ": " & error.msg)
+  except OSError as error:
+    raise newException(EvaluatorError, path & ": " & error.msg)
+
+proc loadSourceFile(
+    path: string, pos: SourcePos
+): SyntaxNode {.raises: [EvaluatorError].} =
+  ## Resolve `path` against the file the reference was written in, so a module
+  ## refers to its neighbours the same way wherever it is run from.
+  let resolved =
+    if path.isAbsolute:
+      path.normalizedPath
     else:
-      discard
+      let base =
+        try:
+          if pos.hasSource: pos.sourcePath.parentDir else: getCurrentDir()
+        except OSError as error:
+          raise newException(EvaluatorError, error.msg)
+      (base / path).normalizedPath
+  result = parseSource(readSource(resolved), resolved)
 
-  let targetValue = env.eval(target)
-  let targetNode = targetValue.requireSyntax()
-  let targetEnv = targetValue.syntaxEnvironment(env)
-  targetEnv.setSymbol(targetNode.requireSymbol("set target"), value)
+proc modulePath(node: SyntaxNode): string {.raises: [EvaluatorError].} =
+  result = node.requireSymbol("module name")
+  if splitFile(result).ext.len == 0:
+    result.add ".owl"
 
-proc commandCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command", raises: [EvaluatorError].} =
-  discard layout
+proc moduleName(path: string): string {.raises: [].} =
+  let name = splitFile(path).name
+  result = if name.len > 0: name else: path
+
+proc useSelectedSymbols(
+    env: Environment, entries: Table[string, Value], body: seq[SyntaxNode]
+) {.raises: [EvaluatorError].} =
+  var
+    hasIncludes = false
+    includes, excludes: seq[string]
+  for clause in body:
+    if clause.kind != Command or clause.callee.kind != Symbol:
+      raise newException(
+        EvaluatorError, "use filters must be include, only, or exclude commands"
+      )
+    case clause.callee.symbol
+    of "include", "only":
+      hasIncludes = true
+      for symbol in clause.arguments:
+        includes.add symbol.requireSymbol("symbol to include")
+    of "exclude", "except":
+      for symbol in clause.arguments:
+        excludes.add symbol.requireSymbol("symbol to exclude")
+    else:
+      raise newException(
+        EvaluatorError, "use filters must be include, only, or exclude commands"
+      )
+
+  for name, value in entries:
+    if (not hasIncludes or name in includes) and name notin excludes:
+      env.define(name, value)
+
+stdCommand "command", "name parameter...", any:
+  ## Define a command whose parameters receive raw argument syntax.
   env.defineClosure(arguments, body, evaluatesArguments = false, acceptsBlock = false)
 
-proc componentCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "component", raises: [EvaluatorError].} =
-  commandCommand(env, arguments, layout, body)
-
-proc blockCommandCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "block-command", raises: [EvaluatorError].} =
-  discard layout
+stdCommand "block-command", "name parameter...", any:
+  ## Define a raw-syntax command that may also be given a colon body.
   env.defineClosure(arguments, body, evaluatesArguments = false, acceptsBlock = true)
 
-proc funCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "fun", raises: [EvaluatorError].} =
-  discard layout
+stdCommand "fun", "name parameter...", any:
+  ## Define a command whose parameters receive evaluated argument values.
   env.defineClosure(arguments, body, evaluatesArguments = true, acceptsBlock = false)
 
-proc fnCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "fn", raises: [EvaluatorError].} =
-  discard layout
+stdCommand "fn", "parameter...", any:
+  ## Create an anonymous command whose parameters receive evaluated values.
   var parameters: seq[string]
   for argument in arguments:
     parameters.add argument.requireSymbol("parameter")
-  closureCommand(parameters, body, env, evaluatesArguments = true, acceptsBlock = false)
+  result =
+    closureCommand(parameters, body, env, evaluatesArguments = true, acceptsBlock = false)
 
-proc lambdaCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "lambda", raises: [EvaluatorError].} =
-  fnCommand(env, arguments, layout, body)
+stdAlias "component", "command", "Define a raw-syntax command."
+stdAlias "lambda", "fn", "Create an anonymous command."
 
-proc defineCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "define", raises: [EvaluatorError].} =
-  discard arguments
-  discard layout
+stdCommand "define", "", any:
+  ## Evaluate each binding in the body and bind it in the current scope. A
+  ## symbol already bound in this scope is an error; use `set` to update it.
   result = nothing()
-  for node in body:
-    if node.kind != Binding:
-      raise newException(EvaluatorError, "define body entries must be bindings")
+  for node in body.bindingBody("define body"):
     if env.bindings.hasKey(node.bindingSymbol):
-      raise newException(EvaluatorError, &"symbol already defined: {node.bindingSymbol}")
+      raise newException(
+        EvaluatorError, &"symbol already defined: {node.bindingSymbol}"
+      )
     result = env.eval(node.value)
     env.define(node.bindingSymbol, result)
 
-proc commandDefineCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-define", raises: [EvaluatorError].} =
-  discard arguments
-  discard layout
+stdCommand "command-define", "", any:
+  ## Evaluate each binding here and bind it in the shared command environment,
+  ## where it outlives the call and stays visible to every scope.
   result = nothing()
-  for node in body:
-    if node.kind != Binding:
-      raise newException(EvaluatorError, "define body entries must be bindings")
+  for node in body.bindingBody("define body"):
     result = env.eval(node.value)
     commandEnv.define(node.bindingSymbol, result)
 
-proc defineValueCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "define-caller-value", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "define-caller-value expects name and value")
+stdCommand "define-caller-value", "name value", 2:
+  ## Bind a value in the calling scope under a symbol or text name. This is how
+  ## an Owl-level command introduces a name for its caller.
   result = env.eval(arguments[1])
   let nameValue = env.eval(arguments[0])
-  let nameNode =
-    if nameValue.kind == Syntax:
-      nameValue.syntax
-    else:
-      arguments[0]
   let name =
     if nameValue.kind == Text:
       nameValue.text
+    elif nameValue.kind == Syntax:
+      nameValue.syntax.requireSymbol("definition name")
     else:
-      nameNode.requireSymbol("definition name")
-  let targetEnv = if env.parent == nil: env else: env.parent
-  targetEnv.define(name, result)
+      arguments[0].requireSymbol("definition name")
+  (if env.parent == nil: env else: env.parent).define(name, result)
 
-proc importCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "import", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "import expects one path")
+stdCommand "set", "target value", any:
+  ## Update existing bindings, either as `set target value` or as a body of
+  ## bindings. Unlike `define` the symbol must already exist.
+  if arguments.len == 2 and body.len == 0:
+    result = env.eval(arguments[1])
+    env.setTarget(arguments[0], result)
+    return
+  if arguments.len != 0:
+    raise newException(EvaluatorError, "set expects a symbol/value pair or a block")
+  result = nothing()
+  for node in body.bindingBody("set body"):
+    result = env.eval(node.value)
+    env.setSymbol(node.bindingSymbol, result)
+
+stdCommand "value-of", "name", 1:
+  ## The value bound to a name, without calling it.
+  env.get(arguments[0].requireSymbol("value name"))
+
+stdCommand "call", "command argument...", 1 .. int.high:
+  ## Call a command value with the remaining arguments.
+  let command = env.eval(arguments[0])
+  if command.kind != Command:
+    raise newException(EvaluatorError, &"call expected command, got {command}")
+  result = env.call(command.command, arguments[1 .. ^1])
+
+stdCommand "import", "path", 1:
+  ## Evaluate another source file in the current scope.
   let node = loadSourceFile(env.eval(arguments[0]).requireText(), arguments[0].pos)
-  env.evalBlock(node.statements)
+  result = env.evalBlock(node.statements)
 
-proc useCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "use", raises: [EvaluatorError].} =
-  if arguments.len < 1 or arguments.len > 2:
-    raise newException(EvaluatorError, "use expects a module name and optional namespace")
-
+stdCommand "use", "module [namespace]", 1 .. 2:
+  ## Load a module and bind it under a namespace, or, with a colon body of
+  ## `only`/`except` filters, bind the selected names directly.
   if layout == ColonLayout and arguments.len == 2:
-    raise newException(EvaluatorError, "use filters cannot be combined with a module name")
+    raise newException(
+      EvaluatorError, "use filters cannot be combined with a module name"
+    )
   if layout notin {NoLayout, ColonLayout}:
     raise newException(EvaluatorError, "use filters require a colon block")
 
   let requested = arguments[0].requireSymbol("module name")
+  var entries: Table[string, Value]
+  var name: string
   if env.hasNativeModule(requested):
     result = env.getNativeModule(requested)
     if result.kind != Dictionary:
       raise newException(EvaluatorError, "native module exports must be a dictionary")
-    if layout == ColonLayout:
-      env.useSelectedSymbols(result.entries, body)
-      result = nothing()
-    else:
-      let name =
-        if arguments.len == 2:
-          arguments[1].requireSymbol("module namespace")
-        else:
-          moduleName(requested)
-      env.define(name, result)
-    return
-
-  let path = modulePath(arguments[0])
-  let node = loadSourceFile(path, arguments[0].pos)
-  let name =
-    if arguments.len == 2:
-      arguments[1].requireSymbol("module namespace")
-    else:
-      moduleName(path)
-  let moduleEnv = env.child()
-  discard moduleEnv.evalBlock(node.statements)
-  if layout == ColonLayout:
-    env.useSelectedSymbols(moduleEnv, body)
-    result = nothing()
+    entries = result.entries
+    name = requested.moduleName
   else:
-    result = moduleDictionary(moduleEnv)
-    env.define(name, result)
+    let path = modulePath(arguments[0])
+    let moduleEnv = env.child()
+    discard moduleEnv.evalBlock(loadSourceFile(path, arguments[0].pos).statements)
+    entries = moduleEnv.bindings
+    result = dictionary(entries)
+    name = path.moduleName
 
-proc symbolTextCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "symbol-text", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "symbol-text expects one symbol")
-  let value = env.eval(arguments[0])
-  let node =
-    if value.kind == Syntax:
-      value.syntax
-    else:
-      arguments[0]
-  text(node.requireSymbol("symbol"))
+  if layout == ColonLayout:
+    env.useSelectedSymbols(entries, body)
+    return nothing()
+  if arguments.len == 2:
+    name = arguments[1].requireSymbol("module namespace")
+  env.define(name, result)
 
-proc concatCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "concat", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  # TODO: Make this work for lists and dictionaries
-  var parts: seq[string]
+stdCommand "eval", "value...", any:
+  ## Evaluate each argument, then evaluate any syntax it produced in the scope
+  ## that syntax was captured from.
+  result = nothing()
   for argument in arguments:
-    parts.add env.eval(argument).requireText()
-  text(parts.join(""))
+    result = env.evalSyntax(env.eval(argument))
 
-proc toStringCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "to-string", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "to-string expects one value")
-  text($env.eval(arguments[0]))
+stdCommand "eval-source", "source [path]", 1 .. 2:
+  ## Parse and evaluate Owl source text in the current scope.
+  let path =
+    if arguments.len == 2: env.eval(arguments[1]).requireText() else: "<eval>"
+  result = env.eval(parseSource(env.eval(arguments[0]).requireText(), path))
 
-proc recordConstructorCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "record-constructor", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 3:
+stdCommand "eval-file", "path", 1:
+  ## Parse and evaluate a source file in the current scope.
+  let path = env.eval(arguments[0]).requireText()
+  result = env.eval(parseSource(readSource(path), path))
+
+stdCommand "parse", "source", 1:
+  ## Parse Owl source text into a syntax value captured in this scope.
+  syntaxValue(parseSource(env.eval(arguments[0]).requireText(), "<input>"), env)
+
+stdCommand "symbol-text", "symbol", 1:
+  ## The text of a symbol, given either the symbol or a syntax value for it.
+  let value = env.eval(arguments[0])
+  let node = if value.kind == Syntax: value.syntax else: arguments[0]
+  result = text(node.requireSymbol("symbol"))
+
+stdCommand "statements", "script", 1:
+  ## The statements of a script as a list of syntax values.
+  let (node, sourceEnv) = env.scriptArg(arguments[0], "statements")
+  result = list(node.statements.mapIt(syntaxValue(it, sourceEnv)))
+
+stdCommand "body-of", "script tag", 2:
+  ## The body of the first statement in a script that calls `tag`, as script
+  ## syntax. Missing tags answer an empty script rather than failing.
+  let (node, sourceEnv) = env.scriptArg(arguments[0], "body-of")
+  let tag = env.eval(arguments[1]).requireText()
+  for statement in node.statements:
+    if statement.kind == Command and statement.callee.kind == Symbol and
+        statement.callee.symbol == tag:
+      return syntaxValue(script(statement.body), sourceEnv)
+  result = syntaxValue(script(@[]), sourceEnv)
+
+stdCommand "command-arg", "command index", 2:
+  ## The syntax of one argument of a command, by position.
+  let (node, sourceEnv) = env.commandArg(arguments[0], "command-arg")
+  let index = env.eval(arguments[1]).requireNumber().int
+  if index < 0 or index >= node.arguments.len:
+    raise newException(EvaluatorError, "command-arg index out of range")
+  result = syntaxValue(node.arguments[index], sourceEnv)
+
+stdCommand "command-symbol", "command", 1:
+  ## The callee name of a command that is called through a symbol.
+  let (node, _) = env.commandArg(arguments[0], "command-symbol")
+  if node.callee.kind != Symbol:
     raise newException(
-      EvaluatorError, "record-constructor expects name, fields, and defaults"
+      EvaluatorError, "command-symbol expects command syntax with a symbol callee"
     )
+  result = text(node.callee.symbol)
 
-  let recordName = env.eval(arguments[0]).requireText()
+stdCommand "command-body", "command", 1:
+  ## The colon body of a command, as script syntax.
+  let (node, sourceEnv) = env.commandArg(arguments[0], "command-body")
+  result = syntaxValue(script(node.body), sourceEnv)
 
-  var fields: seq[string]
+stdCommand "binding-symbol", "binding", 1:
+  ## The name a binding introduces.
+  text(env.bindingArg(arguments[0], "binding-symbol").node.bindingSymbol)
+
+stdCommand "binding-value", "binding", 1:
+  ## The syntax of the value a binding assigns.
+  let (node, sourceEnv) = env.bindingArg(arguments[0], "binding-value")
+  result = syntaxValue(node.value, sourceEnv)
+
+stdCommand "eval-with", "symbol value body", 3:
+  ## Evaluate body syntax in a child of the scope it came from, with one extra
+  ## binding. This is what lets an Owl-level loop bind its iteration variable.
+  let symbolNode = env.eval(arguments[0]).requireSyntax()
+  let value = env.eval(arguments[1])
+  let (node, sourceEnv) = env.syntaxArg(arguments[2])
+  let local = sourceEnv.child()
+  local.define(symbolNode.requireSymbol("binding symbol"), value)
+  result =
+    if node.kind == Script: local.evalBlock(node.statements) else: local.eval(node)
+
+stdCommand "record-constructor", "name fields defaults", 3:
+  ## Build the constructor command behind `record Name:`. Fields are text
+  ## names and defaults are syntax values evaluated per call.
+  let typeName = env.eval(arguments[0]).requireText()
+
+  var fieldOrder: seq[string]
   for item in env.eval(arguments[1]).requireList():
     let field = item.requireText()
-    if field in fields:
+    if field in fieldOrder:
       raise newException(EvaluatorError, &"duplicate record field: {field}")
-    fields.add field
+    fieldOrder.add field
 
-  var defaults: seq[Value]
-  for item in env.eval(arguments[2]).requireList():
+  let defaults = env.eval(arguments[2]).requireList()
+  for item in defaults:
     if item.kind != Syntax:
       raise newException(EvaluatorError, "record defaults must be syntax values")
-    defaults.add item
-
-  if fields.len != defaults.len:
+  if fieldOrder.len != defaults.len:
     raise newException(EvaluatorError, "record fields/defaults length mismatch")
 
-  let typeName = recordName
-  let fieldOrder = fields
-  let defaultValues = defaults
-  nativeCommand(
+  result = nativeCommand(
     proc(
-        callEnv: Environment,
-        callArguments: seq[SyntaxNode],
-        callLayout: LayoutKind,
-        callBody: seq[SyntaxNode],
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
     ): Value {.raises: [EvaluatorError].} =
-      discard callLayout
-      if callArguments.len > fieldOrder.len:
+      discard layout
+      if arguments.len > fieldOrder.len:
         raise newException(EvaluatorError, "record got too many arguments")
 
       # Which fields the call supplies is settled before any default is
       # evaluated, so a default that is about to be overwritten is never
       # evaluated at all. Most record literals set most of their fields.
-      var seenOverrides: seq[string]
-      for node in callBody:
-        if node.kind != Binding:
-          raise newException(EvaluatorError, "record overrides must be bindings")
+      var overrides: seq[string]
+      for node in body.bindingBody("record override"):
         if node.bindingSymbol notin fieldOrder:
-          raise
-            newException(EvaluatorError, &"unknown record field: {node.bindingSymbol}")
-        if node.bindingSymbol in seenOverrides:
+          raise newException(
+            EvaluatorError, &"unknown record field: {node.bindingSymbol}"
+          )
+        if node.bindingSymbol in overrides:
           raise newException(
             EvaluatorError, &"duplicate record override: {node.bindingSymbol}"
           )
-        seenOverrides.add node.bindingSymbol
+        overrides.add node.bindingSymbol
 
-      var entries = initTable[string, Value](
-        max(nextPowerOfTwo(fieldOrder.len * 2), 4))
+      var entries = initTable[string, Value](max(nextPowerOfTwo(fieldOrder.len * 2), 4))
       for index, field in fieldOrder:
-        if index < callArguments.len or field in seenOverrides:
-          continue
-        entries[field] = defaultValues[index].syntaxEnvironment(callEnv).eval(
-            defaultValues[index].syntax
-          )
-
-      for index, argument in callArguments:
-        entries[fieldOrder[index]] = callEnv.eval(argument)
-
-      for node in callBody:
-        entries[node.bindingSymbol] = callEnv.eval(node.value)
-
-      record(typeName, entries, fieldOrder)
+        if index >= arguments.len and field notin overrides:
+          entries[field] = env.evalSyntax(defaults[index])
+      for index, argument in arguments:
+        entries[fieldOrder[index]] = env.eval(argument)
+      for node in body:
+        entries[node.bindingSymbol] = env.eval(node.value)
+      result = record(typeName, entries, fieldOrder)
   )
 
-proc recordPredicateCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "record-predicate", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "record-predicate expects name")
+stdCommand "record-predicate", "name", 1:
+  ## Build the `Name?` command behind `record Name:`.
   let typeName = env.eval(arguments[0]).requireText()
-  nativeCommand(
+  result = nativeCommand(
     proc(
-        callEnv: Environment,
-        callArguments: seq[SyntaxNode],
-        callLayout: LayoutKind,
-        callBody: seq[SyntaxNode],
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
     ): Value {.raises: [EvaluatorError].} =
-      discard callLayout
-      discard callBody
-      if callArguments.len != 1:
+      discard layout
+      discard body
+      if arguments.len != 1:
         raise newException(EvaluatorError, "record predicate expects one value")
-      let value = callEnv.eval(callArguments[0])
-      boolean(value.kind == Record and value.recordName == typeName)
+      let value = env.eval(arguments[0])
+      result = boolean(value.kind == Record and value.recordName == typeName)
   )
 
-proc setCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "set", raises: [EvaluatorError].} =
-  discard layout
-  if arguments.len == 2 and body.len == 0:
-    result = env.eval(arguments[1])
-    env.setTarget(arguments[0], result)
-    return
+template foldNumbers(
+    env: Environment, arguments: seq[SyntaxNode], step: untyped
+): Value =
+  ## Fold the arguments left as numbers, combining `total` with each `operand`.
+  block:
+    var total {.inject.} = env.eval(arguments[0]).requireNumber()
+    for index in 1 ..< arguments.len:
+      let operand {.inject.} = env.eval(arguments[index]).requireNumber()
+      total = step
+    number(total)
 
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "set expects a symbol/value pair or a block")
+template updateNumber(
+    env: Environment, arguments: seq[SyntaxNode], step: untyped
+): Value =
+  ## Combine an existing numeric symbol's `total` with `operand` and store it.
+  block:
+    let symbol = arguments[0].requireSymbol("assignment target")
+    let
+      total {.inject.} = env.get(symbol).requireNumber()
+      operand {.inject.} = env.eval(arguments[1]).requireNumber()
+      updated = number(step)
+    env.setSymbol(symbol, updated)
+    updated
 
+template compareNumbers(
+    env: Environment, arguments: seq[SyntaxNode], test: untyped
+): Value =
+  ## Compare two numeric arguments as `left` and `right`.
+  block:
+    let
+      left {.inject.} = env.eval(arguments[0]).requireNumber()
+      right {.inject.} = env.eval(arguments[1]).requireNumber()
+    boolean(test)
+
+stdCommand "+", "number...", 1 .. int.high:
+  ## Sum of the arguments, folded left.
+  env.foldNumbers(arguments, total + operand)
+
+stdCommand "-", "number...", 1 .. int.high:
+  ## Difference of the arguments, folded left.
+  env.foldNumbers(arguments, total - operand)
+
+stdCommand "*", "number...", 1 .. int.high:
+  ## Product of the arguments, folded left.
+  env.foldNumbers(arguments, total * operand)
+
+stdCommand "/", "number...", 1 .. int.high:
+  ## Quotient of the arguments, folded left.
+  env.foldNumbers(arguments, total / operand)
+
+stdCommand "+=", "symbol number", 2:
+  ## Add to an existing numeric symbol and answer the new value.
+  env.updateNumber(arguments, total + operand)
+
+stdCommand "-=", "symbol number", 2:
+  ## Subtract from an existing numeric symbol and answer the new value.
+  env.updateNumber(arguments, total - operand)
+
+stdCommand "*=", "symbol number", 2:
+  ## Multiply an existing numeric symbol and answer the new value.
+  env.updateNumber(arguments, total * operand)
+
+stdCommand "/=", "symbol number", 2:
+  ## Divide an existing numeric symbol and answer the new value.
+  env.updateNumber(arguments, total / operand)
+
+stdCommand "=", "left right", 2:
+  ## Whether both arguments render to the same text.
+  boolean($env.eval(arguments[0]) == $env.eval(arguments[1]))
+
+stdCommand "<", "left right", 2:
+  ## Whether the left number is less than the right.
+  env.compareNumbers(arguments, left < right)
+
+stdCommand "<=", "left right", 2:
+  ## Whether the left number is less than or equal to the right.
+  env.compareNumbers(arguments, left <= right)
+
+stdCommand ">", "left right", 2:
+  ## Whether the left number is greater than the right.
+  env.compareNumbers(arguments, left > right)
+
+stdCommand ">=", "left right", 2:
+  ## Whether the left number is greater than or equal to the right.
+  env.compareNumbers(arguments, left >= right)
+
+stdCommand "floor", "number", 1:
+  ## The largest integer that is not greater than the argument.
+  number(floor(env.eval(arguments[0]).requireNumber()))
+
+stdCommand "when", "condition", 1:
+  ## Evaluate the body in the current scope while the condition is truthy.
+  if env.eval(arguments[0]).isTruthy: env.evalBlock(body) else: nothing()
+
+stdCommand "while", "condition", 1:
+  ## Repeat the body while the condition stays truthy, answering its last
+  ## value, or `nothing` when the body never ran.
   result = nothing()
-  for node in body:
-    if node.kind != Binding:
-      raise newException(EvaluatorError, "set body entries must be bindings")
-    result = env.eval(node.value)
-    env.setSymbol(node.bindingSymbol, result)
+  while env.eval(arguments[0]).isTruthy:
+    result = env.evalBlock(body)
 
-proc evalCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "eval", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  result = nothing()
-  for argument in arguments:
-    let value = env.eval(argument)
-    result =
-      if value.kind == Syntax:
-        value.syntaxEnvironment(env).eval(value.syntax)
-      else:
-        value
+stdCommand "pick", "condition then else", 3:
+  ## Evaluate the condition, then only the branch it selects.
+  env.eval(arguments[if env.eval(arguments[0]).isTruthy: 1 else: 2])
 
-proc evalSourceCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "eval-source", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len < 1 or arguments.len > 2:
-    raise newException(EvaluatorError, "eval-source expects source and optional path")
-  let source = env.eval(arguments[0]).requireText()
-  let path =
-    if arguments.len == 2:
-      env.eval(arguments[1]).requireText()
-    else:
-      "<eval>"
-  try:
-    env.eval(parse(source, path))
-  except ParserError as error:
-    let converted = newException(EvaluatorError, error.msg)
-    converted.primary = error.primary
-    converted.frames = error.frames
-    raise converted
-
-proc evalFileCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "eval-file", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "eval-file expects one path")
-  let path = env.eval(arguments[0]).requireText()
-  try:
-    env.eval(parse(readFile(path), path))
-  except IOError as error:
-    raise newException(EvaluatorError, path & ": " & error.msg)
-  except OSError as error:
-    raise newException(EvaluatorError, path & ": " & error.msg)
-  except ParserError as error:
-    let converted = newException(EvaluatorError, error.msg)
-    converted.primary = error.primary
-    converted.frames = error.frames
-    raise converted
-
-proc parseCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "parse", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "parse expects one text value")
-  try:
-    syntaxValue(parse(env.eval(arguments[0]).requireText()), env)
-  except ParserError as error:
-    let converted = newException(EvaluatorError, error.msg)
-    converted.primary = error.primary
-    converted.frames = error.frames
-    raise converted
-
-proc valueOfCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "value-of", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "value-of expects one symbol")
-  env.get(arguments[0].requireSymbol("value name"))
-
-proc callCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "call", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len == 0:
-    raise newException(EvaluatorError, "call expects a command")
-  let command = env.eval(arguments[0])
-  if command.kind != Command:
-    raise newException(EvaluatorError, &"call expected command, got {command}")
-  env.call(command.command, arguments[1 .. ^1])
-
-proc streamText(value: Value): string {.raises: [].} =
-  if value.kind == Text:
-    value.text
-  else:
-    $value
-
-proc printCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "print", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  var parts: seq[string]
-  result = nothing()
+stdCommand "and", "value...", any:
+  ## The first falsey argument, or the last one, evaluating no further.
+  result = boolean(true)
   for argument in arguments:
     result = env.eval(argument)
-    parts.add result.streamText()
-  try:
-    stdout.write parts.join("")
-  except:
-    raise newException(EvaluatorError, getCurrentExceptionMsg())
+    if not result.isTruthy:
+      return
 
-proc errorCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "error", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  var message = ""
+stdCommand "or", "value...", any:
+  ## The first truthy argument, or the last one, evaluating no further.
+  result = boolean(false)
   for argument in arguments:
-    message.add $env.eval(argument)
-  raise newException(EvaluatorError, message)
+    result = env.eval(argument)
+    if result.isTruthy:
+      return
+
+stdCommand "with", "resource name", 2:
+  ## Open a resource, bind it under `name` for the body, and close it
+  ## afterwards even if the body fails.
+  let binding = arguments[1].requireSymbol("with binding")
+  let resource = env.callOptionalField(env.eval(arguments[0]), "open")
+  let local = env.child()
+  local.define(binding, resource)
+  try:
+    result = local.evalBlock(body)
+  finally:
+    discard local.callOptionalField(resource, "close")
+
+stdCommand "list", "", 0:
+  ## An empty list.
+  list(@[])
+
+stdCommand "dict", "", 0:
+  ## An empty dictionary.
+  dictionary(initTable[string, Value]())
+
+stdCommand "cons", "value list", 2:
+  ## A new list with the value in front of an existing list.
+  var items = @[env.eval(arguments[0])]
+  items.add env.eval(arguments[1]).requireList()
+  result = list(items)
+
+stdCommand "first", "list", 1:
+  ## The first item of a non-empty list.
+  let values = env.eval(arguments[0]).requireListValue()
+  if values.listLen == 0:
+    raise newException(EvaluatorError, "first expects a non-empty list")
+  result = values.at(0)
+
+stdCommand "rest", "list", 1:
+  ## Everything after the first item, or an empty list.
+  env.eval(arguments[0]).requireListValue().listRest
+
+stdCommand "empty?", "list", 1:
+  ## Whether a list has no items.
+  boolean(env.eval(arguments[0]).requireListValue().listLen == 0)
+
+stdCommand "length", "value", 1:
+  ## The number of items in a list or dictionary, or characters in text.
+  let value = env.eval(arguments[0])
+  case value.kind
+  of List: number(value.listLen.float64)
+  of Dictionary: number(value.entries.len.float64)
+  of Text: number(value.text.len.float64)
+  else:
+    raise newException(
+      EvaluatorError, &"expected list, dictionary, or text, got {value}"
+    )
+
+stdCommand "nth", "list index", 2:
+  ## The item at a position in a list.
+  let values = env.eval(arguments[0]).requireListValue()
+  result = values.at(values.listIndex(env.eval(arguments[1]).requireNumber, "nth"))
+
+stdCommand "append-value", "list value", 2:
+  ## A new list with the value on the end.
+  env.eval(arguments[0]).requireListValue().listAppended(env.eval(arguments[1]))
+
+stdCommand "append", "list value", 2:
+  ## Add a value to the end of a named list in place.
+  let value = env.eval(arguments[1])
+  # Growing the binding in place is what keeps this O(1). Rebuilding the list
+  # through cons/rest made a single append cost a full copy of the list, so
+  # filling an n-item list cost O(n^3) value copies.
+  if arguments[0].kind == Symbol or (
+    arguments[0].kind == Command and arguments[0].callee.kind == Symbol and
+    arguments[0].arguments.len == 0 and arguments[0].layout == NoLayout and
+    arguments[0].body.len == 0
+  ):
+    let name = arguments[0].requireSymbol("list name")
+    let owner = env.find(name)
+    if owner != nil:
+      var appended = false
+      owner.bindings.withValue(name, existing):
+        if existing[].kind == List:
+          existing[] = existing[].listAppended(value)
+          appended = true
+      if appended:
+        return nothing()
+  env.setTarget(
+    arguments[0], env.eval(arguments[0]).requireListValue().listAppended(value)
+  )
+  result = nothing()
+
+proc dropFront(
+    env: Environment, arguments: seq[SyntaxNode]
+): Value {.raises: [EvaluatorError].} =
+  let values = env.eval(arguments[0]).requireListValue()
+  let count = max(int(env.eval(arguments[1]).requireNumber), 0)
+  result =
+    if count >= values.listLen: list(@[]) else: list(values.listSeq[count .. ^1])
+
+stdCommand "drop-front", "list count", 2:
+  ## A new list without the leading `count` items.
+  env.dropFront(arguments)
+
+stdCommand "pop-front", "list count", 2:
+  ## Drop the leading `count` items from a named list in place.
+  env.setTarget(arguments[0], env.dropFront(arguments))
+  result = nothing()
+
+stdCommand "list-from", "syntax-list", 1:
+  ## Evaluate a list of syntax values into a list of values. This is what
+  ## `[]:` is built from.
+  let nodes = env.eval(arguments[0]).requireListValue()
+  var items = newSeqOfCap[Value](nodes.listLen)
+  for node in nodes.items:
+    items.add env.evalSyntax(node)
+  result = list(items)
+
+stdCommand "dict-from", "syntax-list", 1:
+  ## Evaluate a list of binding syntax values into a dictionary. This is what
+  ## `{}:` is built from.
+  let nodes = env.eval(arguments[0]).requireListValue()
+  # Sized once rather than grown, and filled last-to-first: the recursive
+  # version put the head entry in on top of the tail, so an earlier binding
+  # wins a repeated key and the later ones are evaluated first.
+  var entries = initTable[string, Value](max(nextPowerOfTwo(nodes.listLen * 2), 4))
+  for index in countdown(nodes.listLen - 1, 0):
+    let node = nodes.at(index).requireSyntax()
+    if node.kind != Binding:
+      raise newException(EvaluatorError, "dict-from expects binding syntax")
+    entries[node.bindingSymbol] =
+      nodes.at(index).syntaxEnvironment(env).eval(node.value)
+  result = dictionary(entries)
+
+stdCommand "dict-put", "dict key value", 3:
+  ## A dictionary or record with one key updated.
+  env.eval(arguments[0]).setFieldValue(
+    env.eval(arguments[1]).requireText(), env.eval(arguments[2])
+  )
+
+stdCommand "dict-get", "dict key", 2:
+  ## Read a key from a dictionary or record; a missing key is an error.
+  env.eval(arguments[0]).field(env.eval(arguments[1]).requireText())
+
+stdAlias "field", "dict-get", "Read a field; this is what `a.b` calls."
+
+stdCommand "index", "value key", 2:
+  ## Read a list position or a dictionary/record key; this is what `a.[k]`
+  ## calls.
+  indexValue(env.eval(arguments[0]), env.eval(arguments[1]))
+
+stdCommand "concat", "text...", any:
+  ## The arguments joined into one text value.
+  # TODO: Make this work for lists and dictionaries
+  var parts = newSeqOfCap[string](arguments.len)
+  for argument in arguments:
+    parts.add env.eval(argument).requireText()
+  result = text(parts.join())
+
+stdCommand "to-string", "value", 1:
+  ## A value rendered as the Owl source that would produce it.
+  text($env.eval(arguments[0]))
 
 const StreamFields =
   ["open", "close", "read", "read-line", "read-all", "write", "write-line"]
 
-proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
+type
+  StreamStep = proc(): Value {.closure, raises: [EvaluatorError].}
+  StreamEmit = proc(part: string) {.closure, raises: [EvaluatorError].}
+
+  StreamOps = object
+    ## The handlers a stream supplies. Whatever is left nil becomes a field
+    ## that reports an unsupported operation when it is called.
+    label: string
+    open, close, read, readLine, readAll: StreamStep
+    emit: StreamEmit
+
+proc niladic(label: string, step: StreamStep): Value {.raises: [].} =
+  nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard env
+      discard layout
+      discard body
+      if arguments.len != 0:
+        raise newException(EvaluatorError, label & " expects no arguments")
+      step()
+  )
+
+proc writer(label: string, emit: StreamEmit, newline: bool): Value {.raises: [].} =
+  nativeCommand(
+    proc(
+        env: Environment,
+        arguments: seq[SyntaxNode],
+        layout: LayoutKind,
+        body: seq[SyntaxNode],
+    ): Value {.raises: [EvaluatorError].} =
+      discard label
+      discard layout
+      discard body
+      result = nothing()
+      for argument in arguments:
+        result = env.eval(argument)
+        emit(result.streamText())
+      if newline:
+        emit("\n")
+  )
+
+proc unsupported(name: string): Value {.raises: [].} =
   nativeCommand(
     proc(
         env: Environment,
@@ -777,228 +1023,160 @@ proc unsupportedStreamCommand(name: string): Value {.raises: [].} =
       raise newException(EvaluatorError, &"unsupported stream operation: {name}")
   )
 
-proc streamRecord(entries: sink Table[string, Value]): Value {.raises: [].} =
-  for field in StreamFields:
-    if not entries.hasKey(field):
-      entries[field] = unsupportedStreamCommand(field)
-  record("Stream", entries, @StreamFields)
+proc streamRecord(ops: StreamOps): Value {.raises: [].} =
+  ## Assemble the `Stream` record for a set of handlers. Streams are records so
+  ## that Owl code can reach their operations as ordinary command fields.
+  var entries = initTable[string, Value](8)
+  for (name, step) in {
+    "open": ops.open, "close": ops.close, "read": ops.read,
+    "read-line": ops.readLine, "read-all": ops.readAll,
+  }:
+    if step != nil:
+      entries[name] = niladic(ops.label & " " & name, step)
+  if ops.emit != nil:
+    entries["write"] = writer(ops.label & " write", ops.emit, newline = false)
+    entries["write-line"] = writer(ops.label & " write-line", ops.emit, newline = true)
+  for name in StreamFields:
+    if not entries.hasKey(name):
+      entries[name] = unsupported(name)
+  result = record("Stream", entries, @StreamFields)
 
-template niladicStream(label: static string, handler: untyped): Value =
-  nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard env
-      discard layout
-      discard body
-      if arguments.len != 0:
-        raise newException(EvaluatorError, label & " expects no arguments")
-      handler
-  )
+proc ioError(error: ref IOError): ref EvaluatorError {.raises: [].} =
+  newException(EvaluatorError, error.msg)
+
+proc readAllFrom(file: File): Value {.raises: [EvaluatorError].} =
+  try:
+    var content = ""
+    while not file.endOfFile:
+      content.add file.readChar()
+    text(content)
+  except IOError as error:
+    raise error.ioError()
+
+proc readCharFrom(file: File): Value {.raises: [EvaluatorError].} =
+  try:
+    if file.endOfFile: nothing() else: text($file.readChar())
+  except IOError as error:
+    raise error.ioError()
 
 proc stdinStream(): Value {.raises: [].} =
-  var entries = initTable[string, Value]()
-  entries["read"] = niladicStream("stdin read"):
-    try:
-      if stdin.endOfFile:
-        return nothing()
-      text($stdin.readChar())
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  entries["read-line"] = niladicStream("stdin read-line"):
+  proc readLine(): Value {.raises: [EvaluatorError].} =
     var line: string
-    if readLineFromStdin("", line):
-      text(line)
-    else:
-      nothing()
-  entries["read-all"] = niladicStream("stdin read-all"):
-    try:
-      var content = ""
-      while not stdin.endOfFile:
-        content.add stdin.readChar()
-      text(content)
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  entries["open"] = niladicStream("stdin open"):
-    nothing()
-  entries["close"] = niladicStream("stdin close"):
-    nothing()
-  streamRecord(entries)
+    if readLineFromStdin("", line): text(line) else: nothing()
+
+  result = streamRecord(StreamOps(
+    label: "stdin",
+    open: () => nothing(),
+    close: () => nothing(),
+    read: () => readCharFrom(stdin),
+    readLine: readLine,
+    readAll: () => readAllFrom(stdin),
+  ))
 
 proc stdoutStream(): Value {.raises: [].} =
-  var entries = initTable[string, Value]()
-  entries["write"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        try:
-          stdout.write(result.streamText())
-        except IOError as error:
-          raise newException(EvaluatorError, error.msg)
-  )
-  entries["write-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        try:
-          stdout.write(result.streamText())
-        except IOError as error:
-          raise newException(EvaluatorError, error.msg)
-      try:
-        stdout.write("\n")
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
-  entries["open"] = niladicStream("stdout open"):
-    nothing()
-  entries["close"] = niladicStream("stdout close"):
-    nothing()
-  streamRecord(entries)
+  proc emit(part: string) {.raises: [EvaluatorError].} =
+    try:
+      stdout.write(part)
+    except IOError as error:
+      raise error.ioError()
+
+  result = streamRecord(StreamOps(
+    label: "stdout",
+    open: () => nothing(),
+    close: () => nothing(),
+    emit: emit,
+  ))
 
 proc fileMode(mode: string): FileMode {.raises: [EvaluatorError].} =
   case mode
-  of "r", "rb":
-    fmRead
-  of "w", "wb":
-    fmWrite
-  of "a", "ab":
-    fmAppend
+  of "r", "rb": fmRead
+  of "w", "wb": fmWrite
+  of "a", "ab": fmAppend
   else:
     raise newException(EvaluatorError, &"unsupported file mode: {mode}")
 
 proc openFileStream(path, mode: string): Value {.raises: [].} =
-  var entries = initTable[string, Value]()
-  var file: File
-  var opened = false
+  var
+    file: File
+    opened = false
 
-  entries["open"] = niladicStream("file open"):
+  proc require() {.raises: [EvaluatorError].} =
+    if not opened:
+      raise newException(EvaluatorError, "file is not open")
+
+  proc open(): Value {.raises: [EvaluatorError].} =
     if not opened:
       try:
         if not open(file, path, fileMode(mode)):
           raise newException(EvaluatorError, &"could not open file: {path}")
         opened = true
       except IOError as error:
-        raise newException(EvaluatorError, error.msg)
+        raise error.ioError()
     nothing()
-  entries["close"] = niladicStream("file close"):
+
+  proc close(): Value {.raises: [EvaluatorError].} =
     if opened:
       close(file)
       opened = false
     nothing()
-  entries["read"] = niladicStream("file read"):
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
+
+  proc read(): Value {.raises: [EvaluatorError].} =
+    require()
+    readCharFrom(file)
+
+  proc readLine(): Value {.raises: [EvaluatorError].} =
+    require()
     try:
-      if file.endOfFile:
-        return nothing()
-      text($file.readChar())
+      if file.endOfFile: nothing() else: text(file.readLine())
     except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  entries["read-line"] = niladicStream("file read-line"):
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
+      raise error.ioError()
+
+  proc readAll(): Value {.raises: [EvaluatorError].} =
+    require()
+    readAllFrom(file)
+
+  proc emit(part: string) {.raises: [EvaluatorError].} =
+    require()
     try:
-      if file.endOfFile:
-        return nothing()
-      text(file.readLine())
+      file.write(part)
     except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  entries["read-all"] = niladicStream("file read-all"):
-    if not opened:
-      raise newException(EvaluatorError, "file is not open")
-    try:
-      var content = ""
-      while not file.endOfFile:
-        content.add file.readChar()
-      text(content)
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-  entries["write"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      if not opened:
-        raise newException(EvaluatorError, "file is not open")
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        try:
-          file.write(result.streamText())
-        except IOError as error:
-          raise newException(EvaluatorError, error.msg)
-  )
-  entries["write-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      if not opened:
-        raise newException(EvaluatorError, "file is not open")
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        try:
-          file.write(result.streamText())
-        except IOError as error:
-          raise newException(EvaluatorError, error.msg)
-      try:
-        file.write("\n")
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-  )
-  streamRecord(entries)
+      raise error.ioError()
+
+  result = streamRecord(StreamOps(
+    label: "file",
+    open: open, close: close,
+    read: read, readLine: readLine, readAll: readAll,
+    emit: emit,
+  ))
 
 proc openStringStream(content: string): Value {.raises: [].} =
-  var entries = initTable[string, Value]()
-  var buffer = content
-  var position = 0
-  var opened = false
+  var
+    buffer = content
+    position = 0
+    opened = false
 
-  entries["open"] = niladicStream("string open"):
+  proc require() {.raises: [EvaluatorError].} =
+    if not opened:
+      raise newException(EvaluatorError, "string stream is not open")
+
+  proc open(): Value {.raises: [EvaluatorError].} =
     position = 0
     opened = true
     nothing()
-  entries["close"] = niladicStream("string close"):
+
+  proc close(): Value {.raises: [EvaluatorError].} =
     opened = false
     nothing()
-  entries["read"] = niladicStream("string read"):
-    if not opened:
-      raise newException(EvaluatorError, "string stream is not open")
+
+  proc read(): Value {.raises: [EvaluatorError].} =
+    require()
     if position >= buffer.len:
       return nothing()
     result = text($buffer[position])
     inc position
-  entries["read-line"] = niladicStream("string read-line"):
-    if not opened:
-      raise newException(EvaluatorError, "string stream is not open")
+
+  proc readLine(): Value {.raises: [EvaluatorError].} =
+    require()
     if position >= buffer.len:
       return nothing()
     let start = position
@@ -1007,930 +1185,77 @@ proc openStringStream(content: string): Value {.raises: [].} =
     result = text(buffer[start ..< position])
     if position < buffer.len and buffer[position] == '\r':
       inc position
-      if position < buffer.len and buffer[position] == '\n':
-        inc position
-    elif position < buffer.len and buffer[position] == '\n':
+    if position < buffer.len and buffer[position] == '\n':
       inc position
-  entries["read-all"] = niladicStream("string read-all"):
-    if not opened:
-      raise newException(EvaluatorError, "string stream is not open")
-    if position >= buffer.len:
-      return text("")
-    result = text(buffer[position .. ^1])
+
+  proc readAll(): Value {.raises: [EvaluatorError].} =
+    require()
+    result = text(buffer[min(position, buffer.len) .. ^1])
     position = buffer.len
-  entries["write"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        buffer.add result.streamText()
-  )
-  entries["write-line"] = nativeCommand(
-    proc(
-        env: Environment,
-        arguments: seq[SyntaxNode],
-        layout: LayoutKind,
-        body: seq[SyntaxNode],
-    ): Value {.raises: [EvaluatorError].} =
-      discard layout
-      discard body
-      result = nothing()
-      for argument in arguments:
-        result = env.eval(argument)
-        buffer.add result.streamText()
-      buffer.add "\n"
-  )
-  streamRecord(entries)
 
-proc openFileCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "open-file", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  case arguments.len
-  of 1:
-    let mode = env.eval(arguments[0]).requireText()
-    openFileStream(getTempDir() / "owl-example-stream.txt", mode)
-  of 2:
-    let path = env.eval(arguments[0]).requireText()
-    let mode = env.eval(arguments[1]).requireText()
-    openFileStream(path, mode)
+  proc emit(part: string) {.raises: [EvaluatorError].} =
+    buffer.add part
+
+  result = streamRecord(StreamOps(
+    label: "string",
+    open: open, close: close,
+    read: read, readLine: readLine, readAll: readAll,
+    emit: emit,
+  ))
+
+stdCommand "open-file", "[path] mode", 1 .. 2:
+  ## A file-backed stream. With one argument the path is a scratch file.
+  if arguments.len == 1:
+    openFileStream(getTempDir() / "owl-example-stream.txt",
+        env.eval(arguments[0]).requireText())
   else:
-    raise newException(EvaluatorError, "open-file expects mode or path and mode")
+    openFileStream(
+      env.eval(arguments[0]).requireText(), env.eval(arguments[1]).requireText()
+    )
 
-proc openStringCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "open-string", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "open-string expects one text value")
+stdCommand "open-string", "text", 1:
+  ## A stream backed by a text buffer.
   openStringStream(env.eval(arguments[0]).requireText())
 
-proc withCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "with", raises: [EvaluatorError].} =
-  discard layout
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "with expects resource and binding name")
-  let binding = arguments[1].requireSymbol("with binding")
-  var resource = env.eval(arguments[0])
-  resource = env.callOptionalField(resource, "open")
-  let local = env.child()
-  local.define(binding, resource)
-  try:
-    result = local.evalBlock(body)
-  finally:
-    discard local.callOptionalField(resource, "close")
-
-proc arithmeticCommand(
-    env: Environment, arguments: seq[SyntaxNode], op: string
-): Value {.raises: [EvaluatorError].} =
-  if arguments.len == 0:
-    raise newException(EvaluatorError, &"{op} expects arguments")
-  var acc = env.eval(arguments[0]).requireNumber()
-  for index in 1 ..< arguments.len:
-    let rhs = env.eval(arguments[index]).requireNumber()
-    case op
-    of "+":
-      acc += rhs
-    of "-":
-      acc -= rhs
-    of "*":
-      acc *= rhs
-    of "/":
-      acc /= rhs
-    else:
-      raise newException(EvaluatorError, &"unknown arithmetic operator: {op}")
-  number(acc)
-
-proc plusCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "+", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticCommand(env, arguments, "+")
-
-proc minusCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "-", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticCommand(env, arguments, "-")
-
-proc multiplyCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "*", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticCommand(env, arguments, "*")
-
-proc divideCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "/", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticCommand(env, arguments, "/")
-
-proc arithmeticAssignCommand(
-    env: Environment, arguments: seq[SyntaxNode], op: string
-): Value {.raises: [EvaluatorError].} =
-  if arguments.len != 2:
-    raise newException(EvaluatorError, &"{op}= expects symbol and value")
-  let symbol = arguments[0].requireSymbol("assignment target")
-  let left = env.get(symbol).requireNumber()
-  let right = env.eval(arguments[1]).requireNumber()
-  result =
-    case op
-    of "+":
-      number(left + right)
-    of "-":
-      number(left - right)
-    of "*":
-      number(left * right)
-    of "/":
-      number(left / right)
-    else:
-      raise newException(EvaluatorError, &"unknown assignment operator: {op}=")
-  env.setSymbol(symbol, result)
-
-proc plusAssignCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "+=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticAssignCommand(env, arguments, "+")
-
-proc minusAssignCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "-=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticAssignCommand(env, arguments, "-")
-
-proc multiplyAssignCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "*=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticAssignCommand(env, arguments, "*")
-
-proc divideAssignCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "/=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  arithmeticAssignCommand(env, arguments, "/")
-
-proc compareCommand(
-    env: Environment, arguments: seq[SyntaxNode], op: string
-): Value {.raises: [EvaluatorError].} =
-  if arguments.len != 2:
-    raise newException(EvaluatorError, &"{op} expects two arguments")
-  let left = env.eval(arguments[0])
-  let right = env.eval(arguments[1])
-  result =
-    case op
-    of "=":
-      boolean($left == $right)
-    of "<":
-      boolean(left.requireNumber() < right.requireNumber())
-    of "<=":
-      boolean(left.requireNumber() <= right.requireNumber())
-    of ">":
-      boolean(left.requireNumber() > right.requireNumber())
-    of ">=":
-      boolean(left.requireNumber() >= right.requireNumber())
-    else:
-      raise newException(EvaluatorError, &"unknown comparison operator: {op}")
-
-proc equalCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  compareCommand(env, arguments, "=")
-
-proc lessThanCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "<", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  compareCommand(env, arguments, "<")
-
-proc lessOrEqualCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "<=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  compareCommand(env, arguments, "<=")
-
-proc greaterThanCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: ">", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  compareCommand(env, arguments, ">")
-
-proc greaterOrEqualCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: ">=", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  compareCommand(env, arguments, ">=")
-
-proc whenCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "when", raises: [EvaluatorError].} =
-  discard layout
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "when expects one condition")
-  if env.eval(arguments[0]).isTruthy:
-    env.evalBlock(body)
-  else:
-    nothing()
-
-proc whileCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "while", raises: [EvaluatorError].} =
-  discard layout
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "while expects one condition")
+stdCommand "print", "value...", any:
+  ## Write each argument to standard output without a trailing newline.
+  var parts = newSeqOfCap[string](arguments.len)
   result = nothing()
-  while env.eval(arguments[0]).isTruthy:
-    result = env.evalBlock(body)
-
-proc pickCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "pick", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 3:
-    raise
-      newException(EvaluatorError, "pick expects condition, true value, false value")
-  if env.eval(arguments[0]).isTruthy:
-    env.eval(arguments[1])
-  else:
-    env.eval(arguments[2])
-
-proc emptyListCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "list", raises: [EvaluatorError].} =
-  discard env
-  discard layout
-  discard body
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "list expects no arguments")
-  list(@[])
-
-proc emptyDictCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "dict", raises: [EvaluatorError].} =
-  discard env
-  discard layout
-  discard body
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "dict expects no arguments")
-  dictionary(initTable[string, Value]())
-
-proc consCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "cons", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "cons expects value and list")
-  var items = @[env.eval(arguments[0])]
-  items.add env.eval(arguments[1]).requireList()
-  list(items)
-
-proc firstCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "first", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "first expects one list")
-  let items = env.eval(arguments[0]).requireList()
-  if items.len == 0:
-    raise newException(EvaluatorError, "first expects a non-empty list")
-  items[0]
-
-proc restCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "rest", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "rest expects one list")
-  let values = env.eval(arguments[0])
-  if values.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {values}")
-  values.listRest
-
-proc emptyCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "empty?", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "empty? expects one list")
-  boolean(env.eval(arguments[0]).requireList().len == 0)
-
-proc lengthCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "length", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "length expects one value")
-  let value = env.eval(arguments[0])
-  case value.kind
-  of List:
-    number(value.listLen.float64)
-  of Dictionary:
-    number(value.entries.len.float64)
-  of Text:
-    number(value.text.len.float64)
-  else:
-    raise
-      newException(EvaluatorError, &"expected list, dictionary, or text, got {value}")
-
-proc syntaxItems(value: Value, commandID: string): seq[Value] {.raises: [
-    EvaluatorError].} =
-  if value.kind != List:
-    raise newException(EvaluatorError, &"{commandID} expects a list, got {value}")
-  value.listSeq
-
-proc evalItem(env: Environment, item: Value): Value {.raises: [EvaluatorError].} =
-  if item.kind == Syntax:
-    item.syntaxEnvironment(env).eval(item.syntax)
-  else:
-    item
-
-proc listFromCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "list-from", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "list-from expects one list")
-  let nodes = env.eval(arguments[0]).syntaxItems("list-from")
-  var items = newSeqOfCap[Value](nodes.len)
-  for node in nodes:
-    items.add env.evalItem(node)
-  list(items)
-
-proc dictFromCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "dict-from", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "dict-from expects one list")
-  let nodes = env.eval(arguments[0]).syntaxItems("dict-from")
-  # Sized once rather than grown, and filled last-to-first: the recursive
-  # version put the head entry in on top of the tail, so an earlier binding
-  # wins a repeated key and the later ones are evaluated first.
-  var entries = initTable[string, Value](max(nextPowerOfTwo(nodes.len * 2), 4))
-  for index in countdown(nodes.high, 0):
-    let node = nodes[index].requireSyntax()
-    if node.kind != Binding:
-      raise newException(EvaluatorError, "dict-from expects binding syntax")
-    entries[node.bindingSymbol] =
-      nodes[index].syntaxEnvironment(env).eval(node.value)
-  dictionary(entries)
-
-proc listIndex(value: Value, index: float64,
-    commandID: string): int {.raises: [EvaluatorError].} =
-  if value.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {value}")
-  result = int(index)
-  if result.float64 != index or result < 0 or result >= value.listLen:
-    raise newException(EvaluatorError,
-        &"{commandID}: index {index} is outside a list of {value.listLen}")
-
-proc nthCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "nth", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "nth expects a list and an index")
-  let values = env.eval(arguments[0])
-  values.at(values.listIndex(env.eval(arguments[1]).requireNumber, "nth"))
-
-proc appendValueCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "append-value", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "append-value expects a list and a value")
-  let original = env.eval(arguments[0])
-  if original.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {original}")
-  original.listAppended(env.eval(arguments[1]))
-
-proc appendCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "append", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "append expects a list and a value")
-  let value = env.eval(arguments[1])
-  # Growing the binding in place is what keeps this O(1). Rebuilding the list
-  # through cons/rest made a single append cost a full copy of the list, so
-  # filling an n-item list cost O(n^3) value copies.
-  if arguments[0].kind == Symbol or (arguments[0].kind == Command and
-      arguments[0].callee.kind == Symbol and arguments[0].arguments.len == 0 and
-      arguments[0].layout == NoLayout and arguments[0].body.len == 0):
-    let name = arguments[0].requireSymbol("list name")
-    let owner = env.find(name)
-    if owner != nil:
-      var appended = false
-      owner.bindings.withValue(name, existing):
-        if existing[].kind == List:
-          existing[] = existing[].listAppended(value)
-          appended = true
-      if appended:
-        return nothing()
-  let current = env.eval(arguments[0])
-  if current.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {current}")
-  env.setTarget(arguments[0], current.listAppended(value))
-  nothing()
-
-proc dropFrontCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "drop-front", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "drop-front expects a list and a count")
-  let values = env.eval(arguments[0])
-  if values.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {values}")
-  let count = max(int(env.eval(arguments[1]).requireNumber), 0)
-  if count >= values.listLen:
-    return list(@[])
-  list(values.listSeq[count .. ^1])
-
-proc popFrontCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "pop-front", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "pop-front expects a list and a count")
-  let values = env.eval(arguments[0])
-  if values.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {values}")
-  let count = max(int(env.eval(arguments[1]).requireNumber), 0)
-  let remaining =
-    if count >= values.listLen: list(@[])
-    else: list(values.listSeq[count .. ^1])
-  env.setTarget(arguments[0], remaining)
-  nothing()
-
-proc iterCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "iter", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "iter expects one list")
-  let values = env.eval(arguments[0])
-  if values.kind != List:
-    raise newException(EvaluatorError, &"expected list, got {values}")
-  # Walking by index rather than re-slicing the tail keeps iteration linear;
-  # the previous `rest`-based iterator copied the remaining list every step.
-  var index = 0
-  nativeCommand(proc(
-      stepEnv: Environment, stepArguments: seq[SyntaxNode],
-      stepLayout: LayoutKind, stepBody: seq[SyntaxNode],
-  ): Value {.closure, raises: [EvaluatorError].} =
-    discard stepEnv
-    discard stepArguments
-    discard stepLayout
-    discard stepBody
-    if index >= values.listLen:
-      return nothing()
-    result = values.at(index)
-    inc index
-  )
-
-proc notCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "not", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "not expects one value")
-  boolean(not env.eval(arguments[0]).isTruthy)
-
-proc andCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "and", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  result = boolean(true)
   for argument in arguments:
     result = env.eval(argument)
-    if not result.isTruthy:
-      return
+    parts.add result.streamText()
+  try:
+    stdout.write parts.join()
+  except IOError as error:
+    raise error.ioError()
 
-proc orCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "or", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  result = boolean(false)
+stdCommand "error", "value...", any:
+  ## Fail with the arguments rendered as the message.
+  var message = ""
   for argument in arguments:
-    result = env.eval(argument)
-    if result.isTruthy:
-      return
+    message.add $env.eval(argument)
+  raise newException(EvaluatorError, message)
 
-proc dictPutCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "dict-put", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 3:
-    raise newException(EvaluatorError, "dict-put expects dict, key, and value")
-  let original = env.eval(arguments[0])
-  original.setFieldValue(env.eval(arguments[1]).requireText(), env.eval(arguments[2]))
+stdCommand "command-line-arguments", "", 0:
+  ## The arguments this program was started with.
+  list((try: commandLineParams() except CatchableError: @[]).mapIt(text(it)))
 
-proc dictGetCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "dict-get", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "dict-get expects dict and key")
-  let original = env.eval(arguments[0])
-  original.field(env.eval(arguments[1]).requireText())
+stdCommand "standard-commands", "", 0:
+  ## Org-formatted documentation for every native command.
+  const Documentation = block:
+    var entries: seq[string]
+    for name, doc in commandDocs:
+      entries.add doc.strVal
+    sorted(entries)
+  result = list(Documentation.mapIt(text(it)))
 
-proc fieldCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "field", raises: [EvaluatorError].} =
-  dictGetCommand(env, arguments, layout, body)
-
-proc indexCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "index", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "index expects value and key")
-  indexValue(env.eval(arguments[0]), env.eval(arguments[1]))
-
-proc statementsCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "statements", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "statements expects script syntax")
-  let syntax = env.eval(arguments[0])
-  let node = syntax.requireSyntax()
-  let sourceEnv = syntax.syntaxEnvironment(env)
-  if node.kind != Script:
-    raise newException(EvaluatorError, "statements expects script syntax")
-  var items: seq[Value]
-  for statement in node.statements:
-    items.add syntaxValue(statement, sourceEnv)
-  list(items)
-
-proc bodyOfCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "body-of", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "body-of expects script syntax and tag")
-  let syntax = env.eval(arguments[0])
-  let node = syntax.requireSyntax()
-  let sourceEnv = syntax.syntaxEnvironment(env)
-  let tag = env.eval(arguments[1]).requireText()
-  if node.kind != Script:
-    raise newException(EvaluatorError, "body-of expects script syntax")
-  for statement in node.statements:
-    if statement.kind == Command and statement.callee.kind == Symbol and
-        statement.callee.symbol == tag:
-      return syntaxValue(script(statement.body), sourceEnv)
-  syntaxValue(script(@[]), sourceEnv)
-
-proc commandArgCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-arg", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 2:
-    raise newException(EvaluatorError, "command-arg expects command syntax and index")
-  let syntax = env.eval(arguments[0])
-  let node = syntax.requireSyntax()
-  let sourceEnv = syntax.syntaxEnvironment(env)
-  let index = env.eval(arguments[1]).requireNumber().int
-  if node.kind != Command or index < 0 or index >= node.arguments.len:
-    raise newException(EvaluatorError, "command-arg index out of range")
-  syntaxValue(node.arguments[index], sourceEnv)
-
-proc commandSymbolCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-symbol", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "command-symbol expects command syntax")
-  let node = env.eval(arguments[0]).requireSyntax()
-  if node.kind != Command or node.callee.kind != Symbol:
-    raise newException(
-      EvaluatorError, "command-symbol expects command syntax with a symbol callee"
-    )
-  text(node.callee.symbol)
-
-proc commandBodyCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-body", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "command-body expects command syntax")
-  let syntax = env.eval(arguments[0])
-  let node = syntax.requireSyntax()
-  let sourceEnv = syntax.syntaxEnvironment(env)
-  if node.kind != Command:
-    raise newException(EvaluatorError, "command-body expects command syntax")
-  syntaxValue(script(node.body), sourceEnv)
-
-proc bindingSymbolCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "binding-symbol", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "binding-symbol expects binding syntax")
-  let node = env.eval(arguments[0]).requireSyntax()
-  if node.kind != Binding:
-    raise newException(EvaluatorError, "binding-symbol expects binding syntax")
-  text(node.bindingSymbol)
-
-proc bindingValueCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "binding-value", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "binding-value expects binding syntax")
-  let syntax = env.eval(arguments[0])
-  let node = syntax.requireSyntax()
-  let sourceEnv = syntax.syntaxEnvironment(env)
-  if node.kind != Binding:
-    raise newException(EvaluatorError, "binding-value expects binding syntax")
-  syntaxValue(node.value, sourceEnv)
-
-proc evalWithCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "eval-with", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 3:
-    raise newException(EvaluatorError, "eval-with expects symbol, value, and body")
-  let symbolSyntax = env.eval(arguments[0])
-  let symbolNode = symbolSyntax.requireSyntax()
-  let value = env.eval(arguments[1])
-  let bodySyntax = env.eval(arguments[2])
-  let bodyNode = bodySyntax.requireSyntax()
-  let local = bodySyntax.syntaxEnvironment(env).child()
-  local.define(symbolNode.requireSymbol("binding symbol"), value)
-  if bodyNode.kind == Script:
-    local.evalBlock(bodyNode.statements)
-  else:
-    local.eval(bodyNode)
-
-proc floorCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    _: LayoutKind,
-    _: seq[SyntaxNode],
-): Value {.stdCommand: "floor", raises: [EvaluatorError].} =
-  discard """
-  Returns largest integer not greater than argument.  
-  """
-  if arguments.len != 1:
-    raise newException(EvaluatorError, "floor expects one number")
-  number(floor(env.eval(arguments[0]).requireNumber()))
-
-proc commandLineArgumentsCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "command-line-arguments", raises: [EvaluatorError].} =
-  discard """
-  Returns command line arguments passed to the script.
-  """
-  let args = (try: commandLineParams() except: @[])
-  list(args.mapIt(text(it)))
-
-proc standardCommandsCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "standard-commands", raises: [EvaluatorError].} =
-  discard env
-  discard layout
-  discard body
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "standard-commands expects no arguments")
-  const Prototypes = collect:
-    for name, command in commandPrototypes:
-      let rep = name.repr[1 ..< ^1]
-      &"""** {rep}
-#+begin_src owl
-{command[3].repr}
-#+end_src"""
-  list(Prototypes.mapIt(text(it)))
-
-proc replCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "repl", raises: [EvaluatorError].} =
-  discard layout
-  discard body
-  if arguments.len != 0:
-    raise newException(EvaluatorError, "repl expects no arguments")
-
-  proc writeOutput(value: Value) {.raises: [EvaluatorError].} =
+stdCommand "repl", "", 0:
+  ## Read, evaluate, and print lines until `q`, `quit`, or end of input.
+  proc emit(target: File, message: string) {.raises: [EvaluatorError].} =
     try:
-      stdout.writeLine value
+      target.write message
     except IOError as error:
-      raise newException(EvaluatorError, error.msg)
-
-  proc writeError(message: string) {.raises: [EvaluatorError].} =
-    try:
-      stderr.write message
-    except IOError as error:
-      raise newException(EvaluatorError, error.msg)
+      raise error.ioError()
 
   var history: seq[string]
   result = nothing()
@@ -1942,55 +1267,39 @@ proc replCommand(
     of "q", "quit":
       break
     of "history":
-      try:
-        stdout.writeLine history
-      except IOError as error:
-        raise newException(EvaluatorError, error.msg)
-      continue
+      stdout.emit $history & "\n"
     else:
-      discard
+      history.add line
+      try:
+        result = env.eval(parse(line, "<repl>"))
+        stdout.emit $result & "\n"
+      except OwlError as error:
+        stderr.emit report(error, useColor = true)
+      except CatchableError as error:
+        stderr.emit error.msg & "\n"
 
-    history.add line
-    try:
-      result = env.eval(parse(line, "<repl>"))
-      writeOutput result
-    except OwlError as error:
-      writeError report(error, useColor = true)
-    except CatchableError as error:
-      writeError error.msg & "\n"
-
-proc exitCommand(
-    env: Environment,
-    arguments: seq[SyntaxNode],
-    layout: LayoutKind,
-    body: seq[SyntaxNode],
-): Value {.stdCommand: "exit", raises: [EvaluatorError].} =
+stdCommand "exit", "[code]", 0 .. 1:
+  ## Stop the program, with an optional exit code.
   if arguments.len == 0:
     quit(0)
-  let exitCode = env.eval(arguments[0]).requireNumber().toInt()
-  quit(exitCode)
+  quit(env.eval(arguments[0]).requireNumber().toInt())
 
 proc addStandardCommands*(env: Environment) {.raises: [].} =
+  ## Install the native commands into `env` and into the command environment
+  ## that backs it, so commands can share state across calls.
   commandEnv = newEnvironment()
   commandEnv.evaluator = env.evaluator
   commandEnv.commandCaller = env.commandCaller
-  commandEnv.define("stdin", stdinStream())
-  commandEnv.define("stdout", stdoutStream())
-  commandEnv.define("nothing", nothing())
   env.fallback = commandEnv
-  env.define("stdin", stdinStream())
-  env.define("stdout", stdoutStream())
-  env.define("nothing", nothing())
-  for registration in commandRegistry:
-    env.define(registration.name, nativeCommand(registration.command))
-    commandEnv.define(registration.name, nativeCommand(registration.command))
 
-proc getCommandPrototypes*(): seq[string] =
-  const Prototypes = collect:
-    for name, command in commandPrototypes:
-      let rep = name.repr[1 ..< ^1]
-      &"""** {rep}
-#+begin_src owl
-{command[3].repr}
-#+end_src"""
-  result = Prototypes
+  var globals = {
+    "stdin": stdinStream(), "stdout": stdoutStream(), "nothing": nothing()
+  }.toTable
+  for registration in commandRegistry:
+    globals[registration.name] = nativeCommand(registration.command)
+  for (alias, target) in commandAliases:
+    globals[alias] = globals.getOrDefault(target)
+
+  for name, value in globals:
+    env.define(name, value)
+    commandEnv.define(name, value)

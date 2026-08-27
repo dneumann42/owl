@@ -113,7 +113,7 @@ proc stream*(value: StreamKind): Value {.raises: [].} =
 
 proc list*(items: sink seq[Value]): Value {.raises: [].} =
   let count = items.len
-  Value(kind: List, buffer: ListBuffer(values: items), start: 0, count: count)
+  result = Value(kind: List, buffer: ListBuffer(values: items), start: 0, count: count)
 
 proc listLen*(value: Value): int {.inline, raises: [].} =
   ## How many elements this list view covers.
@@ -204,6 +204,13 @@ proc referencesSymbol(node: SyntaxNode, name: string): bool {.raises: [].} =
     node.callee.referencesSymbol(name) or node.arguments.referencesSymbol(name) or
       node.body.referencesSymbol(name)
 
+proc usesCallName(
+    parameters: seq[string], body: seq[SyntaxNode], name: string
+): bool {.raises: [].} =
+  ## Whether a call has to bind `name`. A parameter of the same name is the
+  ## body's own, so binding the call's would silently shadow it.
+  name notin parameters and body.referencesSymbol(name)
+
 proc closureCommand*(
     parameters: sink seq[string], body: sink seq[SyntaxNode], captured: Environment,
     evaluatesArguments, acceptsBlock: bool
@@ -212,8 +219,8 @@ proc closureCommand*(
     kind: Command,
     command: CommandValue(
       kind: ClosureCommandKind,
-      usesBlock: body.referencesSymbol("block"),
-      usesLayout: body.referencesSymbol("layout"),
+      usesBlock: parameters.usesCallName(body, "block"),
+      usesLayout: parameters.usesCallName(body, "layout"),
       parameters: parameters,
       body: body,
       captured: captured,
@@ -230,16 +237,6 @@ proc isTruthy*(value: Value): bool {.raises: [].} =
     value.boolean
   else:
     true
-
-proc isIdentifierSymbol(value: string): bool {.raises: [].} =
-  if value.len == 0:
-    return false
-  if value[0] notin {'A' .. 'Z', 'a' .. 'z', '_'}:
-    return false
-  for c in value:
-    if c notin {'A' .. 'Z', 'a' .. 'z', '0' .. '9', '_', '-', '?', '/'}:
-      return false
-  true
 
 proc addIndent(target: var string, amount: int) {.raises: [].} =
   for _ in 0 ..< amount:
