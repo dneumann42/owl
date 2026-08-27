@@ -31,7 +31,7 @@ write-line stdout (cond:
     "hello"
   | (= word "world"):
     "world"
-  when true:
+  else:
     "fallback"
 )
 write-line stdout (to-string (do:

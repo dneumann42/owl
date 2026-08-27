@@ -91,13 +91,17 @@ fun cond-from clauses:
   else:
     define:
       clause = (first clauses)
-    when (not (= (command-symbol clause) "when")):
-      when (not (= (command-symbol clause) "|")):
-        error "cond expects when or |"
-    if (eval (command-arg clause 0)):
+      clause-symbol = (command-symbol clause)
+    if (= clause-symbol "else"):
       eval (command-body clause)
     else:
-      cond-from (rest clauses)
+      when (not (= clause-symbol "when")):
+        when (not (= clause-symbol "|")):
+          error "cond expects when, |, or else"
+      if (eval (command-arg clause 0)):
+        eval (command-body clause)
+      else:
+        cond-from (rest clauses)
 
 block-command cond:
   cond-from (statements block)

@@ -200,6 +200,31 @@ join
     check value.layout == ColonLayout
     check value.body.len == 2
 
+  test "parses an if and else pair as a grouped expression":
+    let tree = parse("""value = (if true:
+  "yes"
+else:
+  "no"
+)
+""")
+    let value = tree.statements[0].value
+    check value.kind == Script
+    check value.statements.len == 2
+    check value.statements[0].callee.symbol == "if"
+    check value.statements[1].callee.symbol == "else"
+
+  test "parses an indented right-hand side as an expression script":
+    let indented = parse("""define:
+  value =
+    if true:
+      "yes"
+    else:
+      "no"
+""")
+    let value = indented.statements[0].body[0].value
+    check value.kind == Script
+    check value.statements.len == 2
+
   test "parses indentation as nested call grouping":
     let tree = parse("""
 print
@@ -234,13 +259,15 @@ config = {}:
     check body[1].value.callee.symbol == "-"
     check body[1].value.arguments.len == 2
 
-  test "rejects multi-form indented binding values":
-    expect ParserError:
-      discard parse("""
+  test "parses multi-form indented binding values as expression scripts":
+    let tree = parse("""
 abc =
   1
   2
 """)
+    let value = tree.statements[0].value
+    check value.kind == Script
+    check value.statements.len == 2
 
   test "rejects malformed bracket punctuation and selector indexes":
     expect ParserError:

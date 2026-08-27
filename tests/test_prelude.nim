@@ -74,6 +74,30 @@ result
 result
 """, "b")
 
+  test "if and else compose as a parenthesized expression":
+    checkNumber("""+ (if true:
+  40
+else:
+  0
+) 2
+""", 42)
+    checkNumber("""if false:
+  "no"
+else:
+  "yes"
+length condition-results
+""", 0)
+
+  test "if expressions work in indented right-hand sides":
+    checkText("""define:
+  value =
+    if false:
+      "wrong"
+    else:
+      "indented"
+value
+""", "indented")
+
   test "statement if and else share a condition":
     checkText("""define:
   xs = []
@@ -301,6 +325,18 @@ cond:
   | T:
     "fallback"
 """, "fallback")
+    checkText("""cond:
+  when false:
+    "no"
+  else:
+    "fallback"
+""", "fallback")
+    checkText("""cond:
+  when true:
+    "match"
+  else:
+    "fallback"
+""", "match")
     expect EvaluatorError:
       discard run("""cond:
   bad

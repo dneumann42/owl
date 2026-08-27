@@ -187,6 +187,8 @@ The closure body evaluates in the [[term-call-scope][call scope]] and returns it
 ** Environments And Assignment
 =define= evaluates every [[term-binding][binding]] value in its body and defines that symbol in the current [[term-env][environment]]. It does not require the symbol to already exist, and it writes only to the current [[term-scope][scope]].
 
+The right-hand side of a binding may be an indented expression script. Its indentation supplies the boundary; each contained form evaluates in order and the script returns its last value. This applies to any expressions, commands, blocks, or values, not only control flow.
+
 =set= mutates an existing [[term-symbol][symbol]]. In two-argument form, =set target value= evaluates the value, then assigns it to =target=. If =target= is a symbol, that symbol must already exist in the [[term-env][environment chain]]. The nearest scope containing the symbol is updated. If =target= is not a symbol, Owl evaluates it as [[term-syntax-value][syntax]], requires that syntax to be a symbol, and assigns in the syntax value's [[term-capture][captured environment]].
 
 Block form =set:= accepts only [[term-binding][bindings]]. Each binding value is evaluated and the named symbol is updated. Unlike the lower-level environment setter, the public =set= command rejects unknown symbols.
@@ -235,7 +237,19 @@ The [[term-syntax-inspection][syntax inspection]] commands operate on syntax val
 
 =if=, =cond=, list literal =[]=, dictionary literal ={ }=, =record=, and =for= are not special [[term-parser][parser]] forms. They are commands defined in =owl/prelude.owl= using [[term-raw-syntax][raw syntax]], =eval=, [[term-syntax-inspection][syntax inspection]], and small native intrinsics where Owl cannot yet directly create runtime commands.
 
-=if= has two forms. When its block contains a =then:= clause, =if condition:= acts as a conditional expression: the =then:= body evaluates when the condition is truthy and the =else:= body when it is falsey. When its block contains no =then:= clause, =if= acts as a statement whose condition result is shared with a following =else= command. It pushes the condition result onto a stack in the [[term-command-env][command environment]] and evaluates its block when the condition is truthy; the following =else= pops that result and evaluates its own block when the condition was falsey.
+=if= and =else= are =block-command=s defined in =owl/prelude.owl=, not evaluator special forms. Together they are expressions: =if condition:= evaluates and returns its body when the condition is truthy; a following =else:= returns the =if= result when it was truthy or evaluates and returns its own body when it was falsey. =if= pushes its condition result onto a stack in the [[term-command-env][command environment]], and =else= pops that result. This keeps nested pairs independent.
+
+An =if=/=else= expression may be grouped wherever a single expression is required:
+
+#+begin_src owl
+answer = (if ready:
+  "yes"
+else:
+  "no"
+)
+#+end_src
+
+=cond:= evaluates =when condition:= and =| condition:= clauses in order, returning the first matching body. An =else:= clause is an unconditional fallback, so =cond= no longer needs =when true:= for its final branch.
 
 ** Data Commands
 Arithmetic commands =+=, =-=, =*=, and =/= require at least one argument. They evaluate all arguments as numbers and [[term-fold-left][fold left]].

@@ -434,11 +434,17 @@ proc parsePostfix(
 
 proc parseGroupedForm(parser: var Parser): SyntaxNode {.raises: [
     ParserError].} =
-  discard parser.expect(LParen, "expected '('")
+  let open = parser.expect(LParen, "expected '('")
   result = parser.parseForm()
   if parser.at(Colon) or parser.at(Newline):
     let tail = parser.parseLayoutTail()
     parser.attachLayoutTail(result, tail.kind, tail.body)
+  # A layout body can dedent to another form before the closing paren. Keep
+  # those forms together as a single expression script.
+  if not parser.at(RParen):
+    var statements = @[result]
+    statements.add parser.parseStatementList({RParen})
+    result = script(statements, parser.pos(open))
   discard parser.expect(RParen, "expected ')'")
   result = parser.parsePostfix(result)
 
@@ -516,7 +522,7 @@ proc parseCommand(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   var arguments: seq[SyntaxNode]
   while startsArgument(parser.peek.kind):
     arguments.add parser.parseArgument()
-  if callee.kind == Command and arguments.len == 0:
+  if callee.kind != Symbol and arguments.len == 0:
     result = callee
   else:
     result = command(callee, arguments, callee.pos)
@@ -531,10 +537,13 @@ proc parseExpression(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
 proc parseIndentedBindingValue(parser: var Parser): SyntaxNode {.raises: [
     ParserError].} =
   let values = parser.parseIndentedBody()
-  if values.len != 1:
+  if values.len == 0:
     let token = parser.peek
-    fail("expected one binding value", parser.source, token.line, token.column)
-  values[0]
+    fail("expected indented binding value", parser.source, token.line, token.column)
+  if values.len == 1:
+    values[0]
+  else:
+    script(values, values[0].pos)
 
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   if not parser.at(Atom) or parser.peek(1).kind != Equal:
