@@ -22,11 +22,11 @@ proc checkText(source: string, expected: string) =
 proc checkList(source: string, expected: int) =
   let value = run(source)
   check value.kind == List
-  check value.listLen == expected
+  check value.len == expected
 
 proc checkDict(source: string) =
   let value = run(source)
-  check value.kind == Dictionary
+  check value.kind == Record
 
 proc checkTrue(source: string) =
   check run(source).isTruthy

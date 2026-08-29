@@ -160,21 +160,19 @@ lam 9 4
 
   test "standard streams are globals":
     let input = run("stdin\n")
-    check input.kind == Record
-    check input.recordName == "Stream"
-    check input.recordEntries.hasKey("read")
-    check input.recordEntries.hasKey("read-line")
-    check input.recordEntries.hasKey("read-all")
-    check input.recordEntries.hasKey("open")
-    check input.recordEntries.hasKey("close")
+    check input.isFixed
+    check input.entries.hasKey("read")
+    check input.entries.hasKey("read-line")
+    check input.entries.hasKey("read-all")
+    check input.entries.hasKey("open")
+    check input.entries.hasKey("close")
 
     let output = run("stdout\n")
-    check output.kind == Record
-    check output.recordName == "Stream"
-    check output.recordEntries.hasKey("write")
-    check output.recordEntries.hasKey("write-line")
-    check output.recordEntries.hasKey("open")
-    check output.recordEntries.hasKey("close")
+    check output.isFixed
+    check output.entries.hasKey("write")
+    check output.entries.hasKey("write-line")
+    check output.entries.hasKey("open")
+    check output.entries.hasKey("close")
 
   test "stream predicate recognizes host streams":
     let value =
@@ -281,17 +279,17 @@ to-string []:
     check structured.text == "[]:\n  1, \"two\", false"
 
   test "value strings round-trip as owl source":
-    let source = $dictionary({
+    let source = $record({
       "plain": text("a\nb"),
       "space key": number(42)
     }.toTable())
 
     let value = run(source)
-    check value.kind == Dictionary
+    check value.kind == Record
     check value.entries["plain"].text == "a\nb"
     check value.entries["space key"].number == 42
 
-    let compact = $dictionary({
+    let compact = $record({
       "answer": number(42),
       "name": text("owl")
     }.toTable())
@@ -568,10 +566,10 @@ run:
 """
     )
     check value.kind == List
-    check value.listLen == 3
-    check value.at(0).number == 1
-    check value.at(1).number == 2
-    check value.at(2).number == 3
+    check value.len == 3
+    check value[0].number == 1
+    check value[1].number == 2
+    check value[2].number == 3
 
   test "prelude defines dictionary literals in owl":
     let value = run(
@@ -581,7 +579,7 @@ run:
   answer = (+ 40 2)
 """
     )
-    check value.kind == Dictionary
+    check value.kind == Record
     check value.entries["name"].text == "owl"
     check value.entries["answer"].number == 42
 

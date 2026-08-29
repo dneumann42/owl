@@ -63,7 +63,7 @@ suite "data conversions":
   test "object conversions use field names":
     let person = Person(name: "Ada", age: 36, tags: @["math", "code"])
     let value = person.toOwl()
-    check value.kind == Dictionary
+    check value.kind == Record
     check fromOwl(value, Person) == person
 
     var commands = initTable[Flavor, string]()
@@ -85,7 +85,7 @@ suite "data conversions":
 
     var entries = initTable[string, Value]()
     entries["count"] = 3.toOwl()
-    owlToObject(dictionary(entries), partial)
+    owlToObject(record(entries), partial)
 
     check partial.name == "new"
     check partial.count == 3
@@ -96,7 +96,7 @@ suite "data conversions":
     let person = RefPerson(name: "Ada", friend: RefPerson(name: "Grace"))
     let value = person.toOwl()
 
-    check value.kind == Dictionary
+    check value.kind == Record
     check value.entries["friend"].entries["name"].text == "Grace"
     check fromOwl(value, RefPerson).friend.name == "Grace"
 
@@ -121,8 +121,8 @@ suite "data conversions":
   test "json nodes convert recursively":
     let node = %* {"name": "owl", "items": [1, true, nil]}
     let owl = node.toOwl()
-    check owl.kind == Dictionary
-    check owl.entries["items"].at(1).boolean
+    check owl.kind == Record
+    check owl.entries["items"][1].boolean
 
     let back = fromOwl(owl, JsonNode)
     check back["name"].getStr() == "owl"
@@ -138,11 +138,11 @@ a = 41
 """)
 
     check loaded.kind == List
-    check loaded.listLen == 3
-    check loaded.at(0).number == 1
-    check loaded.at(1).number == 42
-    check loaded.at(2).kind == Dictionary
-    check loaded.at(2).entries["a"].number == 41
+    check loaded.len == 3
+    check loaded[0].number == 1
+    check loaded[1].number == 42
+    check loaded[2].kind == Record
+    check loaded[2].entries["a"].number == 41
 
   test "data files can define procedures for later values":
     let loaded = loadOwlSource("""
@@ -151,7 +151,7 @@ fun inc n:
 answer = inc 41
 """)
 
-    let bindings = loaded.at(loaded.listLen - 1)
+    let bindings = loaded[loaded.len - 1]
     check bindings.entries["answer"].number == 42
 
   test "restricted mode blocks dangerous commands":
@@ -160,4 +160,4 @@ answer = inc 41
 
   test "unrestricted mode allows evaluator commands":
     let loaded = loadOwlSource("""eval-source "1"""", mode = unrestrictedOwlData)
-    check loaded.at(0).number == 1
+    check loaded[0].number == 1

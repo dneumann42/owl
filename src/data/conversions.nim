@@ -109,10 +109,10 @@ proc fromOwl*[T](value: Value, target: var seq[T]) =
 
 proc fromOwl*[N, T](value: Value, target: var array[N, T]) =
   value.requireKind(List)
-  if value.listLen != target.len:
-    raise dataError(&"expected array length {target.len}, got {value.listLen}")
+  if value.len != target.len:
+    raise dataError(&"expected array length {target.len}, got {value.len}")
   for index in 0 ..< target.len:
-    fromOwl(value.at(index), target[index])
+    fromOwl(value[index], target[index])
 
 proc toOwl*[T](values: set[T]): Value =
   var items: seq[Value]
@@ -195,10 +195,10 @@ proc toOwl*[K, T](values: Table[K, T]): Value =
   var entries = initTable[string, Value]()
   for key, item in values:
     entries[key.tableKeyToField()] = item.toOwl()
-  dictionary(entries)
+  record(entries)
 
 proc fromOwl*[K, T](value: Value, target: var Table[K, T]) =
-  value.requireKind(Dictionary)
+  value.requireKind(Record)
   target = initTable[K, T]()
   for key, item in value.entries:
     var convertedKey: K
@@ -211,10 +211,10 @@ proc toOwl*[K, T](values: OrderedTable[K, T]): Value =
   var entries = initTable[string, Value]()
   for key, item in values:
     entries[key.tableKeyToField()] = item.toOwl()
-  dictionary(entries)
+  record(entries)
 
 proc fromOwl*[K, T](value: Value, target: var OrderedTable[K, T]) =
-  value.requireKind(Dictionary)
+  value.requireKind(Record)
   target = initOrderedTable[K, T]()
   for key, item in value.entries:
     var convertedKey: K
@@ -261,19 +261,15 @@ proc fromOwl*(value: Value, target: var Oid) {.raises: [DataError].} =
     raise dataError(&"invalid Oid value: {value.text}")
 
 proc entriesOf(value: Value): Table[string, Value] {.raises: [DataError].} =
-  case value.kind
-  of Dictionary:
-    value.entries
-  of Record:
-    value.recordEntries
-  else:
+  if value.kind != Record:
     raise dataError(&"expected Owl dictionary or record, got {value.kind}")
+  value.entries
 
 proc objectToOwl*[T: object](value: T): Value =
   var entries = initTable[string, Value]()
   for key, field in value.fieldPairs:
     entries[key] = field.toOwl()
-  dictionary(entries)
+  record(entries)
 
 proc owlToObject*[T: object](value: Value, target: var T) =
   let entries = value.entriesOf()

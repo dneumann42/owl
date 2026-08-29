@@ -64,9 +64,11 @@ block-command record name:
   define:
     record-name = (symbol-text name)
     fields = (statements block)
+    field-names = (record-fields fields)
   define-caller-value name
-    (record-constructor record-name (record-fields fields) (record-defaults fields))
-  define-caller-value (concat record-name "?") (record-predicate record-name)
+    (record-constructor record-name field-names (record-defaults fields))
+  define-caller-value (concat record-name "?")
+    (record-predicate record-name field-names)
 
 ; --- streams ---------------------------------------------------------------
 ; `Stream` is the interface every stream answers to. Fields left unsupported

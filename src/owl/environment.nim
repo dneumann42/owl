@@ -52,12 +52,12 @@ proc defineNative*(
   module.define(symbol, nativeCommand(command))
 
 proc moduleValue*(module: NativeModule): Value {.raises: [].} =
-  dictionary(module.exports)
+  record(module.exports)
 
 proc registerModule*(
     env: Environment, name: string, exports: Value
 ) {.raises: [EvaluatorError].} =
-  if exports.kind != Dictionary:
+  if exports.kind != Record:
     raise newException(EvaluatorError, "native module exports must be a dictionary")
   env.nativeModules[][name] = exports
 

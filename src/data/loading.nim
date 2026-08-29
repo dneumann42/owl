@@ -40,7 +40,7 @@ proc dataEvaluator(mode: OwlDataEvalMode): Evaluator {.raises: [EvaluatorError].
     result.env.installRestrictions()
 
 proc bindingDictionary(bindings: Table[string, Value]): Value {.raises: [].} =
-  dictionary(bindings)
+  record(bindings)
 
 proc appendBindings(values: var seq[Value], bindings: Table[string, Value]) {.raises: [].} =
   values.add bindings.bindingDictionary()

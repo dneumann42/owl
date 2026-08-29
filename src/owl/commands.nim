@@ -13,6 +13,18 @@ var
   commandRegistry {.threadvar.}: seq[CommandRegistration]
   commandAliases {.threadvar.}: seq[tuple[alias, target: string]]
   commandEnv {.threadvar.}: Environment
+  recordShapes {.threadvar.}: Table[string, RecordShape]
+
+proc declaredShape(name: string, fields: sink seq[string]): RecordShape {.raises: [].} =
+  ## Record names live here rather than on the records, so that a
+  ## declaration's constructor and predicate reach the same shape. Reusing a
+  ## matching shape is also what lets host-built `Stream` records and the
+  ## prelude's `record Stream:` agree.
+  recordShapes.withValue(name, existing):
+    if existing[].fields == fields:
+      return existing[]
+  result = RecordShape(fields: fields)
+  recordShapes[name] = result
 
 const commandDocs = CacheTable"OwlCommandDocs"
 
@@ -131,13 +143,10 @@ proc requireSyntax(value: Value): SyntaxNode {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, &"expected syntax, got {value}")
   result = value.syntax
 
-proc requireListValue(value: Value): Value {.raises: [EvaluatorError].} =
+proc requireList(value: Value): Value {.raises: [EvaluatorError].} =
   if value.kind != List:
     raise newException(EvaluatorError, &"expected list, got {value}")
   result = value
-
-proc requireList(value: Value): seq[Value] {.raises: [EvaluatorError].} =
-  value.requireListValue().listSeq
 
 proc syntaxEnvironment(value: Value, fallback: Environment): Environment {.raises: [].} =
   if value.kind == Syntax and value.syntaxEnv != nil: value.syntaxEnv else: fallback
@@ -186,45 +195,30 @@ proc bindingBody(
       raise newException(EvaluatorError, &"{role} entries must be bindings")
   result = body
 
-proc hasRecordField(value: Value, name: string): bool {.raises: [].} =
-  value.kind == Record and name in value.recordFields
-
 proc field(value: Value, name: string): Value {.raises: [EvaluatorError].} =
-  case value.kind
-  of Dictionary:
-    if not value.entries.hasKey(name):
-      raise newException(EvaluatorError, &"missing field: {name}")
-    value.entries.getOrDefault(name)
-  of Record:
-    if not value.recordEntries.hasKey(name):
-      raise newException(EvaluatorError, &"missing field: {name}")
-    value.recordEntries.getOrDefault(name)
-  else:
+  if value.kind != Record:
     raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
+  if not value.hasKey(name):
+    raise newException(EvaluatorError, &"missing field: {name}")
+  value[name]
 
-proc optionalField(value: Value, name: string): Value {.raises: [].} =
-  case value.kind
-  of Dictionary: value.entries.getOrDefault(name, nothing())
-  of Record: value.recordEntries.getOrDefault(name, nothing())
-  else: nothing()
-
-proc listIndex(
+proc checkedIndex(
     value: Value, index: float64, role: string
 ): int {.raises: [EvaluatorError].} =
   result = int(index)
-  if result.float64 != index or result < 0 or result >= value.listLen:
+  if result.float64 != index or result < 0 or result >= value.len:
     raise newException(
-      EvaluatorError, &"{role}: index {index} is outside a list of {value.listLen}"
+      EvaluatorError, &"{role}: index {index} is outside a list of {value.len}"
     )
 
 proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
   case value.kind
   of List:
     let index = key.requireNumber().int
-    if index < 0 or index >= value.listLen:
+    if index < 0 or index >= value.len:
       raise newException(EvaluatorError, "list index out of range")
-    value.at(index)
-  of Dictionary, Record:
+    value[index]
+  of Record:
     value.field(key.requireText())
   else:
     raise newException(
@@ -234,27 +228,22 @@ proc indexValue(value, key: Value): Value {.raises: [EvaluatorError].} =
 proc setFieldValue(
     value: Value, name: string, entry: Value
 ): Value {.raises: [EvaluatorError].} =
-  ## Dictionaries and records are updated by copy, so other holders of the
-  ## original value keep seeing it unchanged.
-  case value.kind
-  of Dictionary:
-    result = value
-    result.entries[name] = entry
-  of Record:
-    if not value.hasRecordField(name):
-      raise newException(EvaluatorError, &"cannot add record field: {name}")
-    result = value
-    result.recordEntries[name] = entry
-  else:
+  ## Records are updated by copy, so other holders of the original value keep
+  ## seeing it unchanged.
+  if value.kind != Record:
     raise newException(EvaluatorError, &"expected dictionary or record, got {value}")
+  if value.isFixed and not value.hasKey(name):
+    raise newException(EvaluatorError, &"cannot add record field: {name}")
+  result = value
+  result[name] = entry
 
 proc setIndexValue(value, key, entry: Value): Value {.raises: [EvaluatorError].} =
   case value.kind
   of List:
-    var updated = value.listSeq
-    updated[value.listIndex(key.requireNumber(), "index")] = entry
+    var updated = value.toSeq
+    updated[value.checkedIndex(key.requireNumber(), "index")] = entry
     result = list(updated)
-  of Dictionary, Record:
+  of Record:
     result = value.setFieldValue(key.requireText(), entry)
   else:
     raise newException(
@@ -266,7 +255,7 @@ proc callOptionalField(
 ): Value {.raises: [EvaluatorError].} =
   ## Call `receiver.name` when it exists, otherwise leave the receiver alone. A
   ## handler that answers `nothing` also leaves the receiver as it was.
-  let fieldValue = receiver.optionalField(name)
+  let fieldValue = receiver[name]
   if fieldValue.kind == Nothing:
     return receiver
   if fieldValue.kind != Command:
@@ -500,7 +489,7 @@ stdCommand "use", "module [namespace]", 1 .. 2:
   var name: string
   if env.hasNativeModule(requested):
     result = env.getNativeModule(requested)
-    if result.kind != Dictionary:
+    if result.kind != Record:
       raise newException(EvaluatorError, "native module exports must be a dictionary")
     entries = result.entries
     name = requested.moduleName
@@ -509,7 +498,7 @@ stdCommand "use", "module [namespace]", 1 .. 2:
     let moduleEnv = env.child()
     discard moduleEnv.evalBlock(loadSourceFile(path, arguments[0].pos).statements)
     entries = moduleEnv.bindings
-    result = dictionary(entries)
+    result = record(entries)
     name = path.moduleName
 
   if layout == ColonLayout:
@@ -605,17 +594,21 @@ stdCommand "eval-with", "symbol value body", 3:
   result =
     if node.kind == Script: local.evalBlock(node.statements) else: local.eval(node)
 
+proc recordFieldOrder(fields: Value): seq[string] {.raises: [EvaluatorError].} =
+  for item in fields:
+    let field = item.requireText()
+    if field in result:
+      raise newException(EvaluatorError, &"duplicate record field: {field}")
+    result.add field
+
 stdCommand "record-constructor", "name fields defaults", 3:
   ## Build the constructor command behind `record Name:`. Fields are text
   ## names and defaults are syntax values evaluated per call.
-  let typeName = env.eval(arguments[0]).requireText()
-
-  var fieldOrder: seq[string]
-  for item in env.eval(arguments[1]).requireList():
-    let field = item.requireText()
-    if field in fieldOrder:
-      raise newException(EvaluatorError, &"duplicate record field: {field}")
-    fieldOrder.add field
+  let shape = declaredShape(
+    env.eval(arguments[0]).requireText(),
+    env.eval(arguments[1]).requireList().recordFieldOrder()
+  )
+  let fieldOrder = shape.fields
 
   let defaults = env.eval(arguments[2]).requireList()
   for item in defaults:
@@ -658,12 +651,16 @@ stdCommand "record-constructor", "name fields defaults", 3:
         entries[fieldOrder[index]] = env.eval(argument)
       for node in body:
         entries[node.bindingSymbol] = env.eval(node.value)
-      result = record(typeName, entries, fieldOrder)
+      result = record(entries, shape)
   )
 
-stdCommand "record-predicate", "name", 1:
-  ## Build the `Name?` command behind `record Name:`.
-  let typeName = env.eval(arguments[0]).requireText()
+stdCommand "record-predicate", "name fields", 2:
+  ## Build the `Name?` command behind `record Name:`. It answers true for the
+  ## records built against the shape this name and field list declare.
+  let shape = declaredShape(
+    env.eval(arguments[0]).requireText(),
+    env.eval(arguments[1]).requireList().recordFieldOrder()
+  )
   result = nativeCommand(
     proc(
         env: Environment,
@@ -676,7 +673,7 @@ stdCommand "record-predicate", "name", 1:
       if arguments.len != 1:
         raise newException(EvaluatorError, "record predicate expects one value")
       let value = env.eval(arguments[0])
-      result = boolean(value.kind == Record and value.recordName == typeName)
+      result = boolean(value.kind == Record and value.shape == shape)
   )
 
 template foldNumbers(
@@ -818,49 +815,48 @@ stdCommand "list", "", 0:
 
 stdCommand "dict", "", 0:
   ## An empty dictionary.
-  dictionary(initTable[string, Value]())
+  record(initTable[string, Value]())
 
 stdCommand "cons", "value list", 2:
   ## A new list with the value in front of an existing list.
   var items = @[env.eval(arguments[0])]
-  items.add env.eval(arguments[1]).requireList()
+  items.add env.eval(arguments[1]).requireList().toSeq
   result = list(items)
 
 stdCommand "first", "list", 1:
   ## The first item of a non-empty list.
-  let values = env.eval(arguments[0]).requireListValue()
-  if values.listLen == 0:
+  let values = env.eval(arguments[0]).requireList()
+  if values.len == 0:
     raise newException(EvaluatorError, "first expects a non-empty list")
-  result = values.at(0)
+  result = values[0]
 
 stdCommand "rest", "list", 1:
   ## Everything after the first item, or an empty list.
-  env.eval(arguments[0]).requireListValue().listRest
+  env.eval(arguments[0]).requireList().rest
 
 stdCommand "empty?", "list", 1:
   ## Whether a list has no items.
-  boolean(env.eval(arguments[0]).requireListValue().listLen == 0)
+  boolean(env.eval(arguments[0]).requireList().len == 0)
 
 stdCommand "length", "value", 1:
   ## The number of items in a list or dictionary, or characters in text.
   let value = env.eval(arguments[0])
   case value.kind
-  of List: number(value.listLen.float64)
-  of Dictionary: number(value.entries.len.float64)
-  of Text: number(value.text.len.float64)
+  of List, Record, Text:
+    number(value.len.float64)
   else:
     raise newException(
-      EvaluatorError, &"expected list, dictionary, or text, got {value}"
+      EvaluatorError, &"expected list, record, or text, got {value}"
     )
 
 stdCommand "nth", "list index", 2:
   ## The item at a position in a list.
-  let values = env.eval(arguments[0]).requireListValue()
-  result = values.at(values.listIndex(env.eval(arguments[1]).requireNumber, "nth"))
+  let values = env.eval(arguments[0]).requireList()
+  result = values[values.checkedIndex(env.eval(arguments[1]).requireNumber, "nth")]
 
 stdCommand "append-value", "list value", 2:
   ## A new list with the value on the end.
-  env.eval(arguments[0]).requireListValue().listAppended(env.eval(arguments[1]))
+  env.eval(arguments[0]).requireList() & env.eval(arguments[1])
 
 stdCommand "append", "list value", 2:
   ## Add a value to the end of a named list in place.
@@ -879,22 +875,22 @@ stdCommand "append", "list value", 2:
       var appended = false
       owner.bindings.withValue(name, existing):
         if existing[].kind == List:
-          existing[] = existing[].listAppended(value)
+          existing[] = existing[] & value
           appended = true
       if appended:
         return nothing()
   env.setTarget(
-    arguments[0], env.eval(arguments[0]).requireListValue().listAppended(value)
+    arguments[0], env.eval(arguments[0]).requireList() & value
   )
   result = nothing()
 
 proc dropFront(
     env: Environment, arguments: seq[SyntaxNode]
 ): Value {.raises: [EvaluatorError].} =
-  let values = env.eval(arguments[0]).requireListValue()
+  let values = env.eval(arguments[0]).requireList()
   let count = max(int(env.eval(arguments[1]).requireNumber), 0)
   result =
-    if count >= values.listLen: list(@[]) else: list(values.listSeq[count .. ^1])
+    if count >= values.len: list(@[]) else: list(values.toSeq[count .. ^1])
 
 stdCommand "drop-front", "list count", 2:
   ## A new list without the leading `count` items.
@@ -908,8 +904,8 @@ stdCommand "pop-front", "list count", 2:
 stdCommand "list-from", "syntax-list", 1:
   ## Evaluate a list of syntax values into a list of values. This is what
   ## `[]:` is built from.
-  let nodes = env.eval(arguments[0]).requireListValue()
-  var items = newSeqOfCap[Value](nodes.listLen)
+  let nodes = env.eval(arguments[0]).requireList()
+  var items = newSeqOfCap[Value](nodes.len)
   for node in nodes.items:
     items.add env.evalSyntax(node)
   result = list(items)
@@ -917,18 +913,18 @@ stdCommand "list-from", "syntax-list", 1:
 stdCommand "dict-from", "syntax-list", 1:
   ## Evaluate a list of binding syntax values into a dictionary. This is what
   ## `{}:` is built from.
-  let nodes = env.eval(arguments[0]).requireListValue()
+  let nodes = env.eval(arguments[0]).requireList()
   # Sized once rather than grown, and filled last-to-first: the recursive
   # version put the head entry in on top of the tail, so an earlier binding
   # wins a repeated key and the later ones are evaluated first.
-  var entries = initTable[string, Value](max(nextPowerOfTwo(nodes.listLen * 2), 4))
-  for index in countdown(nodes.listLen - 1, 0):
-    let node = nodes.at(index).requireSyntax()
+  var entries = initTable[string, Value](max(nextPowerOfTwo(nodes.len * 2), 4))
+  for index in countdown(nodes.len - 1, 0):
+    let node = nodes[index].requireSyntax()
     if node.kind != Binding:
       raise newException(EvaluatorError, "dict-from expects binding syntax")
     entries[node.bindingSymbol] =
-      nodes.at(index).syntaxEnvironment(env).eval(node.value)
-  result = dictionary(entries)
+      nodes[index].syntaxEnvironment(env).eval(node.value)
+  result = record(entries)
 
 stdCommand "dict-put", "dict key value", 3:
   ## A dictionary or record with one key updated.
@@ -959,6 +955,8 @@ stdCommand "to-string", "value", 1:
   ## A value rendered as the Owl source that would produce it.
   text($env.eval(arguments[0]))
 
+# Must stay in step with `record Stream:` in the prelude, or host-built
+# streams and `Stream?` end up with different shapes.
 const StreamFields =
   ["open", "close", "read", "read-line", "read-all", "write", "write-line"]
 
@@ -1039,7 +1037,7 @@ proc streamRecord(ops: StreamOps): Value {.raises: [].} =
   for name in StreamFields:
     if not entries.hasKey(name):
       entries[name] = unsupported(name)
-  result = record("Stream", entries, @StreamFields)
+  result = record(entries, declaredShape("Stream", @StreamFields))
 
 proc ioError(error: ref IOError): ref EvaluatorError {.raises: [].} =
   newException(EvaluatorError, error.msg)
@@ -1291,6 +1289,7 @@ proc addStandardCommands*(env: Environment) {.raises: [].} =
   commandEnv.evaluator = env.evaluator
   commandEnv.commandCaller = env.commandCaller
   env.fallback = commandEnv
+  recordShapes = initTable[string, RecordShape]()
 
   var globals = {
     "stdin": stdinStream(), "stdout": stdoutStream(), "nothing": nothing()

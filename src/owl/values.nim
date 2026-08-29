@@ -12,7 +12,6 @@ type
     Text
     Stream
     List
-    Dictionary
     Record
     Syntax
     Command
@@ -22,6 +21,12 @@ type
 
   ListBuffer* = ref object
     values*: seq[Value]
+
+  RecordShape* = ref object
+    ## Two records are the same kind when they share a shape, which is what
+    ## lets them carry no name: `record Name:` keeps the name in its own state
+    ## and hands this to both the constructor and the predicate.
+    fields*: seq[string]
 
   NativeValue* = ref object of RootObj
 
@@ -82,12 +87,9 @@ type
       ## can only ever see the elements its own `count` covers.
       buffer*: ListBuffer
       start*, count*: int
-    of Dictionary:
-      entries*: Table[string, Value]
     of Record:
-      recordName*: string
-      recordEntries*: Table[string, Value]
-      recordFields*: seq[string]
+      entries*: Table[string, Value]
+      shape*: RecordShape # when nil this means its mutable. I may change this behavior
     of Syntax:
       syntax*: SyntaxNode
       syntaxEnv*: Environment
@@ -115,58 +117,70 @@ proc list*(items: sink seq[Value]): Value {.raises: [].} =
   let count = items.len
   result = Value(kind: List, buffer: ListBuffer(values: items), start: 0, count: count)
 
-proc listLen*(value: Value): int {.inline, raises: [].} =
-  ## How many elements this list view covers.
-  value.count
+proc len*(value: Value): int {.inline, raises: [].} =
+  case value.kind
+  of List: value.count
+  of Record: value.entries.len
+  of Text: value.text.len
+  else: 0
+
+proc hasKey*(value: Value, key: string): bool {.inline, raises: [].} =
+  value.kind == Record and value.entries.hasKey(key)
+
+proc `[]`*(value: Value, index: int): Value {.inline, raises: [].} =
+  ## The caller checks the bounds.
+  if value.kind == List: value.buffer.values[value.start + index] else: nothing()
+
+proc `[]`*(value: Value, key: string): Value {.inline, raises: [].} =
+  if value.kind == Record: value.entries.getOrDefault(key, nothing()) else: nothing()
+
+proc `[]=`*(value: var Value, key: string, entry: sink Value) {.raises: [].} =
+  ## A fixed record's key set is the caller's to enforce; see `isFixed`.
+  if value.kind == Record:
+    value.entries[key] = entry
 
 iterator items*(value: Value): Value =
-  for index in value.start ..< value.start + value.count:
-    yield value.buffer.values[index]
+  if value.kind == List:
+    for index in value.start ..< value.start + value.count:
+      yield value.buffer.values[index]
 
-proc at*(value: Value, index: int): Value {.inline, raises: [].} =
-  ## The element at `index` within this view. The caller checks the bounds.
-  value.buffer.values[value.start + index]
-
-proc listSeq*(value: Value): seq[Value] {.raises: [].} =
-  ## Copy the view out as a plain sequence.
-  if value.buffer.isNil or value.count <= 0:
+proc toSeq*(value: Value): seq[Value] {.raises: [].} =
+  if value.kind != List or value.count <= 0:
     @[]
   else:
     value.buffer.values[value.start ..< value.start + value.count]
 
-proc listRest*(value: Value): Value {.raises: [].} =
-  ## Everything after the first element, sharing the buffer rather than
-  ## copying it. This is what keeps a recursive walk linear.
-  if value.count <= 1:
+proc rest*(value: Value): Value {.raises: [].} =
+  ## Sharing the buffer instead of copying it is what keeps a recursive walk
+  ## linear.
+  if value.kind != List or value.count <= 1:
     list(@[])
   else:
     Value(kind: List, buffer: value.buffer, start: value.start + 1,
         count: value.count - 1)
 
-proc listAppended*(value: Value, item: sink Value): Value {.raises: [].} =
-  ## This list with `item` on the end.
-  ##
+proc `&`*(value: Value, item: sink Value): Value {.raises: [].} =
   ## When the view already ends the buffer the item is written straight into
   ## it: every other view keeps its own smaller `count`, so none of them can
   ## see the new element. Otherwise the view is copied out first.
-  if value.buffer.isNil:
+  if value.kind != List or value.buffer.isNil:
     return list(@[item])
   if value.start + value.count == value.buffer.values.len:
     value.buffer.values.add item
     Value(kind: List, buffer: value.buffer, start: value.start,
         count: value.count + 1)
   else:
-    var copied = value.listSeq()
+    var copied = value.toSeq()
     copied.add item
     list(copied)
 
-proc dictionary*(entries: sink Table[string, Value]): Value {.raises: [].} =
-  Value(kind: Dictionary, entries: entries)
-
 proc record*(
-    name: sink string, entries: sink Table[string, Value], fields: sink seq[string]
+    entries: sink Table[string, Value], shape: RecordShape = nil
 ): Value {.raises: [].} =
-  Value(kind: Record, recordName: name, recordEntries: entries, recordFields: fields)
+  Value(kind: Record, entries: entries, shape: shape)
+
+proc isFixed*(value: Value): bool {.inline, raises: [].} =
+  value.kind == Record and not value.shape.isNil
 
 proc syntaxValue*(node: SyntaxNode, env: Environment = nil): Value {.raises: [].} =
   Value(kind: Syntax, syntax: node, syntaxEnv: env)
@@ -245,7 +259,7 @@ proc addIndent(target: var string, amount: int) {.raises: [].} =
 proc render(value: Value, indent: int): string {.raises: [].}
 
 proc renderList(value: Value, indent: int): string {.raises: [].} =
-  if value.listLen == 0:
+  if value.len == 0:
     return "[]"
 
   var compactParts: seq[string]
@@ -268,7 +282,7 @@ proc renderList(value: Value, indent: int): string {.raises: [].} =
     result.add item.render(indent + 2)
 
 proc renderDictionaryLiteral(value: Value, indent: int): string {.raises: [].} =
-  if value.entries.len == 0:
+  if value.len == 0:
     return "{}"
 
   result = "{}:"
@@ -280,7 +294,7 @@ proc renderDictionaryLiteral(value: Value, indent: int): string {.raises: [].} =
   var compactParts: seq[string]
   var canUseCompact = true
   for key in keys:
-    let rendered = value.entries.getOrDefault(key).render(indent + 2)
+    let rendered = value[key].render(indent + 2)
     if rendered.contains('\n'):
       canUseCompact = false
       break
@@ -295,7 +309,7 @@ proc renderDictionaryLiteral(value: Value, indent: int): string {.raises: [].} =
     result.addIndent(indent + 2)
     result.add key
     result.add " = "
-    result.add value.entries.getOrDefault(key).render(indent + 2)
+    result.add value[key].render(indent + 2)
 
 proc renderDictionary(value: Value, indent: int): string {.raises: [].} =
   var keys: seq[string]
@@ -314,7 +328,14 @@ proc renderDictionary(value: Value, indent: int): string {.raises: [].} =
   result = "(dict)"
   for key in keys:
     result = "(dict-put " & result & " " & quote(key) & " " &
-      value.entries.getOrDefault(key).render(indent) & ")"
+      value[key].render(indent) & ")"
+
+proc renderFixedRecord(value: Value, indent: int): string {.raises: [].} =
+  var parts: seq[string]
+  for key in value.shape.fields:
+    if value.hasKey(key):
+      parts.add key & ": " & value[key].render(indent)
+  "{" & parts.join(", ") & "}"
 
 proc render(value: Value, indent: int): string {.raises: [].} =
   case value.kind
@@ -337,14 +358,11 @@ proc render(value: Value, indent: int): string {.raises: [].} =
       "<stdout>"
   of List:
     value.renderList(indent)
-  of Dictionary:
-    value.renderDictionary(indent)
   of Record:
-    var parts: seq[string]
-    for key in value.recordFields:
-      if value.recordEntries.hasKey(key):
-        parts.add key & ": " & value.recordEntries.getOrDefault(key).render(indent)
-    "{" & parts.join(", ") & "}"
+    if value.isFixed:
+      value.renderFixedRecord(indent)
+    else:
+      value.renderDictionary(indent)
   of Syntax:
     $value.syntax
   of Command:

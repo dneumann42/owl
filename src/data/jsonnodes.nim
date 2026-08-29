@@ -23,7 +23,7 @@ proc jsonToOwl*(node: JsonNode): Value =
     var entries = initTable[string, Value]()
     for key, item in node.fields:
       entries[key] = item.jsonToOwl()
-    dictionary(entries)
+    record(entries)
 
 proc owlToJson*(value: Value): JsonNode =
   case value.kind
@@ -39,14 +39,9 @@ proc owlToJson*(value: Value): JsonNode =
     result = newJArray()
     for item in value.items:
       result.add item.owlToJson()
-  of Dictionary:
-    result = newJObject()
-    for key, item in value.entries:
-      result[key] = item.owlToJson()
   of Record:
     result = newJObject()
-    result["$type"] = newJString(value.recordName)
-    for key, item in value.recordEntries:
+    for key, item in value.entries:
       result[key] = item.owlToJson()
   else:
     result = newJString($value)
