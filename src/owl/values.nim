@@ -179,6 +179,14 @@ proc record*(
 ): Value {.raises: [].} =
   Value(kind: Record, entries: entries, shape: shape)
 
+proc record*(entries: openArray[(string, Value)]): Value {.raises: [].} =
+  ## Convenient record construction for host integrations. The Table overload
+  ## remains available when callers have already assembled a table.
+  var fields = initTable[string, Value](entries.len)
+  for (key, value) in entries:
+    fields[key] = value
+  record(fields)
+
 proc isFixed*(value: Value): bool {.inline, raises: [].} =
   value.kind == Record and not value.shape.isNil
 

@@ -1,3 +1,3 @@
-import data/[conversions, jsonnodes, loading]
+import data/[conversions, jsonnodes, loading, watching]
 
-export conversions, jsonnodes, loading
+export conversions, jsonnodes, loading, watching

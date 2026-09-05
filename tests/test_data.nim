@@ -1,4 +1,4 @@
-import std/[json, oids, streams, tables, times, unittest]
+import std/[json, oids, os, streams, tables, times, unittest]
 
 import data
 import owl/[syntax, values]
@@ -161,3 +161,20 @@ answer = inc 41
   test "unrestricted mode allows evaluator commands":
     let loaded = loadOwlSource("""eval-source "1"""", mode = unrestrictedOwlData)
     check loaded[0].number == 1
+
+suite "file watching":
+  test "detects changes and refreshes its baseline":
+    let path = getTempDir() / "owl-file-watcher-test.owl"
+    writeFile(path, "value = 1")
+    defer: removeFile(path)
+    var watcher = initOwlFileWatcher()
+    watcher.watch(path)
+    check not watcher.changed()
+
+    writeFile(path, "value = 22")
+    check watcher.changed()
+    watcher.refresh()
+    check not watcher.changed()
+
+    removeFile(path)
+    check watcher.changed()
