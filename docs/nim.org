@@ -2,6 +2,26 @@
 
 This page shows the basic ways to run Owl code from a Nim program.
 
+* Watch a hot-reloaded file
+
+=OwlFileWatcher= is the shared change detector for Owl programs and Owl-backed
+data. Linux uses inotify by default, including for files replaced by an atomic
+save; other systems, or a failed native-watch setup, compare file stamps.
+
+#+begin_src nim
+var watcher = initOwlFileWatcher()
+defer: watcher.close()
+watcher.watch("settings.owl")
+
+if watcher.changed():
+  watcher.refresh()
+  # Reload settings.owl.
+#+end_src
+
+A host with a blocking event loop can call =notifyChanges= with a thread-safe
+callback. On Linux the callback wakes the host promptly; a false return means
+the host should schedule calls to =changed= as a polling fallback.
+
 * Evaluate source
 
 Use =evalSource= when you just want to run a string.

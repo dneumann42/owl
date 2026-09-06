@@ -3,6 +3,14 @@ import std/[json, oids, os, streams, tables, times, unittest]
 import data
 import owl/[syntax, values]
 
+when defined(linux):
+  import std/atomics
+
+  var fileChangeNotifications: Atomic[int]
+
+  proc noteFileChange() {.gcsafe, raises: [].} =
+    discard fileChangeNotifications.fetchAdd(1, moRelaxed)
+
 type
   Flavor = enum
     vanilla
@@ -168,6 +176,7 @@ suite "file watching":
     writeFile(path, "value = 1")
     defer: removeFile(path)
     var watcher = initOwlFileWatcher()
+    defer: watcher.close()
     watcher.watch(path)
     check not watcher.changed()
 
@@ -178,3 +187,23 @@ suite "file watching":
 
     removeFile(path)
     check watcher.changed()
+
+  when defined(linux):
+    test "Linux notifications wake clients without timestamp polling":
+      let path = getTempDir() / "owl-file-notification-test.owl"
+      writeFile(path, "value = 1")
+      defer: removeFile(path)
+      let watcher = initOwlFileWatcher()
+      defer: watcher.close()
+      watcher.watch(path)
+      fileChangeNotifications.store(0, moRelaxed)
+      require watcher.notifyChanges(noteFileChange)
+
+      writeFile(path, "value = 2")
+      for attempt in 0 ..< 100:
+        if fileChangeNotifications.load(moRelaxed) > 0:
+          break
+        sleep(10)
+
+      check fileChangeNotifications.load(moRelaxed) > 0
+      check watcher.changed()
