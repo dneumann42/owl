@@ -8,6 +8,25 @@ when defined(linux):
     poll, read, write
   from posix/linux import pipe2
   import posix/inotify
+elif defined(windows):
+  import std/[atomics, locks]
+  import windows/winlean
+
+  const
+    FileNotifyChangeFileName = 0x00000001'i32
+    FileNotifyChangeDirName = 0x00000002'i32
+    FileNotifyChangeSize = 0x00000008'i32
+    FileNotifyChangeLastWrite = 0x00000010'i32
+    WaitObject0 = 0'i32
+    Infinite = -1'i32
+
+  proc findFirstChangeNotification(path: WideCString, watchSubtree: WINBOOL,
+      filter: DWORD): Handle {.stdcall, dynlib: "kernel32",
+        importc: "FindFirstChangeNotificationW".}
+  proc findNextChangeNotification(handle: Handle): WINBOOL {.stdcall,
+      dynlib: "kernel32", importc: "FindNextChangeNotification".}
+  proc findCloseChangeNotification(handle: Handle): WINBOOL {.stdcall,
+      dynlib: "kernel32", importc: "FindCloseChangeNotification".}
 
 type
   OwlFileStamp* = object
@@ -30,6 +49,16 @@ type
       notificationThread: Thread[OwlFileWatcher]
       notificationThreadStarted: bool
       stopping: Atomic[bool]
+      lock: Lock
+      closed: bool
+    elif defined(windows):
+      notificationsAvailable: bool
+      directories: Table[string, Handle]
+      pending: Atomic[bool]
+      notifier: OwlFileChangeNotifier
+      notificationThread: Thread[OwlFileWatcher]
+      notificationThreadStarted: bool
+      stopEvent: Handle
       lock: Lock
       closed: bool
 
@@ -108,6 +137,54 @@ when defined(linux):
       except CatchableError:
         discard
 
+elif defined(windows):
+  const WatchFilter = FileNotifyChangeFileName or FileNotifyChangeDirName or
+    FileNotifyChangeSize or FileNotifyChangeLastWrite
+
+  proc addDirectoryWatch(watcher: OwlFileWatcher, directory: string): bool =
+    if directory in watcher.directories:
+      return true
+    let handle = findFirstChangeNotification(newWideCString(directory), 0'i32,
+      WatchFilter)
+    if handle != -1:
+      watcher.directories[directory] = handle
+      return true
+
+  proc watchForNotifications(watcher: OwlFileWatcher) {.thread, raises: [].} =
+    while true:
+      var handles: WOHandleArray
+      var count = 1
+      handles[0] = watcher.stopEvent
+      withLock watcher.lock:
+        for handle in watcher.directories.values:
+          if count >= MAXIMUM_WAIT_OBJECTS:
+            break
+          handles[count] = handle
+          inc count
+      let signaled = waitForMultipleObjects(count.DWORD, addr handles, 0'i32,
+        Infinite)
+      if signaled == WaitObject0:
+        return
+      let index = int(signaled - WaitObject0)
+      if index > 0 and index < count:
+        discard findNextChangeNotification(handles[index])
+        watcher.pending.store(true, moRelease)
+        let notify = watcher.notifier
+        if notify != nil:
+          notify()
+
+  proc drainNotifications(watcher: OwlFileWatcher): bool =
+    ## Data loaders that do not install a wake callback still consume Windows
+    ## directory notifications on their next poll; no file timestamp scan is
+    ## needed on the native path.
+    withLock watcher.lock:
+      for handle in watcher.directories.values:
+        var handles: WOHandleArray
+        handles[0] = handle
+        if waitForMultipleObjects(1, addr handles, 0'i32, 0) == WaitObject0:
+          discard findNextChangeNotification(handle)
+          result = true
+
 proc initOwlFileWatcher*(): OwlFileWatcher =
   result = OwlFileWatcher(files: initTable[string, OwlFileStamp]())
   when defined(linux):
@@ -123,10 +200,17 @@ proc initOwlFileWatcher*(): OwlFileWatcher =
     result.directories = initTable[string, cint]()
     result.directoryPaths = initTable[cint, string]()
     initLock(result.lock)
+  elif defined(windows):
+    result.notificationsAvailable = true
+    result.directories = initTable[string, Handle]()
+    result.stopEvent = createEvent(nil, 1, 0, nil)
+    if result.stopEvent == 0:
+      result.notificationsAvailable = false
+    initLock(result.lock)
 
 proc usesFileNotifications*(watcher: OwlFileWatcher): bool =
   ## Whether this watcher is backed by operating-system change notifications.
-  when defined(linux):
+  when defined(linux) or defined(windows):
     watcher != nil and watcher.notificationsAvailable
   else:
     false
@@ -139,19 +223,24 @@ proc watch*(watcher: OwlFileWatcher, path: string) =
       watcher.files[normalized] = fileStamp(normalized)
       if not watcher.addDirectoryWatch(normalized.parentDir):
         watcher.notificationsAvailable = false
+  elif defined(windows):
+    withLock watcher.lock:
+      watcher.files[normalized] = fileStamp(normalized)
+      if not watcher.addDirectoryWatch(normalized.parentDir):
+        watcher.notificationsAvailable = false
   else:
     watcher.files[normalized] = fileStamp(normalized)
 
 proc unwatch*(watcher: OwlFileWatcher, path: string) =
   let normalized = watchedPath(path)
-  when defined(linux):
+  when defined(linux) or defined(windows):
     withLock watcher.lock:
       watcher.files.del(normalized)
   else:
     watcher.files.del(normalized)
 
 proc clear*(watcher: OwlFileWatcher) =
-  when defined(linux):
+  when defined(linux) or defined(windows):
     withLock watcher.lock:
       watcher.files.clear()
   else:
@@ -165,13 +254,18 @@ proc changed*(watcher: OwlFileWatcher): bool =
       if not watcher.notificationThreadStarted and watcher.drainNotifications():
         watcher.pending.store(true, moRelease)
       return watcher.pending.load(moAcquire)
+  elif defined(windows):
+    if watcher.usesFileNotifications():
+      if not watcher.notificationThreadStarted and watcher.drainNotifications():
+        watcher.pending.store(true, moRelease)
+      return watcher.pending.load(moAcquire)
   for path, previous in watcher.files:
     if fileStamp(path) != previous:
       return true
 
 proc refresh*(watcher: OwlFileWatcher) =
   ## Accept every watched file's current state as the new baseline.
-  when defined(linux):
+  when defined(linux) or defined(windows):
     if watcher.usesFileNotifications():
       watcher.pending.store(false, moRelease)
     withLock watcher.lock:
@@ -183,9 +277,9 @@ proc refresh*(watcher: OwlFileWatcher) =
 
 proc notifyChanges*(watcher: OwlFileWatcher,
                     notifier: OwlFileChangeNotifier): bool =
-  ## Arrange for `notifier` to run promptly when Linux reports a watched-file
+  ## Arrange for `notifier` to run promptly when the OS reports a watched-file
   ## change. Returns false when only the polling fallback is available.
-  when defined(linux):
+  when defined(linux) or defined(windows):
     if watcher.usesFileNotifications():
       watcher.notifier = notifier
       if not watcher.notificationThreadStarted:
@@ -217,4 +311,20 @@ proc close*(watcher: OwlFileWatcher) =
     if watcher.stopWrite >= 0:
       discard posix.close(watcher.stopWrite)
       watcher.stopWrite = -1
+    deinitLock(watcher.lock)
+  elif defined(windows):
+    if watcher.closed:
+      return
+    watcher.closed = true
+    if watcher.notificationThreadStarted:
+      discard setEvent(watcher.stopEvent)
+      joinThread(watcher.notificationThread)
+      watcher.notificationThreadStarted = false
+    withLock watcher.lock:
+      for handle in watcher.directories.values:
+        discard findCloseChangeNotification(handle)
+      watcher.directories.clear()
+    if watcher.stopEvent != 0:
+      discard closeHandle(watcher.stopEvent)
+      watcher.stopEvent = 0
     deinitLock(watcher.lock)

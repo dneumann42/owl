@@ -3,7 +3,7 @@ import std/[json, oids, os, streams, tables, times, unittest]
 import data
 import owl/[syntax, values]
 
-when defined(linux):
+when defined(linux) or defined(windows):
   import std/atomics
 
   var fileChangeNotifications: Atomic[int]
@@ -188,8 +188,8 @@ suite "file watching":
     removeFile(path)
     check watcher.changed()
 
-  when defined(linux):
-    test "Linux notifications wake clients without timestamp polling":
+  when defined(linux) or defined(windows):
+    test "native notifications wake clients without timestamp polling":
       let path = getTempDir() / "owl-file-notification-test.owl"
       writeFile(path, "value = 1")
       defer: removeFile(path)
