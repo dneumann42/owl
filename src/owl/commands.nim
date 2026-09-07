@@ -1060,7 +1060,10 @@ proc readCharFrom(file: File): Value {.raises: [EvaluatorError].} =
 proc stdinStream(): Value {.raises: [].} =
   proc readLine(): Value {.raises: [EvaluatorError].} =
     var line: string
-    if readLineFromStdin("", line): text(line) else: nothing()
+    try:
+      if readLineFromStdin("", line): text(line) else: nothing()
+    except IOError as error:
+      raise error.ioError()
 
   result = streamRecord(StreamOps(
     label: "stdin",
@@ -1259,8 +1262,11 @@ stdCommand "repl", "", 0:
   result = nothing()
   while true:
     var line: string
-    if not readLineFromStdin("> ", line):
-      break
+    try:
+      if not readLineFromStdin("> ", line):
+        break
+    except IOError as error:
+      raise error.ioError()
     case line
     of "q", "quit":
       break
