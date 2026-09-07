@@ -245,8 +245,56 @@ proc quote*(value: string): string {.raises: [].} =
   result.add '"'
 
 proc render(
-  node: SyntaxNode, indent: int, statement, bindingValue: bool
+  node: SyntaxNode, indent, column: int,
+  statement, bindingValue, argumentLine: bool
 ): string {.raises: [].}
+
+const FormatLineWidth* = 80
+
+type FlatContext = enum
+  FlatArgument
+  FlatStatement
+  FlatBinding
+  FlatContinuation
+
+proc renderFlat(
+    node: SyntaxNode, context: FlatContext, valid: var bool
+): string {.raises: [].} =
+  ## Render a form only when it has a single-line representation. This small
+  ## probe keeps line-breaking decisions independent of particular commands.
+  case node.kind
+  of Script, Binding:
+    valid = false
+  of Symbol:
+    result.add node.symbol
+  of String:
+    result.add quote(node.stringValue)
+  of Command:
+    if node.layout != NoLayout:
+      valid = false
+      return
+    let needsParens =
+      context == FlatArgument or
+      context == FlatBinding and node.callee.kind == Command or
+      context == FlatContinuation and node.arguments.len == 0
+    if needsParens:
+      result.add '('
+    result.add node.callee.renderFlat(FlatArgument, valid)
+    if not valid:
+      return
+    for argument in node.arguments:
+      result.add ' '
+      result.add argument.renderFlat(FlatArgument, valid)
+      if not valid:
+        return
+    if needsParens:
+      result.add ')'
+
+proc renderFlat(
+    node: SyntaxNode, context = FlatArgument
+): tuple[text: string, valid: bool] =
+  result.valid = true
+  result.text = node.renderFlat(context, result.valid)
 
 proc isClause(node: SyntaxNode): bool {.raises: [].} =
   node.kind == Command and node.callee.kind == Symbol and
@@ -255,9 +303,9 @@ proc isClause(node: SyntaxNode): bool {.raises: [].} =
 proc isBlockStatement(node: SyntaxNode): bool {.raises: [].} =
   case node.kind
   of Command:
-    node.layout != NoLayout
+    node.layout == ColonLayout
   of Binding:
-    node.value.kind == Command and node.value.layout != NoLayout
+    node.value.kind == Command and node.value.layout == ColonLayout
   else:
     false
 
@@ -268,34 +316,59 @@ proc shouldSeparateStatements(left, right: SyntaxNode): bool {.raises: [].} =
     return false
   result = left.isBlockStatement or right.isBlockStatement
 
-proc renderBody(nodes: seq[SyntaxNode], indent: int, separate = true): string {.raises: [].} =
+proc renderBody(
+    nodes: seq[SyntaxNode], indent: int, separate = true,
+    argumentLines = false
+): string {.raises: [].} =
   for index, node in nodes:
     if index > 0:
       result.add '\n'
       if separate and shouldSeparateStatements(nodes[index - 1], node):
         result.add '\n'
-    result.add node.render(indent, statement = true, bindingValue = false)
+    result.add node.render(indent, indent,
+      statement = true, bindingValue = false, argumentLine = argumentLines)
 
-proc renderCommand(node: SyntaxNode, indent: int): string {.raises: [].} =
-  result.add node.callee.render(indent, statement = false, bindingValue = false)
+proc renderCommand(node: SyntaxNode, indent, column: int): string {.raises: [].} =
+  let flatCallee = node.callee.renderFlat()
+  if flatCallee.valid:
+    result.add flatCallee.text
+  else:
+    result.add node.callee.render(indent, column,
+      statement = false, bindingValue = false, argumentLine = false)
 
   case node.layout
   of NoLayout:
     for argument in node.arguments:
-      result.add ' '
-      result.add argument.render(indent, statement = false, bindingValue = false)
+      result.add '\n'
+      result.add argument.render(indent + 2, indent + 2,
+        statement = true, bindingValue = false, argumentLine = true)
   of ColonLayout:
+    var valid = flatCallee.valid
+    var flatHead = flatCallee.text
     for argument in node.arguments:
-      result.add ' '
-      result.add argument.render(indent, statement = false, bindingValue = false)
-    result.add ":\n"
-    result.add renderBody(node.body, indent + 2)
+      let flatArgument = argument.renderFlat()
+      valid = valid and flatArgument.valid
+      flatHead.add ' '
+      flatHead.add flatArgument.text
+    if valid and column + flatHead.len + 1 <= FormatLineWidth:
+      result = flatHead
+      result.add ":\n"
+      result.add renderBody(node.body, indent + 2)
+    else:
+      for argument in node.arguments:
+        result.add '\n'
+        result.add argument.render(indent + 2, indent + 2,
+          statement = true, bindingValue = false, argumentLine = true)
+      result.add ":\n"
+      result.add renderBody(node.body, indent + 4)
   of ContinuationLayout:
     result.add '\n'
-    result.add renderBody(node.arguments, indent + 2, separate = false)
+    result.add renderBody(node.arguments, indent + 2,
+      separate = false, argumentLines = true)
 
 proc render(
-    node: SyntaxNode, indent: int, statement, bindingValue: bool
+    node: SyntaxNode, indent, column: int,
+    statement, bindingValue, argumentLine: bool
 ): string {.raises: [].} =
   if statement:
     result.appendIndent(indent)
@@ -306,23 +379,28 @@ proc render(
   of Binding:
     result.add node.bindingSymbol
     result.add " = "
-    result.add node.value.render(indent, statement = false, bindingValue = true)
+    result.add node.value.render(indent, column + node.bindingSymbol.len + 3,
+      statement = false, bindingValue = true, argumentLine = false)
   of Command:
-    let needsParens =
-      not statement and node.layout == NoLayout and
-      (not bindingValue or node.callee.kind == Command)
-    if needsParens:
-      result.add '('
-    result.add node.renderCommand(indent)
-    if needsParens:
-      result.add ')'
+    let context =
+      if argumentLine: FlatContinuation
+      elif statement: FlatStatement
+      elif bindingValue: FlatBinding
+      else: FlatArgument
+    let flat = node.renderFlat(context)
+    if flat.valid and
+        (node.arguments.len == 0 or column + flat.text.len <= FormatLineWidth):
+      result.add flat.text
+    else:
+      result.add node.renderCommand(indent, column)
   of Symbol:
     result.add node.symbol
   of String:
     result.add quote(node.stringValue)
 
 proc toString*(node: SyntaxNode): string {.raises: [].} =
-  node.render(0, statement = false, bindingValue = false)
+  node.render(0, 0,
+    statement = false, bindingValue = false, argumentLine = false)
 
 proc `$`*(node: SyntaxNode): string {.raises: [].} =
   node.toString()

@@ -1,25 +1,25 @@
 fun repl:
   define:
     running = T
-    history = (list)
-    
+    history = list
+
   fun handle-repl line:
     cond:
       | (= line "q"):
         set running F
       | (= line "quit"):
-	set running F
+        set running F
       | (= line "history"):
-	write-line stdout history
+        write-line stdout history
       | T:
-	write-line stdout (eval (parse line))
+        write-line stdout (eval (parse line))
 
   while running:
     write stdout "> "
 
     define:
-      line = (read-line stdin)
-      
-    handle-repl line
-repl
+      line = read-line stdin
 
+    handle-repl line
+
+repl

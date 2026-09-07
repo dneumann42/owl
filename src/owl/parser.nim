@@ -345,18 +345,56 @@ proc parseIndentedBody(
   result = parser.parseStatementList({Dedent})
   discard parser.expect(Dedent, "expected end of indented body")
 
-proc parseIndentedArguments(
+proc parseLayoutBody(
     parser: var Parser
 ): seq[SyntaxNode] {.raises: [ParserError].} =
+  ## A colon body is either the usual indented suite or comma-separated forms
+  ## through the end of its current line.
+  if parser.at(Newline):
+    return parser.parseIndentedBody()
+  if not parser.startsPrimary:
+    parser.fail("expected block body")
+  result.add parser.parseForm()
+  while parser.at(Comma):
+    discard parser.take()
+    result.add parser.parseForm()
+  parser.endStatement("expected newline after inline block")
+
+proc parseIndentedArguments(
+    parser: var Parser
+): tuple[arguments, body: seq[SyntaxNode], hasBlock: bool] {.raises: [ParserError].} =
   discard parser.expect(Newline, "expected newline before indented arguments")
   discard parser.expect(Indent, "expected indented arguments")
   while not parser.at(Dedent):
     if parser.at(Newline):
       discard parser.take()
       continue
-    result.add parser.parseArgument(inSuite = true)
-    while parser.startsPrimary:
-      result.add parser.parseArgument(inSuite = true)
+    var item = parser.parseArgument(inSuite = true)
+    if item.kind == Command and item.layout != NoLayout:
+      result.arguments.add item
+      continue
+    let startsLineCommand =
+      item.kind == Command or
+      item.kind == Symbol and not item.symbol.isNumericSymbol
+    if parser.startsPrimary and startsLineCommand:
+      var arguments: seq[SyntaxNode]
+      while parser.startsPrimary:
+        arguments.add parser.parseArgument(inSuite = false)
+      item = command(item, arguments, item.pos)
+      result.arguments.add item
+    else:
+      result.arguments.add item
+      while parser.startsPrimary:
+        result.arguments.add parser.parseArgument(inSuite = false)
+    if parser.at(Colon):
+      discard parser.take()
+      if item.kind == Command and item.arguments.len > 0:
+        if not item.attachLayout(ColonLayout, parser.parseLayoutBody()):
+          parser.fail("layout can only be attached to a command")
+        continue
+      result.body = parser.parseLayoutBody()
+      result.hasBlock = true
+      break
     parser.endStatement("expected newline after argument")
   discard parser.expect(Dedent, "expected end of indented arguments")
 
@@ -367,9 +405,17 @@ proc attachLayoutTail(
   let (layout, body) =
     if parser.at(Colon):
       discard parser.take()
-      (ColonLayout, parser.parseIndentedBody())
+      (ColonLayout, parser.parseLayoutBody())
     else:
-      (ContinuationLayout, parser.parseIndentedArguments())
+      let continuation = parser.parseIndentedArguments()
+      if continuation.hasBlock:
+        if node.kind == Symbol:
+          node = command(node, @[], node.pos)
+        if not node.attachLayout(ContinuationLayout, continuation.arguments) or
+            not node.attachLayout(ColonLayout, continuation.body):
+          parser.fail("layout can only be attached to a command")
+        return
+      (ContinuationLayout, continuation.arguments)
   if node.kind == Symbol:
     node = command(node, @[], node.pos)
   if not node.attachLayout(layout, body):
@@ -440,16 +486,18 @@ proc parseArgument(
     parser: var Parser, inSuite: bool
 ): SyntaxNode {.raises: [ParserError].} =
   ## `inSuite` marks an argument written on its own line inside a continuation
-  ## block, where any argument may open a layout body.
+  ## block, where following indentation may supply its arguments.
   ##
   ## On a command line the colon is resolved lexically instead: an
   ## identifier-like or numeric argument leaves it to the enclosing command, so
   ## `if condition:` keeps its block form, while an operator-like one such as
-  ## `[]` takes it as its own layout.
+  ## `[]` takes it as its own layout. The same colon rule applies to the last
+  ## line of a continuation header.
   result = parser.parsePrimary()
   let takesLayout =
     if inSuite:
-      parser.at(Colon) or parser.startsSuite
+      parser.startsSuite or
+        parser.at(Colon) and result.kind == Symbol and result.symbol.isOperatorSymbol
     else:
       parser.at(Colon) and result.kind == Symbol and result.symbol.isOperatorSymbol
   if takesLayout:

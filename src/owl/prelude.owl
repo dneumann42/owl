@@ -4,38 +4,34 @@
 fun not value:
   pick value false true
 
-; --- if / else -------------------------------------------------------------
-; `if` and `else` are two statements, so `if` leaves its condition and result
-; where a following `else` can find them. The results form a stack, which is
-; what keeps nested pairs independent: an inner pair pushes and pops entirely
-; inside the outer `if` body.
-
 command-define:
-  condition-results = (list)
+  condition-results = list
 
 block-command if condition:
   define:
-    result = (eval condition)
-    then-result = (pick result (eval block) nothing)
-  set condition-results (cons (cons result (cons then-result (list))) condition-results)
+    result = eval condition
+    then-result = pick result (eval block) nothing
+
+  set
+    condition-results
+    cons (cons result (cons then-result (list))) condition-results
   then-result
 
 fun take-condition-result:
   define:
-    frame = (first condition-results)
+    frame = first condition-results
+
   set condition-results (rest condition-results)
   frame
 
 fun else-value frame else-block:
-  ; The `if` already ran, so reuse its value; otherwise run the `else` body.
   pick (first frame) (first (rest frame)) (eval else-block)
 
 block-command else:
-  pick (empty? condition-results)
-    (eval block)
-    (else-value (take-condition-result) block)
-
-; --- literals --------------------------------------------------------------
+  pick
+    empty? condition-results
+    eval block
+    else-value (take-condition-result) block
 
 block-command ([]):
   list-from (statements block)
@@ -45,8 +41,6 @@ block-command ({}):
 
 block-command (do):
   eval block
-
-; --- records ---------------------------------------------------------------
 
 fun record-fields nodes:
   if (empty? nodes):
@@ -62,63 +56,61 @@ fun record-defaults nodes:
 
 block-command record name:
   define:
-    record-name = (symbol-text name)
-    fields = (statements block)
-    field-names = (record-fields fields)
-  define-caller-value name
-    (record-constructor record-name field-names (record-defaults fields))
-  define-caller-value (concat record-name "?")
-    (record-predicate record-name field-names)
+    record-name = symbol-text name
+    fields = statements block
+    field-names = record-fields fields
 
-; --- streams ---------------------------------------------------------------
-; `Stream` is the interface every stream answers to. Fields left unsupported
-; stay present and fail when they are called, so a stream is always a whole
-; record.
+  define-caller-value
+    name
+    record-constructor record-name field-names (record-defaults fields)
+  define-caller-value
+    concat record-name "?"
+    record-predicate record-name field-names
 
 fun unsupported-stream-operation:
   error "unsupported stream operation"
 
 record Stream:
-  open = (value-of unsupported-stream-operation)
-  close = (value-of unsupported-stream-operation)
-  read = (value-of unsupported-stream-operation)
-  read-line = (value-of unsupported-stream-operation)
-  read-all = (value-of unsupported-stream-operation)
-  write = (value-of unsupported-stream-operation)
-  write-line = (value-of unsupported-stream-operation)
+  open = value-of unsupported-stream-operation
+  close = value-of unsupported-stream-operation
+  read = value-of unsupported-stream-operation
+  read-line = value-of unsupported-stream-operation
+  read-all = value-of unsupported-stream-operation
+  write = value-of unsupported-stream-operation
+  write-line = value-of unsupported-stream-operation
 
 fun close stream:
-  call stream.close
+  call (field stream "close")
 
 fun read stream:
-  call stream.read
+  call (field stream "read")
 
 fun read-line stream:
-  call stream.read-line
+  call (field stream "read-line")
 
 fun read-all stream:
-  call stream.read-all
+  call (field stream "read-all")
 
 fun write stream value:
-  call stream.write value
+  call (field stream "write") value
 
 fun write-line stream value:
-  call stream.write-line value
-
-; --- cond ------------------------------------------------------------------
+  call (field stream "write-line") value
 
 fun cond-from clauses:
   if (empty? clauses):
     nothing
   else:
     define:
-      clause = (first clauses)
-      clause-symbol = (command-symbol clause)
+      clause = first clauses
+      clause-symbol = command-symbol clause
+
     if (= clause-symbol "else"):
       eval (command-body clause)
     else:
       when (not (or (= clause-symbol "when") (= clause-symbol "|"))):
         error "cond expects when, |, or else"
+
       if (eval (command-arg clause 0)):
         eval (command-body clause)
       else:
@@ -127,76 +119,84 @@ fun cond-from clauses:
 block-command cond:
   cond-from (statements block)
 
-; --- iterators -------------------------------------------------------------
-; An iterator is a command that answers the next value, or `nothing` once it
-; is spent. `for` and `for-each` drive anything shaped that way.
-
 fun range start stop:
   define:
     current = start
+
   fun next:
     if (< current stop):
       define:
         value = current
+
       += current 1
       value
     else:
       nothing
+
   value-of next
 
 fun countdown start stop:
   define:
     current = start
+
   fun next:
     if (> current stop):
       define:
         value = current
+
       -= current 1
       value
     else:
       nothing
+
   value-of next
 
 fun iter values:
   define:
     index = 0
-    count = (length values)
+    count = length values
+
   fun next:
     if (< index count):
       define:
-        value = (nth values index)
+        value = nth values index
+
       += index 1
       value
     else:
       nothing
+
   value-of next
 
 fun once value:
   define:
     pending = true
+
   fun next:
     if pending:
       set pending false
       value
     else:
       nothing
+
   value-of next
 
 fun for-each item iterator body:
   define:
-    value = (iterator)
+    value = iterator
     result = nothing
+
   while (not (= value nothing)):
     set result (eval-with item value body)
     set value (iterator)
+
   result
 
 block-command for item iterator:
   for-each item (eval iterator) block
 
-; --- misc ------------------------------------------------------------------
-
 fun assert condition:
   when (not condition):
     error "assertion failed"
+
   condition

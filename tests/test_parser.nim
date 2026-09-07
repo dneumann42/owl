@@ -81,6 +81,58 @@ writeLine
     check call.arguments[0].kind == String
     check call.arguments[1].symbol == "stdout"
 
+  test "parses a block call with a continued header":
+    let tree = parse("""
+combobox
+  sessionSelectID
+  sessionIndex
+  sessionOptions:
+    label "Session"
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "combobox"
+    check call.layout == ColonLayout
+    check call.arguments.len == 3
+    check call.arguments[2].symbol == "sessionOptions"
+    check call.body[0].callee.symbol == "label"
+
+  test "parses inline block commands as continuation arguments":
+    let source = """
+define:
+  xs = map
+    fn x: + x x
+    []: 1, 2, 3, 4, 5
+"""
+    let mapCall = parse(source).statements[0].body[0].value
+    check mapCall.callee.symbol == "map"
+    check mapCall.arguments.len == 2
+
+    let lambda = mapCall.arguments[0]
+    check lambda.callee.symbol == "fn"
+    check lambda.arguments[0].symbol == "x"
+    check lambda.layout == ColonLayout
+    check lambda.body[0].callee.symbol == "+"
+    check lambda.body[0].arguments.len == 2
+
+    let values = mapCall.arguments[1]
+    check values.callee.symbol == "[]"
+    check values.layout == ColonLayout
+    check values.body.len == 5
+
+    let formatted = $parse(source)
+    check formatted == """
+define:
+  xs = map
+    fn x:
+      + x x
+    []:
+      1
+      2
+      3
+      4
+      5"""
+    check $parse(formatted) == formatted
+
   test "attaches binding layout to the right hand side command":
     let tree = parse("""
 pos = Vec3:
@@ -428,6 +480,69 @@ pos = Vec3:
   x = 1
   y = 2"""
     check $parse("(factory maker) arg\n") == "(factory maker) arg"
+
+  test "wraps long calls and block-call headers":
+    let longCall = """
+set opencodeHistory (string opencodeHistory (pick (= opencodeHistory "") "" "\n") (pick (= opencodePrompt "") "" (string "> " opencodePrompt (pick (= opencodeResponse "") "" (string "\n\n" opencodeResponse)))))
+"""
+    check $parse(longCall) == """
+set
+  opencodeHistory
+  string
+    opencodeHistory
+    pick (= opencodeHistory "") "" "\n"
+    pick
+      = opencodePrompt ""
+      ""
+      string
+        "> "
+        opencodePrompt
+        pick (= opencodeResponse "") "" (string "\n\n" opencodeResponse)"""
+    let formattedLongCall = $parse(longCall)
+    check $parse(formattedLongCall) == formattedLongCall
+    let formattedSet = parse(formattedLongCall).statements[0]
+    check formattedSet.arguments.len == 2
+    check formattedSet.arguments[1].callee.symbol == "string"
+    check formattedSet.arguments[1].arguments.len == 3
+    check formattedSet.arguments[1].arguments[2].callee.symbol == "pick"
+
+    let blockCall = """
+outer:
+  middle:
+    inner:
+      combobox opencodeSessionSelectID opencodeSessionIndex opencodeSessionOptions:
+        label "Session"
+"""
+    check $parse(blockCall) ==
+      "outer:\n" &
+      "  middle:\n" &
+      "    inner:\n" &
+      "      combobox\n" &
+      "        opencodeSessionSelectID\n" &
+      "        opencodeSessionIndex\n" &
+      "        opencodeSessionOptions:\n" &
+      "          label \"Session\""
+
+    let formatted = $parse(blockCall)
+    check $parse(formatted) == formatted
+
+  test "omits redundant parentheses on continuation commands":
+    let source = """
+block-command else:
+  pick
+    (empty? condition-results)
+    (eval block)
+    (else-value (take-condition-result) block)
+"""
+    let formatted = $parse(source)
+    check formatted == """
+block-command else:
+  pick
+    empty? condition-results
+    eval block
+    else-value (take-condition-result) block"""
+    check $parse(formatted) == formatted
+    check $parse("outer\n  (next)\n") == "outer\n  (next)"
 
   test "formatted output parses back to the same form":
     let source = """

@@ -12,7 +12,11 @@ when (= cmds.[0] "--eval"):
   exit 0
 
 when (= cmds.[0] "--format"):
-  eval-file cmds.[1]
+  when (< (length cmds) 2):
+    write-line stdout "usage: owl --format <path>"
+    exit 2
+  with (open-file cmds.[1] "rb") input:
+    print (parse (read-all input))
   exit 0
 
 when (= cmds.[0] "--std"):
@@ -21,7 +25,7 @@ when (= cmds.[0] "--std"):
   exit 0
 
 when (or (not (= cmds.[0] "run")) (< (length cmds) 2)):
-  write-line stdout "usage: owl [--eval <source>|run <path>]"
+  write-line stdout "usage: owl [--eval <source>|--format <path>|run <path>]"
   exit 2
 
 when true:

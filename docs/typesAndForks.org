@@ -1,6 +1,6 @@
 #+TITLE: Error handling in Owl
 
-#+begin_src nest
+#+begin_src owl
 ;; In nest, we care about what we can do with a thing, not what things are
 ;; We don't say that a thing is a Dividable, but is Dividable, behavior over identity
 type Dividable A:
@@ -35,7 +35,7 @@ fun caller:
 
 Form example
 
-#+begin_src nest
+#+begin_src owl
 record-type FormState:
   dateFormat = <String>
   age = <Number>
@@ -79,4 +79,21 @@ define:
 ;; Forking after the block executes, will implicitly exit the program
 ;; You must do something to keep the execution moving.
 print "Hello!"
+#+end_src
+
+Error handling
+
+#+begin_src owl
+
+fun callme x:
+  if (= (% 2 x) 0):
+    raise +error "Error \(x)"
+  else:
+    raise +warn "Warn \(x)"
+
+callme 10
+on +error e: raise +error "Pass \(e)"
+
+callme 9
+on +error e: raise +error "Pass \(e)"
 #+end_src

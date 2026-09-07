@@ -48,9 +48,16 @@ script          = stmts, EOF .
 stmts           = { NL | stmt } .
 stmt            = form, (layout_tail | { ",", form }, END) .
 
-layout_tail     = ":", suite | argument_block .
+layout_tail     = ":", block | argument_block .
+block           = suite | inline_suite .
 suite           = NL, INDENT, stmts, DEDENT .
-argument_block  = NL, INDENT, { NL | argument_item, { argument_item }, END }, DEDENT .
+inline_suite    = form, { ",", form }, END .
+argument_block  = NL, INDENT, argument_lines, [ ":", block ], DEDENT .
+argument_lines  = { NL }, argument_line,
+                  { END, { NL }, argument_line }, [ END ] .
+argument_line   = continued_command | argument_item, { argument_item } .
+continued_command
+                = callee, inline_argument, { inline_argument }, [ ":", block ] .
 
 form            = binding | expr .
 binding         = atom, "=", (expr | suite) .
@@ -116,7 +123,33 @@ define:
 
 A comma separates forms on one line, so ~1, 2, 3~ is three statements.
 
-When a colon follows an argument on the same line, the argument's token class determines which command the colon belongs to. After an identifier-like or numeric argument the colon belongs to the enclosing command, which is why =if condition:= and =block-command name:= keep their blocks. After an =operator_symbol= the colon belongs to that argument, so =print []:= is a call to =print= with one argument: the =[]= command with a block. Parenthesizing the operator symbol gives the colon back to the enclosing command, as in =block-command ([]):=.
+An indented argument header may end in a colon, allowing a block call itself to have a long argument list:
+
+#+begin_src owl
+combobox
+  sessionSelectID
+  sessionIndex
+  sessionOptions:
+    label "Session"
+#+end_src
+
+The block is indented relative to the continued arguments. When a colon follows an argument, whether inline or on the last line of a continued header, the argument's token class determines which command owns it. After an identifier-like or numeric argument the colon belongs to the enclosing command, which is why =if condition:= and the =combobox= example keep their blocks. After an =operator_symbol= the colon belongs to that argument, so =print []:= is a call to =print= with one argument: the =[]= command with a block. Parenthesizing the operator symbol gives the colon back to the enclosing command, as in =block-command ([]):=.
+
+A continued line beginning with an identifier-like or operator callee and followed by arguments is one nested command expression through the end of that line. Its colon body may be written inline; commas separate multiple forms in that body. This makes short anonymous commands and collections usable as unparenthesized arguments:
+
+#+begin_src owl
+define:
+  xs = map
+    fn x: + x x
+    []: 1, 2, 3, 4, 5
+#+end_src
+
+The two arguments to =map= are the =fn= command and the =[]= command, not the individual tokens on their lines. The formatter may expand the same form to indented colon bodies. A line beginning with a string or number retains the ordinary rule in which its primary forms are separate arguments, so continuation data such as ~1 2 3~ remains concise.
+
+** Formatting
+The canonical formatter keeps a form on one line when it fits within 80 columns. A longer call is written as a continuation: its callee remains on the current line, each argument moves to an indented line, and nested calls are broken recursively. Commands on continuation lines omit parentheses because the newline terminates their expression. A zero-argument call retains parentheses to distinguish calling it from passing the command value. A long colon-block header uses the continued-header form above. Formatting does not depend on command names and preserves call and argument nesting; a wrapped call acquires =ContinuationLayout= as required by its written form.
+
+=owl --format path= writes the canonical form of an Owl source file to standard output.
 
 ** Selectors
 The [[term-parser][parser]] turns a selector into a call. =a.b= parses as =field a "b"=, and =a.[k]= parses as =index a k=. Selectors chain, so =a.b.c= and =a.[+ 1 2].d= produce nested calls to those same two commands. =set= treats a selector as an assignment target; see [[*Environments And Assignment][Environments And Assignment]].

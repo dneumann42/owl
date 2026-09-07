@@ -1,0 +1,38 @@
+#+TITLE: Typesystem
+
+#+begin_src owl
+fun factorial'Int n'Int:
+  if (< n 2):
+    1
+  else:
+    ,* n factorial (- n 1)
+
+fun'a fact'a n'a:
+  if (< n 2):
+    1
+  else:
+    ,* n factorial (- n 1)
+
+fun'a'b map'a f'(a b) xs'[a]:
+  if (> (length xs) 0):
+    listAppend
+      f xs.[0]
+      map f (rest xs)
+  else:
+    list
+
+define:
+  xs = map
+    fn x: + x x
+    []: 1, 2, 3, 4, 5
+
+  dic'{String Int} = {}:
+    a = 100
+    b = 200
+
+  dic'{String Int} = {}:
+    a = 100
+    b = 200
+
+print xs
+#+end_src
