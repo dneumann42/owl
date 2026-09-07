@@ -85,6 +85,9 @@ proc tokenize*(
     parenIndents: seq[int]
     atLineStart = true
     pendingIndent = 0
+    previousLineWasPipe = false
+    currentLineIsPipe = false
+    havePreviousContentLine = false
     i = 0
     line = 1
     column = 1
@@ -95,8 +98,64 @@ proc tokenize*(
 
   template emitPendingIndent() =
     if atLineStart:
+      let lineIsPipe =
+        source[i] == '|' and
+        (i + 1 >= source.len or source[i + 1] in {' ', '\t', '\r', '\n', ':'})
+      # When a continued header's body returns to the continuation's first
+      # column, the trailing colon belongs to the outer command. Move it past
+      # the continuation dedents so the parser sees `arguments DEDENT :` and
+      # can attach the body at that outer level.
+      if not lineIsPipe and not previousLineWasPipe and result.len >= 2 and
+          result[^1].kind == Newline and result[^2].kind == Colon and
+          pendingIndent <= indents[^1]:
+        let
+          newlineToken = result.pop()
+          colonToken = result.pop()
+        while indents.len > 1 and pendingIndent <= indents[^1]:
+          discard indents.pop()
+          result.add(Dedent, "", line, 1)
+        result.add colonToken
+        result.add newlineToken
       let current = indents[^1]
-      if pendingIndent > current:
+      if lineIsPipe:
+        # A leading `|` may hang in the column of the command whose suite it
+        # belongs to.  Keep the nearest already-open child level anchored at
+        # that column when a nested clause has just ended.  Immediately after
+        # a colon, create that child level even though its physical column did
+        # not increase.  In every other case `|` remains an ordinary sibling
+        # (notably, the `|` following an `if`).
+        var anchored = -1
+        for level in countdown(indents.high, 1):
+          if indents[level - 1] == pendingIndent:
+            anchored = level
+            break
+        if anchored >= 0 and indents.high > anchored:
+          while indents.high > anchored:
+            discard indents.pop()
+            result.add(Dedent, "", line, 1)
+        elif result.len >= 2 and result[^1].kind == Newline and
+            result[^2].kind == Colon and pendingIndent == current:
+          indents.add pendingIndent
+          result.add(Indent, "", line, 1)
+        elif anchored < 0 and havePreviousContentLine and
+            pendingIndent == current:
+          # With no suite open yet, the pipe can start the continuation of a
+          # regular call at the call's own physical indentation.
+          indents.add pendingIndent
+          result.add(Indent, "", line, 1)
+        else:
+          while indents.len > 1 and pendingIndent < indents[^1]:
+            discard indents.pop()
+            result.add(Dedent, "", line, 1)
+          if pendingIndent != indents[^1]:
+            fail("inconsistent indentation", sourceId, line, 1)
+      elif previousLineWasPipe and pendingIndent == current:
+        # The hanging pipe occupies the open suite's logical indentation, so
+        # a conventionally indented following line is one level below it even
+        # when both levels use the same physical column.
+        indents.add pendingIndent
+        result.add(Indent, "", line, 1)
+      elif pendingIndent > current:
         indents.add pendingIndent
         result.add(Indent, "", line, 1)
       elif pendingIndent < current:
@@ -106,6 +165,7 @@ proc tokenize*(
         if pendingIndent != indents[^1]:
           fail("inconsistent indentation", sourceId, line, 1)
       atLineStart = false
+      currentLineIsPipe = lineIsPipe
 
   while i < source.len:
     let c = source[i]
@@ -135,6 +195,8 @@ proc tokenize*(
       advance()
     of '\r', '\n':
       result.add(Newline, "", line, column)
+      previousLineWasPipe = currentLineIsPipe
+      havePreviousContentLine = true
       if c == '\r' and i + 1 < source.len and source[i + 1] == '\n':
         inc i
       inc i
@@ -413,6 +475,14 @@ proc attachLayoutTail(
           node = command(node, @[], node.pos)
         if not node.attachLayout(ContinuationLayout, continuation.arguments) or
             not node.attachLayout(ColonLayout, continuation.body):
+          parser.fail("layout can only be attached to a command")
+        return
+      if parser.at(Colon):
+        discard parser.take()
+        if node.kind == Symbol:
+          node = command(node, @[], node.pos)
+        if not node.attachLayout(ContinuationLayout, continuation.arguments) or
+            not node.attachLayout(ColonLayout, parser.parseLayoutBody()):
           parser.fail("layout can only be attached to a command")
         return
       (ContinuationLayout, continuation.arguments)

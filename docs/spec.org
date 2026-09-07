@@ -42,6 +42,18 @@ The [[term-lexer][lexer]] converts source text into tokens. It drops horizontal 
 
 Dedenting to a column that does not match an enclosing indentation level is an error. A =)= closes any indentation opened after its =(=, so a group can be closed on the last line of its own indented block.
 
+A line-leading =|= is a hanging indentation marker as well as an ordinary command symbol. It may be written in the same column as the command whose block or continuation contains it. Lines belonging to that =|= command use the ordinary indentation columns:
+
+#+begin_src owl
+choose
+| first:
+  "one"
+| second:
+  "two"
+#+end_src
+
+This rule is structural and does not depend on command names. A =|= following a completed block at the same level remains a sibling, which allows commands such as =if= to give it clause semantics.
+
 ** Grammar
 #+begin_src ebnf
 script          = stmts, EOF .
@@ -133,7 +145,7 @@ combobox
     label "Session"
 #+end_src
 
-The block is indented relative to the continued arguments. When a colon follows an argument, whether inline or on the last line of a continued header, the argument's token class determines which command owns it. After an identifier-like or numeric argument the colon belongs to the enclosing command, which is why =if condition:= and the =combobox= example keep their blocks. After an =operator_symbol= the colon belongs to that argument, so =print []:= is a call to =print= with one argument: the =[]= command with a block. Parenthesizing the operator symbol gives the colon back to the enclosing command, as in =block-command ([]):=.
+The block aligns with the first continued argument. When a colon follows an argument, whether inline or on the last line of a continued header, the argument's token class determines which command owns it. After an identifier-like or numeric argument the colon belongs to the enclosing command, which is why =if condition:= and the =combobox= example keep their blocks. After an =operator_symbol= the colon belongs to that argument, so =print []:= is a call to =print= with one argument: the =[]= command with a block. Parenthesizing the operator symbol gives the colon back to the enclosing command, as in =block-command ([]):=.
 
 A continued line beginning with an identifier-like or operator callee and followed by arguments is one nested command expression through the end of that line. Its colon body may be written inline; commas separate multiple forms in that body. This makes short anonymous commands and collections usable as unparenthesized arguments:
 
@@ -428,12 +440,14 @@ The =owl/cli.owl= frames come from the command-line driver, which is itself writ
 
 =and= evaluates its arguments left to right and returns the first [[term-truthiness][falsey]] one, or the last one if all of them are truthy; with no arguments it returns =true=. =or= returns the first truthy argument, or the last one if none are; with no arguments it returns =false=.
 
-=if condition:= and a following =else:= are expressions. =if= returns its block's value when the condition is truthy. =else= returns the =if='s value if the condition was truthy, and otherwise evaluates and returns its own block. The pair can be parenthesized wherever one expression is required:
+=if condition:=, zero or more following =| condition:= clauses, and a following =else:= are expressions. Each =|= acts as an elif: its condition is evaluated only when no earlier branch matched. =else= returns the matched branch's value, or evaluates its own block when none matched. The chain can be parenthesized wherever one expression is required:
 
 #+begin_src owl
 define:
   answer = (if ready:
     "yes"
+  | almost-ready:
+    "soon"
   else:
     "no"
   )
@@ -446,10 +460,10 @@ define:
   size = (cond:
     when (< x 2):
       "small"
-    | (< x 10):
-      "medium"
-    else:
-      "large"
+  | (< x 10):
+    "medium"
+  | T:
+    "large"
   )
 #+end_src
 

@@ -33,6 +33,22 @@ block-command else:
     eval block
     else-value (take-condition-result) block
 
+; A pipe following an if is an elif.  Keep the same condition frame so a
+; successful earlier branch suppresses every later pipe and the final else.
+
+block-command (|) condition:
+  define:
+    frame = take-condition-result
+    matched = first frame
+    previous = first (rest frame)
+    result = pick matched true (eval condition)
+    branch-result = pick matched previous (pick result (eval block) nothing)
+
+  set
+    condition-results
+    cons (cons result (cons branch-result (list))) condition-results
+  branch-result
+
 block-command ([]):
   list-from (statements block)
 

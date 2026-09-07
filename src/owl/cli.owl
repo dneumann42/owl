@@ -1,33 +1,37 @@
 define:
-  cmds = (command-line-arguments)
+  cmds = command-line-arguments
 
 when (= (length cmds) 0):
   repl
 
-when (= cmds.[0] "--eval"):
+when (= (index cmds (0)) "--eval"):
   when (< (length cmds) 2):
     write-line stdout "usage: owl --eval <source>"
     exit 2
-  eval-source cmds.[1]
+
+  eval-source (index cmds (1))
   exit 0
 
-when (= cmds.[0] "--format"):
+when (= (index cmds (0)) "--format"):
   when (< (length cmds) 2):
     write-line stdout "usage: owl --format <path>"
     exit 2
-  with (open-file cmds.[1] "rb") input:
+
+  with (open-file (index cmds (1)) "rb") input:
     print (parse (read-all input))
+
   exit 0
 
-when (= cmds.[0] "--std"):
+when (= (index cmds (0)) "--std"):
   for entry (iter (standard-commands)):
     write-line stdout entry
+
   exit 0
 
-when (or (not (= cmds.[0] "run")) (< (length cmds) 2)):
+when (or (not (= (index cmds (0)) "run")) (< (length cmds) 2)):
   write-line stdout "usage: owl [--eval <source>|--format <path>|run <path>]"
   exit 2
 
 when true:
-  eval-file cmds.[1]
+  eval-file (index cmds (1))
   exit 0

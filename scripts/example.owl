@@ -7,7 +7,6 @@ define:
 if (empty? xs):
   print "xs empty, ys not"
 
-print "TEST"  
-
+print "TEST"
 else:
   print "xs not empty"

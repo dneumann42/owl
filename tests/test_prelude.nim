@@ -322,8 +322,14 @@ cond:
     checkText("""cond:
   when false:
     "no"
-  | T:
-    "fallback"
+| T:
+  "fallback"
+""", "fallback")
+    checkText("""cond:
+| false:
+  "no"
+| T:
+  "fallback"
 """, "fallback")
     checkText("""cond:
   when false:
@@ -341,6 +347,37 @@ cond:
       discard run("""cond:
   bad
 """)
+
+  test "pipe acts as elif after if":
+    checkText("""if false:
+  "no"
+| true:
+  "yes"
+else:
+  "fallback"
+""", "yes")
+    checkText("""if true:
+  "first"
+| true:
+  "second"
+else:
+  "fallback"
+""", "first")
+    checkText("""if false:
+  "first"
+| false:
+  "second"
+else:
+  "fallback"
+""", "fallback")
+    checkNumber("""+ (if false:
+  0
+| true:
+  40
+else:
+  1
+) 2
+""", 42)
 
   test "nth indexes into a list":
     checkNumber("""define:

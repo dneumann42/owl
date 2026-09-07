@@ -325,7 +325,13 @@ proc renderBody(
       result.add '\n'
       if separate and shouldSeparateStatements(nodes[index - 1], node):
         result.add '\n'
-    result.add node.render(indent, indent,
+    let nodeIndent =
+      if node.kind == Command and node.callee.kind == Symbol and
+          node.callee.symbol == "|":
+        max(indent - 2, 0)
+      else:
+        indent
+    result.add node.render(nodeIndent, nodeIndent,
       statement = true, bindingValue = false, argumentLine = argumentLines)
 
 proc renderCommand(node: SyntaxNode, indent, column: int): string {.raises: [].} =
@@ -360,7 +366,7 @@ proc renderCommand(node: SyntaxNode, indent, column: int): string {.raises: [].}
         result.add argument.render(indent + 2, indent + 2,
           statement = true, bindingValue = false, argumentLine = true)
       result.add ":\n"
-      result.add renderBody(node.body, indent + 4)
+      result.add renderBody(node.body, indent + 2)
   of ContinuationLayout:
     result.add '\n'
     result.add renderBody(node.arguments, indent + 2,

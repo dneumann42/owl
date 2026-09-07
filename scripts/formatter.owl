@@ -8,8 +8,9 @@ when (= (length args) 0):
   usage
   exit
 
-with (open-file args.[0] "rb") in-file:
+with (open-file (index args (0)) "rb") in-file:
   define:
-    content = (read-all in-file)
+    content = read-all in-file
     ast = parse content
+
   print ast

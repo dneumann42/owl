@@ -68,6 +68,56 @@ define:
     check define.body[1].value.callee.symbol == "+"
     check define.body[1].value.arguments[1].symbol == "1"
 
+  test "a hanging pipe stays in the enclosing block":
+    let tree = parse("""cond:
+  when false:
+    "no"
+| true:
+  "yes"
+""")
+    let cond = tree.statements[0]
+    check cond.body.len == 2
+    check cond.body[1].callee.symbol == "|"
+    check cond.body[1].body[0].stringValue == "yes"
+    check $tree == "cond:\n  when false:\n    \"no\"\n| true:\n  \"yes\""
+    check $parse($tree) == $tree
+
+  test "a hanging pipe can be the first block item":
+    let tree = parse("""codeblock:
+| first:
+  one
+| second:
+  two
+""")
+    let body = tree.statements[0].body
+    check body.len == 2
+    check body[0].callee.symbol == "|"
+    check body[1].callee.symbol == "|"
+
+  test "a pipe beside if remains its following sibling":
+    let tree = parse("""if false:
+  "no"
+| true:
+  "yes"
+""")
+    check tree.statements.len == 2
+    check tree.statements[0].callee.symbol == "if"
+    check tree.statements[1].callee.symbol == "|"
+
+  test "a hanging pipe starts a regular call continuation":
+    let tree = parse("""choose
+| first:
+  one
+| second:
+  two
+""")
+    let call = tree.statements[0]
+    check call.callee.symbol == "choose"
+    check call.layout == ContinuationLayout
+    check call.arguments.len == 2
+    check call.arguments[0].callee.symbol == "|"
+    check call.arguments[1].callee.symbol == "|"
+
   test "parses indentation continuations":
     let tree = parse("""
 writeLine
@@ -95,6 +145,10 @@ combobox
     check call.arguments.len == 3
     check call.arguments[2].symbol == "sessionOptions"
     check call.body[0].callee.symbol == "label"
+
+    let formatted = $tree
+    check formatted == "combobox sessionSelectID sessionIndex sessionOptions:\n  label \"Session\""
+    check $parse(formatted) == formatted
 
   test "parses inline block commands as continuation arguments":
     let source = """
@@ -521,9 +575,21 @@ outer:
       "        opencodeSessionSelectID\n" &
       "        opencodeSessionIndex\n" &
       "        opencodeSessionOptions:\n" &
-      "          label \"Session\""
+      "        label \"Session\""
 
     let formatted = $parse(blockCall)
+    check $parse(formatted) == formatted
+
+  test "aligns a deeply continued block body with its first argument":
+    let source = """when (and (= (dict-get (dict-get tree "first") "kind") "leaf") (= (dict-get (dict-get tree "first") "id") target)):
+  clonePaneTree (dict-get tree "second")
+"""
+    let formatted = $parse(source)
+    check formatted == """when
+  and
+    = (dict-get (dict-get tree "first") "kind") "leaf"
+    = (dict-get (dict-get tree "first") "id") target:
+  clonePaneTree (dict-get tree "second")"""
     check $parse(formatted) == formatted
 
   test "omits redundant parentheses on continuation commands":
