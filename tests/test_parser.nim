@@ -78,6 +78,7 @@ define:
     let cond = tree.statements[0]
     check cond.body.len == 2
     check cond.body[1].callee.symbol == "|"
+    check cond.body[1].hangingPipe
     check cond.body[1].body[0].stringValue == "yes"
     check $tree == "cond:\n  when false:\n    \"no\"\n| true:\n  \"yes\""
     check $parse($tree) == $tree
@@ -103,6 +104,29 @@ define:
     check tree.statements.len == 2
     check tree.statements[0].callee.symbol == "if"
     check tree.statements[1].callee.symbol == "|"
+    check not tree.statements[1].hangingPipe
+
+  test "formatter keeps nested elif pipes aligned with if":
+    let source = """outer:
+  before
+  if false:
+    no
+  | false:
+    still-no
+  | T:
+    yes
+"""
+    let formatted = $parse(source)
+    check formatted == """outer:
+  before
+
+  if false:
+    no
+  | false:
+    still-no
+  | T:
+    yes"""
+    check $parse(formatted) == formatted
 
   test "a hanging pipe starts a regular call continuation":
     let tree = parse("""choose

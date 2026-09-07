@@ -379,6 +379,12 @@ else:
 ) 2
 """, 42)
 
+  test "standalone pipe is rejected":
+    expect EvaluatorError:
+      discard run("""| true:
+  "not a top-level clause"
+""")
+
   test "nth indexes into a list":
     checkNumber("""define:
   values = []:

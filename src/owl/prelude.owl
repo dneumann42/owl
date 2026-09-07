@@ -33,8 +33,8 @@ block-command else:
     eval block
     else-value (take-condition-result) block
 
-; A pipe following an if is an elif.  Keep the same condition frame so a
-; successful earlier branch suppresses every later pipe and the final else.
+;; When evaluated directly, a pipe continues the active condition frame. Other
+;; block commands, such as cond, may instead consume pipe nodes as clause syntax.
 
 block-command (|) condition:
   define:

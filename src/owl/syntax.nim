@@ -35,6 +35,7 @@ type
 
   SyntaxNode* = ref object
     pos*: SourcePos
+    hangingPipe*: bool
     case kind*: SyntaxKind
     of Script:
       statements*: seq[SyntaxNode]
@@ -114,7 +115,8 @@ proc command*(
     callee: SyntaxNode, arguments: sink seq[SyntaxNode], pos = noSourcePos()
 ): SyntaxNode {.raises: [].} =
   SyntaxNode(
-    kind: Command, pos: pos, callee: callee, arguments: arguments, layout: NoLayout, body: @[]
+    kind: Command, pos: pos, hangingPipe: callee.hangingPipe,
+    callee: callee, arguments: arguments, layout: NoLayout, body: @[]
   )
 
 proc symbol*(value: sink string, pos = noSourcePos()): SyntaxNode {.raises: [].} =
@@ -325,12 +327,17 @@ proc renderBody(
       result.add '\n'
       if separate and shouldSeparateStatements(nodes[index - 1], node):
         result.add '\n'
-    let nodeIndent =
-      if node.kind == Command and node.callee.kind == Symbol and
-          node.callee.symbol == "|":
-        max(indent - 2, 0)
-      else:
-        indent
+    let
+      commandSymbol =
+        if node.kind == Command and node.callee.kind == Symbol:
+          node.callee.symbol
+        else:
+          ""
+      nodeIndent =
+        if commandSymbol == "|" and node.hangingPipe:
+          max(indent - 2, 0)
+        else:
+          indent
     result.add node.render(nodeIndent, nodeIndent,
       statement = true, bindingValue = false, argumentLine = argumentLines)
 

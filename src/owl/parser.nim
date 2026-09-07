@@ -27,6 +27,7 @@ type
     lexeme: string
     line: int
     column: int
+    hangingPipe: bool
 
   Parser = object
     tokens: seq[Token]
@@ -71,9 +72,13 @@ proc escapeChar(c: char): char {.raises: [].} =
   else: '\0'
 
 proc add(
-    tokens: var seq[Token], kind: TokenKind, lexeme: sink string, line, column: int
+    tokens: var seq[Token], kind: TokenKind, lexeme: sink string, line, column: int,
+    hangingPipe = false
 ) {.raises: [].} =
-  tokens.add Token(kind: kind, lexeme: lexeme, line: line, column: column)
+  tokens.add Token(
+    kind: kind, lexeme: lexeme, line: line, column: column,
+    hangingPipe: hangingPipe,
+  )
 
 proc tokenize*(
     source: string, sourceId = NoSource
@@ -87,6 +92,7 @@ proc tokenize*(
     pendingIndent = 0
     previousLineWasPipe = false
     currentLineIsPipe = false
+    currentLineHasHangingPipe = false
     havePreviousContentLine = false
     i = 0
     line = 1
@@ -101,6 +107,7 @@ proc tokenize*(
       let lineIsPipe =
         source[i] == '|' and
         (i + 1 >= source.len or source[i + 1] in {' ', '\t', '\r', '\n', ':'})
+      currentLineHasHangingPipe = false
       # When a continued header's body returns to the continuation's first
       # column, the trailing colon belongs to the outer command. Move it past
       # the continuation dedents so the parser sees `arguments DEDENT :` and
@@ -130,17 +137,20 @@ proc tokenize*(
             anchored = level
             break
         if anchored >= 0 and indents.high > anchored:
+          currentLineHasHangingPipe = true
           while indents.high > anchored:
             discard indents.pop()
             result.add(Dedent, "", line, 1)
         elif result.len >= 2 and result[^1].kind == Newline and
             result[^2].kind == Colon and pendingIndent == current:
+          currentLineHasHangingPipe = true
           indents.add pendingIndent
           result.add(Indent, "", line, 1)
         elif anchored < 0 and havePreviousContentLine and
             pendingIndent == current:
           # With no suite open yet, the pipe can start the continuation of a
           # regular call at the call's own physical indentation.
+          currentLineHasHangingPipe = true
           indents.add pendingIndent
           result.add(Indent, "", line, 1)
         else:
@@ -343,7 +353,10 @@ proc tokenize*(
       let startColumn = column
       while i < source.len and (isAtomPartChar(source[i]) or source.isNumberDot(i)):
         advance()
-      result.add(Atom, source[start ..< i], line, startColumn)
+      result.add(
+        Atom, source[start ..< i], line, startColumn,
+        hangingPipe = currentLineHasHangingPipe and source[start ..< i] == "|",
+      )
 
   if not atLineStart:
     result.add(Newline, "", line, column)
@@ -501,6 +514,7 @@ proc parseSymbolLike(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     result = symbol(token.lexeme & closeToken.lexeme, parser.pos(token))
   else:
     result = symbol(token.lexeme, parser.pos(token))
+  result.hangingPipe = token.hangingPipe
 
 proc parsePostfix(
     parser: var Parser, base: SyntaxNode
