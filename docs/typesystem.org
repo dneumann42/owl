@@ -5,9 +5,9 @@ record Vec2't:
   x't = 10
   y't = 20
 
-pos'<Vec2 Int> = Vec2'Int 10 20
+pos'<Vec2 Number> = Vec2'Number 10 20
 
-fun factorial'Int n'Int:
+fun factorial'Number n'Number:
   if (< n 2):
     1
   else:
@@ -21,24 +21,23 @@ fun'a fact'a n'a:
 
 fun'a'b map'a f'(a b) xs'<List a>:
   if (> (length xs) 0):
-    listAppend
+    cons
       f xs.[0]
       map f (rest xs)
   else:
     list
 
-define:
-  xs = map
-    fn x: + x x
-    []: 1, 2, 3, 4, 5
+xs = map
+  fn x: + x x
+  []: 1, 2, 3, 4, 5
 
-  dic'<Dict String Int> = {}:
-    a = 100
-    b = 200
+dic'<Dict String Int> = {}:
+  a = 100
+  b = 200
 
-  dic'<Dict String Int> = {}:
-    a = 100
-    b = 200
+dic'<Dict String Int> = {}:
+  a = 100
+  b = 200
 
 print xs
 #+end_src

@@ -96,22 +96,22 @@ record Stream:
   write-line = value-of unsupported-stream-operation
 
 fun close stream:
-  call (field stream "close")
+  call stream.close
 
 fun read stream:
-  call (field stream "read")
+  call stream.read
 
 fun read-line stream:
-  call (field stream "read-line")
+  call stream.read-line
 
 fun read-all stream:
-  call (field stream "read-all")
+  call stream.read-all
 
 fun write stream value:
-  call (field stream "write") value
+  call stream.write value
 
 fun write-line stream value:
-  call (field stream "write-line") value
+  call stream.write-line value
 
 fun cond-from clauses:
   if (empty? clauses):
@@ -216,3 +216,9 @@ fun assert condition:
     error "assertion failed"
 
   condition
+
+fun map f xs:
+  if (= (length xs) 0):
+    xs
+  else:
+    cons (f xs.[0]) (map f (rest xs))

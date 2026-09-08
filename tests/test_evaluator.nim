@@ -361,6 +361,18 @@ explode
       check output.contains("Stack trace:")
       check output.contains("/tmp/stack.owl:3:1 in explode")
 
+  test "typed evaluator errors include source preview and stack trace":
+    var evaluator = Evaluator.init()
+    evaluator.enableTyping()
+    try:
+      discard evaluator.exec(parse("+ 1 \"no\"\n", "/tmp/typed-stack.owl"))
+      fail()
+    except EvaluatorError as error:
+      let output = report(error)
+      check output.contains("/tmp/typed-stack.owl:1:1: error:")
+      check output.contains("  + 1 \"no\"")
+      check output.contains("Stack trace:")
+
   test "parse returns syntax evaluated in the caller environment":
     let value = run(
       """
@@ -504,6 +516,64 @@ use host/math
     )
     check value.kind == Number
     check value.number == 42
+
+  test "typed evaluators check native commands and native module exports":
+    var module = nativeModule("host/math")
+    module.define("base", number(40), TNumber)
+    module.defineNative(
+      "inc",
+      proc(
+          env: Environment, arguments: seq[SyntaxNode], layout: LayoutKind,
+          bodyNodes: seq[SyntaxNode],
+      ): Value {.raises: [EvaluatorError].} =
+        discard layout
+        discard bodyNodes
+        let value = env.eval(arguments[0])
+        number(value.number + 1),
+      functionTypeNode("inc", TNumber, [TNumber]),
+    )
+
+    var evaluator = Evaluator.init()
+    evaluator.registerModule(module)
+    evaluator.enableTyping()
+    let value = evaluator.exec(parse("""
+use host/math
++ math.base (math.inc 1)
+"""))
+    check value.kind == Number
+    check value.number == 42
+    expect EvaluatorError:
+      discard evaluator.exec(parse("math.inc \"no\"\n"))
+
+  test "typed evaluators check source modules as they are imported":
+    let dir = getTempDir() / "owl-typed-use-test"
+    createDir(dir)
+    writeFile(
+      dir / "helper.owl",
+      """
+fun double'Number value'Number:
+  * value 2
+""",
+    )
+    writeFile(
+      dir / "mathish.owl",
+      """
+import "helper.owl"
+fun inc'Number value'Number:
+  + (double value) 1
+""",
+    )
+
+    var evaluator = Evaluator.init()
+    evaluator.enableTyping()
+    let value = evaluator.exec(parse("""
+use mathish
+mathish.inc 20
+""", dir / "main.owl"))
+    check value.kind == Number
+    check value.number == 41
+    expect EvaluatorError:
+      discard evaluator.exec(parse("mathish.inc \"no\"\n"))
 
   test "use imports selected native module symbols":
     var module = nativeModule("host/config")
@@ -836,6 +906,11 @@ value-of answer
 """
     )
     check value.kind == Command
+
+  test "cast returns its value unchanged":
+    let value = run("cast'Number 42\n")
+    check value.kind == Number
+    check value.number == 42
 
   test "prelude defines range iterators in owl":
     let value = run(

@@ -43,6 +43,8 @@ type
     of Function:
       returnType*: ref TypeSyntaxNode
       parameters*: seq[TypeSyntaxNode]
+      generics*: seq[string]
+      variadic*: ref TypeSyntaxNode
     of TypeSpec:
       genericType*: ref TypeSyntaxNode
       specifications*: seq[TypeSyntaxNode]
@@ -92,7 +94,11 @@ proc `==`*(a, b: TypeSyntaxNode): bool =
     for i in 0 ..< a.parameters.len:
       if a.parameters[i] != b.parameters[i]:
         return false
-    result = true
+    if a.variadic.isNil != b.variadic.isNil:
+      return false
+    if not a.variadic.isNil and a.variadic[] != b.variadic[]:
+      return false
+    result = a.generics == b.generics
   of TypeSpec:
     if a.genericType.isNil != b.genericType.isNil:
       return false
@@ -123,14 +129,31 @@ proc isType*(s: SyntaxNode, t: TypeSyntaxNode): bool =
 proc symbolTypeNode*(sym: string): TypeSyntaxNode =
   TypeSyntaxNode(kind: Symbol, symbol: sym)
 
-proc functionTypeNode*(sym: string, returnType: TypeSyntaxNode, parameters: openArray[TypeSyntaxNode] = []): TypeSyntaxNode =
+proc functionTypeNode*(
+    sym: string, returnType: TypeSyntaxNode,
+    parameters: openArray[TypeSyntaxNode] = [], generics: openArray[string] = [],
+): TypeSyntaxNode =
+  discard sym
   result = TypeSyntaxNode(kind: Function)
   new(result.returnType)
   result.returnType[] = returnType
   result.parameters = @parameters
+  result.generics = @generics
+
+proc variadicFunctionTypeNode*(
+    sym: string, returnType, variadic: TypeSyntaxNode,
+    parameters: openArray[TypeSyntaxNode] = [], generics: openArray[string] = [],
+): TypeSyntaxNode =
+  result = functionTypeNode(sym, returnType, parameters, generics)
+  new(result.variadic)
+  result.variadic[] = variadic
 
 let
+  TAny* = symbolTypeNode"Any"
+  TBoolean* = symbolTypeNode"Boolean"
+  TNothing* = symbolTypeNode"Nothing"
   TNumber* = symbolTypeNode"Number"
+  TText* = symbolTypeNode"Text"
 
 proc noSourcePos*(): SourcePos {.raises: [].} =
   SourcePos(source: NoSource, line: 0, column: 0)
@@ -358,6 +381,41 @@ type FlatContext = enum
 
 proc renderFlat(
     node: SyntaxNode, context: FlatContext, valid: var bool
+): string {.raises: [].}
+
+proc selectorCall(node: SyntaxNode, name: string): bool {.raises: [].} =
+  node.kind == Command and node.layout == NoLayout and node.body.len == 0 and
+    node.callee.kind == Symbol and node.callee.symbol == name and
+    node.arguments.len == 2
+
+proc renderSelector(
+    node: SyntaxNode, valid: var bool
+): string {.raises: [].} =
+  ## Selectors are stored as ordinary `field` and `index` calls. Render their
+  ## canonical surface spelling again so formatting preserves `value.key` and
+  ## `value.[key]` rather than exposing that representation.
+  let base = node.arguments[0].renderFlat(FlatArgument, valid)
+  if not valid:
+    return
+  result.add base
+
+  if node.selectorCall("field"):
+    let fieldName = node.arguments[1]
+    if fieldName.kind != String or not fieldName.stringValue.isIdentifierSymbol:
+      valid = false
+      return
+    result.add '.'
+    result.add fieldName.stringValue
+  else:
+    let index = node.arguments[1].renderFlat(FlatStatement, valid)
+    if not valid:
+      return
+    result.add ".["
+    result.add index
+    result.add ']'
+
+proc renderFlat(
+    node: SyntaxNode, context: FlatContext, valid: var bool
 ): string {.raises: [].} =
   ## Render a form only when it has a single-line representation. This small
   ## probe keeps line-breaking decisions independent of particular commands.
@@ -370,6 +428,8 @@ proc renderFlat(
   of String:
     result.add quote(node.stringValue)
   of Command:
+    if node.selectorCall("field") or node.selectorCall("index"):
+      return node.renderSelector(valid)
     if node.layout != NoLayout:
       valid = false
       return

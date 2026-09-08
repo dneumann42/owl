@@ -139,13 +139,12 @@ print
 That parses as =print (+ 1 2 3) " and " T=. A [[term-binding][binding]] can also put its value on the following indented lines:
 
 #+begin_src owl
-define:
-  world = +
-    1 2 3
-  total =
-    -
-      10
-      1
+world = +
+  1 2 3
+total =
+  -
+    10
+    1
 #+end_src
 
 A comma separates forms on one line, so ~1, 2, 3~ is three statements.
@@ -165,10 +164,9 @@ The block aligns with the first continued argument. When a colon follows an argu
 A continued line beginning with an identifier-like or operator callee and followed by arguments is one nested command expression through the end of that line. Its colon body may be written inline; commas separate multiple forms in that body. This makes short anonymous commands and collections usable as unparenthesized arguments:
 
 #+begin_src owl
-define:
-  xs = map
-    fn x: + x x
-    []: 1, 2, 3, 4, 5
+xs = map
+  fn x: + x x
+  []: 1, 2, 3, 4, 5
 #+end_src
 
 The two arguments to =map= are the =fn= command and the =[]= command, not the individual tokens on their lines. The formatter may expand the same form to indented colon bodies. A line beginning with a string or number retains the ordinary rule in which its primary forms are separate arguments, so continuation data such as ~1 2 3~ remains concise.

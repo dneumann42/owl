@@ -1,0 +1,17 @@
+record Game:
+  running = false
+
+fun init-game:
+  Game
+
+game = init-game
+set game.running true
+
+while game.running:
+  print "Hello"
+
+  define:
+    i = read-line stdin
+
+  when (= i "q"):
+    set game.running false

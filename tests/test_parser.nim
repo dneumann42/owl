@@ -606,6 +606,10 @@ when (= inp "hello"):
 """)
     check $tree == "a = 100\ny = + x 1\n\nwhen (= inp \"hello\"):\n  print \"Hello!\""
 
+  test "formats selector calls with selector syntax":
+    check $parse("listAppend (f xs.[0])\n") == "listAppend (f xs.[0])"
+    check $parse("print a.[+ 1 2].d\n") == "print a.[+ 1 2].d"
+
   test "formats explicit and continuation blocks":
     check $parse("define:\n  x = 1\n  y = 2\n") == """
 define:

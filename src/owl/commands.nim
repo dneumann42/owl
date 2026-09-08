@@ -8,6 +8,7 @@ import environment, parser, syntax, values
 type CommandRegistration = object
   name: string
   command: NativeCommand
+  typeDef: TypeSyntaxNode
 
 var
   commandRegistry {.threadvar.}: seq[CommandRegistration]
@@ -39,7 +40,8 @@ proc documentation(name, usage, doc: string): string {.compileTime.} =
     result.add doc
 
 macro stdCommand(
-    name, usage: static[string], arity: untyped, body: untyped
+    name, usage: static[string], arity: untyped, typeDef: untyped,
+    body: untyped = nil,
 ): untyped =
   ## Define and register a native command.
   ##
@@ -47,15 +49,24 @@ macro stdCommand(
   ## an arity failure should report them. `arity` is an exact count, a `lo ..
   ## hi` range, or `any`. The body sees `env`, `arguments`, `layout`, and
   ## `body`, and a leading doc comment becomes the command's documentation.
+  let
+    hasExplicitType = body.kind != nnkNilLit
+    signature =
+      if hasExplicitType: typeDef
+      else: quote do: variadicFunctionTypeNode(`name`, TAny, TAny)
+    commandBody = if hasExplicitType: body else: typeDef
   var
     doc = ""
-    statements = body
-  if body.kind == nnkStmtList and body.len > 0 and body[0].kind == nnkCommentStmt:
-    doc = body[0].strVal
+    statements = commandBody
+  if commandBody.kind == nnkStmtList and commandBody.len > 0 and commandBody[0].kind == nnkCommentStmt:
+    doc = commandBody[0].strVal
     statements = newStmtList()
-    for index in 1 ..< body.len:
-      statements.add body[index]
-  commandDocs[name] = newLit(documentation(name, usage, doc))
+    for index in 1 ..< commandBody.len:
+      statements.add commandBody[index]
+  # CacheTable entries are write-once. A command module can be expanded again
+  # during an incremental/package build, so retain the first identical entry.
+  if not commandDocs.hasKey(name):
+    commandDocs[name] = newLit(documentation(name, usage, doc))
 
   let expected =
     if usage.len == 0: name & " expects no arguments" else: name & " expects " & usage
@@ -86,7 +97,9 @@ macro stdCommand(
   procBody.add statements
 
   let registration = quote do:
-    commandRegistry.add CommandRegistration(name: `name`, command: `procName`)
+    commandRegistry.add CommandRegistration(
+      name: `name`, command: `procName`, typeDef: `signature`
+    )
 
   result = newStmtList(
     newProc(
@@ -110,8 +123,9 @@ macro stdCommand(
 
 macro stdAlias(alias, target: static[string], doc: static[string]): untyped =
   ## Register `alias` as a second name for an existing command.
-  commandDocs[alias] =
-    newLit(documentation(alias, "", doc & " Same as `" & target & "`."))
+  if not commandDocs.hasKey(alias):
+    commandDocs[alias] =
+      newLit(documentation(alias, "", doc & " Same as `" & target & "."))
   result = quote do:
     commandAliases.add (`alias`, `target`)
 
@@ -462,6 +476,11 @@ stdCommand "value-of", "name", 1:
   ## The value bound to a name, without calling it.
   env.get(arguments[0].requireSymbol("value name"))
 
+stdCommand "cast", "value", 1:
+  ## Return a value unchanged. Its target type is a static assertion written
+  ## on the callee, as in `cast'Number value`.
+  env.eval(arguments[0])
+
 stdCommand "call", "command argument...", 1 .. int.high:
   ## Call a command value with the remaining arguments.
   let command = env.eval(arguments[0])
@@ -500,6 +519,8 @@ stdCommand "use", "module [namespace]", 1 .. 2:
     entries = moduleEnv.bindings
     result = record(entries)
     name = path.moduleName
+
+  env.registerTypedModule(name, entries.keys.toSeq)
 
   if layout == ColonLayout:
     env.useSelectedSymbols(entries, body)
@@ -710,19 +731,19 @@ template compareNumbers(
       right {.inject.} = env.eval(arguments[1]).requireNumber()
     boolean(test)
 
-stdCommand "+", "number...", 1 .. int.high:
+stdCommand "+", "number...", 1 .. int.high, variadicFunctionTypeNode("+", TNumber, TNumber):
   ## Sum of the arguments, folded left.
   env.foldNumbers(arguments, total + operand)
 
-stdCommand "-", "number...", 1 .. int.high:
+stdCommand "-", "number...", 1 .. int.high, variadicFunctionTypeNode("-", TNumber, TNumber):
   ## Difference of the arguments, folded left.
   env.foldNumbers(arguments, total - operand)
 
-stdCommand "*", "number...", 1 .. int.high:
+stdCommand "*", "number...", 1 .. int.high, variadicFunctionTypeNode("*", TNumber, TNumber):
   ## Product of the arguments, folded left.
   env.foldNumbers(arguments, total * operand)
 
-stdCommand "/", "number...", 1 .. int.high:
+stdCommand "/", "number...", 1 .. int.high, variadicFunctionTypeNode("/", TNumber, TNumber):
   ## Quotient of the arguments, folded left.
   env.foldNumbers(arguments, total / operand)
 
@@ -1218,7 +1239,7 @@ stdCommand "open-string", "text", 1:
   ## A stream backed by a text buffer.
   openStringStream(env.eval(arguments[0]).requireText())
 
-stdCommand "print", "value...", any:
+stdCommand "print", "value...", any, variadicFunctionTypeNode("print", TNothing, TAny):
   ## Write each argument to standard output without a trailing newline.
   var parts = newSeqOfCap[string](arguments.len)
   result = nothing()
@@ -1308,3 +1329,14 @@ proc addStandardCommands*(env: Environment) {.raises: [].} =
   for name, value in globals:
     env.define(name, value)
     commandEnv.define(name, value)
+
+proc standardCommandTypes*(): seq[(string, TypeSyntaxNode)] {.raises: [].} =
+  ## Signatures are registered beside each `stdCommand`, avoiding a second,
+  ## manually maintained list in the evaluator.
+  for registration in commandRegistry:
+    result.add (registration.name, registration.typeDef)
+  for (alias, target) in commandAliases:
+    for registration in commandRegistry:
+      if registration.name == target:
+        result.add (alias, registration.typeDef)
+        break

@@ -1,11 +1,13 @@
 import std/[strformat, tables]
 
-import commands, environment, parser, syntax, values
+import commands, environment, parser, syntax, typing, values
 
 const PreludeSource = staticRead("prelude.owl")
 
 type Evaluator* = object
   env*: Environment
+  checker: ref TypeChecker
+  nativeTypes: Table[string, TypeSyntaxNode]
 
 let
   emptyScript = script(@[])
@@ -128,12 +130,35 @@ proc evalNode(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorErr
       error.addFrame(node.pos, label)
     raise error
 
-proc evalTopLevelNode(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+proc evalTopLevelNode(
+    env: Environment, node: SyntaxNode, checker: ref TypeChecker
+): Value {.raises: [EvaluatorError].} =
+  proc typeError(error: ref TypeCheckError, context: SyntaxNode): ref EvaluatorError =
+    result = newException(EvaluatorError, error.msg)
+    result.primary = error.primary
+    result.frames = error.frames
+    # An incompatibility discovered after all children checked successfully has
+    # only one location. Preserve the normal diagnostic's stack-trace shape.
+    if result.primary.hasSource and result.frames.len == 0:
+      result.frames.add DiagnosticFrame(pos: context.pos, label: "type check")
+
   if node.kind != Script:
+    if checker != nil:
+      var typedNode = node
+      try:
+        checker[].typeCheck(typedNode)
+      except TypeCheckError as error:
+        raise typeError(error, node)
     return env.eval(node)
 
   result = nothing()
   for statement in node.statements:
+    if checker != nil:
+      var typedStatement = statement
+      try:
+        checker[].typeCheck(typedStatement)
+      except TypeCheckError as error:
+        raise typeError(error, statement)
     if statement.kind != Binding:
       result = env.eval(statement)
       continue
@@ -151,12 +176,36 @@ proc loadPrelude(env: Environment) {.raises: [EvaluatorError].} =
     raise newException(EvaluatorError, "invalid prelude: " & error.msg)
 
 proc init*(T: typedesc[Evaluator]): T {.raises: [EvaluatorError].} =
-  result = T(env: newEnvironment())
+  result = T(env: newEnvironment(), nativeTypes: initTable[string, TypeSyntaxNode]())
   result.env.evaluator = evalNode
-  result.env.topLevelEvaluator = evalTopLevelNode
+  result.env.topLevelEvaluator = proc(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+    evalTopLevelNode(env, node, nil)
   result.env.commandCaller = callCommandValue
   result.env.addStandardCommands()
   result.env.loadPrelude()
+
+proc enableTyping*(evaluator: var Evaluator) {.raises: [].} =
+  if evaluator.checker != nil:
+    return
+  new(evaluator.checker)
+  evaluator.checker[] = TypeChecker.init()
+  for (name, typeDef) in standardCommandTypes():
+    evaluator.checker[].define(name, typeDef)
+  for name, typeDef in evaluator.nativeTypes:
+    evaluator.checker[].define(name, typeDef)
+  let checker = evaluator.checker
+  evaluator.env.topLevelEvaluator = proc(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+    evalTopLevelNode(env, node, checker)
+  evaluator.env.typedModuleRegistrar = proc(name: string, exports: seq[string]) {.raises: [].} =
+    checker[].defineModule(name, exports)
+
+proc isTyped*(evaluator: Evaluator): bool {.raises: [].} =
+  evaluator.checker != nil
+
+proc execUntyped*(
+    evaluator: var Evaluator, node: SyntaxNode
+): Value {.raises: [EvaluatorError].} =
+  evalTopLevelNode(evaluator.env, node, nil)
 
 proc exec*(
     evaluator: var Evaluator, node: SyntaxNode
@@ -168,6 +217,15 @@ proc defineNative*(
 ) {.raises: [].} =
   evaluator.env.defineNative(symbol, command)
 
+proc defineNative*(
+    evaluator: var Evaluator, symbol: string, command: NativeCommand,
+    typeDef: TypeSyntaxNode,
+) {.raises: [].} =
+  evaluator.env.defineNative(symbol, command)
+  evaluator.nativeTypes[symbol] = typeDef
+  if evaluator.checker != nil:
+    evaluator.checker[].define(symbol, typeDef)
+
 proc registerModule*(
     evaluator: var Evaluator, name: string, exports: Value
 ) {.raises: [EvaluatorError].} =
@@ -175,3 +233,7 @@ proc registerModule*(
 
 proc registerModule*(evaluator: var Evaluator, module: NativeModule) {.raises: [].} =
   evaluator.env.registerModule(module)
+  for name, typeDef in module.types:
+    evaluator.nativeTypes[name] = typeDef
+    if evaluator.checker != nil:
+      evaluator.checker[].define(name, typeDef)

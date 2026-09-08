@@ -7,6 +7,10 @@ export values
 type NativeModule* = object
   name*: string
   exports*: Table[string, Value]
+  ## Static signatures are deliberately kept beside their runtime exports so a
+  ## host can opt a native module into checked Owl without changing its runtime
+  ## implementation.
+  types*: Table[string, TypeSyntaxNode]
 
 proc newEnvironment*(
     parent: Environment = nil, fallback: Environment = nil
@@ -28,6 +32,7 @@ proc newEnvironment*(
   if parent != nil:
     result.evaluator = parent.evaluator
     result.topLevelEvaluator = parent.topLevelEvaluator
+    result.typedModuleRegistrar = parent.typedModuleRegistrar
     result.commandCaller = parent.commandCaller
 
 proc child*(env: Environment): Environment {.raises: [].} =
@@ -42,15 +47,32 @@ proc defineNative*(
   env.define(symbol, nativeCommand(command))
 
 proc nativeModule*(name: string): NativeModule {.raises: [].} =
-  NativeModule(name: name, exports: initTable[string, Value]())
+  NativeModule(
+    name: name,
+    exports: initTable[string, Value](),
+    types: initTable[string, TypeSyntaxNode](),
+  )
 
 proc define*(module: var NativeModule, symbol: string, value: Value) {.raises: [].} =
   module.exports[symbol] = value
+
+proc define*(
+    module: var NativeModule, symbol: string, value: Value,
+    typeDef: TypeSyntaxNode,
+) {.raises: [].} =
+  module.define(symbol, value)
+  module.types[symbol] = typeDef
 
 proc defineNative*(
     module: var NativeModule, symbol: string, command: NativeCommand
 ) {.raises: [].} =
   module.define(symbol, nativeCommand(command))
+
+proc defineNative*(
+    module: var NativeModule, symbol: string, command: NativeCommand,
+    typeDef: TypeSyntaxNode,
+) {.raises: [].} =
+  module.define(symbol, nativeCommand(command), typeDef)
 
 proc moduleValue*(module: NativeModule): Value {.raises: [].} =
   record(module.exports)
@@ -137,6 +159,12 @@ proc evalTopLevel*(
   if env.topLevelEvaluator == nil:
     raise newException(EvaluatorError, "environment has no top-level evaluator")
   env.topLevelEvaluator(env, node)
+
+proc registerTypedModule*(
+    env: Environment, name: string, exports: seq[string]
+) {.raises: [].} =
+  if env.typedModuleRegistrar != nil:
+    env.typedModuleRegistrar(name, exports)
 
 proc call*(
     env: Environment,

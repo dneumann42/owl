@@ -11,4 +11,4 @@ tests/*
 !tests/eval/
 !tests/eval/**
 tests/eval/tmp-stream-output.txt
-owl
+/owl

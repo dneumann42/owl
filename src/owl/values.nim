@@ -45,6 +45,9 @@ type
     topLevelEvaluator*: proc(
       env: Environment, node: SyntaxNode
     ): Value {.closure, raises: [EvaluatorError].}
+    typedModuleRegistrar*: proc(
+      name: string, exports: seq[string]
+    ) {.closure, raises: [].}
     commandCaller*: proc(
       env: Environment, command: CommandValue, arguments: seq[SyntaxNode],
       layout: LayoutKind, body: seq[SyntaxNode]

@@ -1,6 +1,9 @@
 define:
   cmds = command-line-arguments
 
+when (= (index cmds (0)) "--typed"):
+  set cmds (rest cmds)
+
 when (= (length cmds) 0):
   repl
 
@@ -29,7 +32,7 @@ when (= (index cmds (0)) "--std"):
   exit 0
 
 when (or (not (= (index cmds (0)) "run")) (< (length cmds) 2)):
-  write-line stdout "usage: owl [--eval <source>|--format <path>|run <path>]"
+  write-line stdout "usage: owl [--typed] [--eval <source>|--format <path>|run <path>]"
   exit 2
 
 when true:

@@ -1,12 +1,7 @@
-define:
-  xs = []:
+xs = map
+  fn x:
+    + x 10
+  []:
     1
-  ys = []:
-    1
-
-if (empty? xs):
-  print "xs empty, ys not"
-
-print "TEST"
-else:
-  print "xs not empty"
+    2
+    3
