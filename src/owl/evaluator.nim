@@ -92,22 +92,57 @@ proc callCommandValue(
   of ClosureCommandKind:
     env.callClosure(command, arguments, layout, body)
 
-proc evalCore(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
-  case node.kind
-  of Script:
-    result = env.evalBlock(node.statements)
-  of Binding:
-    result = syntaxValue(node, env)
-  of Command:
-    result = env.evalCommandNode(node)
-  of Symbol:
-    let literal = literalValue(node.symbol)
-    if literal.ok:
-      result = literal.value
-    else:
-      result = env.get(node.symbol)
-  of String:
-    result = text(node.stringValue)
+proc evalNode(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+  try:
+    case node.kind
+    of Script:
+      result = nothing()
+      for statement in node.statements:
+        result = env.eval(statement)
+    of Binding:
+      result = syntaxValue(node, env)
+    of Command:
+      result = env.evalCommandNode(node)
+    of Symbol:
+      let literal = literalValue(node.symbol)
+      if literal.ok:
+        result = literal.value
+      else:
+        result = env.get(node.symbol)
+    of String:
+      result = text(node.stringValue)
+  except EvaluatorError as error:
+    if not node.isNil and node.kind != Script:
+      let label =
+        case node.kind
+        of Command:
+          $node.callee
+        of Binding:
+          node.bindingSymbol
+        of Symbol:
+          node.symbol
+        of String:
+          "string"
+        of Script:
+          ""
+      error.addFrame(node.pos, label)
+    raise error
+
+proc evalTopLevelNode(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
+  if node.kind != Script:
+    return env.eval(node)
+
+  result = nothing()
+  for statement in node.statements:
+    if statement.kind != Binding:
+      result = env.eval(statement)
+      continue
+    if env.bindings.hasKey(statement.bindingSymbol):
+      raise newException(
+        EvaluatorError, &"symbol already defined: {statement.bindingSymbol}"
+      )
+    result = env.eval(statement.value)
+    env.define(statement.bindingSymbol, result)
 
 proc loadPrelude(env: Environment) {.raises: [EvaluatorError].} =
   try:
@@ -117,7 +152,8 @@ proc loadPrelude(env: Environment) {.raises: [EvaluatorError].} =
 
 proc init*(T: typedesc[Evaluator]): T {.raises: [EvaluatorError].} =
   result = T(env: newEnvironment())
-  result.env.evaluator = evalCore
+  result.env.evaluator = evalNode
+  result.env.topLevelEvaluator = evalTopLevelNode
   result.env.commandCaller = callCommandValue
   result.env.addStandardCommands()
   result.env.loadPrelude()
@@ -125,7 +161,7 @@ proc init*(T: typedesc[Evaluator]): T {.raises: [EvaluatorError].} =
 proc exec*(
     evaluator: var Evaluator, node: SyntaxNode
 ): Value {.raises: [EvaluatorError].} =
-  evaluator.env.eval(node)
+  evaluator.env.evalTopLevel(node)
 
 proc defineNative*(
     evaluator: var Evaluator, symbol: string, command: NativeCommand

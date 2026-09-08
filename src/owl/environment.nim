@@ -27,6 +27,7 @@ proc newEnvironment*(
   )
   if parent != nil:
     result.evaluator = parent.evaluator
+    result.topLevelEvaluator = parent.topLevelEvaluator
     result.commandCaller = parent.commandCaller
 
 proc child*(env: Environment): Environment {.raises: [].} =
@@ -123,32 +124,19 @@ proc set*(env: Environment, symbol: string, value: Value) {.raises: [].} =
 proc eval*(env: Environment, node: SyntaxNode): Value {.raises: [EvaluatorError].} =
   if env.evaluator == nil:
     raise newException(EvaluatorError, "environment has no evaluator")
-  try:
-    env.evaluator(env, node)
-  except EvaluatorError as error:
-    if not node.isNil:
-      let label =
-        case node.kind
-        of Command:
-          $node.callee
-        of Binding:
-          node.bindingSymbol
-        of Symbol:
-          node.symbol
-        of String:
-          "string"
-        of Script:
-          ""
-      if node.kind != Script:
-        error.addFrame(node.pos, label)
-    raise error
+  env.evaluator(env, node)
 
 proc evalBlock*(
     env: Environment, body: seq[SyntaxNode]
 ): Value {.raises: [EvaluatorError].} =
-  result = nothing()
-  for node in body:
-    result = env.eval(node)
+  env.eval(script(body))
+
+proc evalTopLevel*(
+    env: Environment, node: SyntaxNode
+): Value {.raises: [EvaluatorError].} =
+  if env.topLevelEvaluator == nil:
+    raise newException(EvaluatorError, "environment has no top-level evaluator")
+  env.topLevelEvaluator(env, node)
 
 proc call*(
     env: Environment,

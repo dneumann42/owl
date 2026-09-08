@@ -42,6 +42,9 @@ type
     evaluator*: proc(
       env: Environment, node: SyntaxNode
     ): Value {.closure, raises: [EvaluatorError].}
+    topLevelEvaluator*: proc(
+      env: Environment, node: SyntaxNode
+    ): Value {.closure, raises: [EvaluatorError].}
     commandCaller*: proc(
       env: Environment, command: CommandValue, arguments: seq[SyntaxNode],
       layout: LayoutKind, body: seq[SyntaxNode]

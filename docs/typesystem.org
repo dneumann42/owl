@@ -1,19 +1,25 @@
 #+TITLE: Typesystem
 
 #+begin_src owl
+record Vec2't:
+  x't = 10
+  y't = 20
+
+pos'<Vec2 Int> = Vec2'Int 10 20
+
 fun factorial'Int n'Int:
   if (< n 2):
     1
   else:
-    ,* n factorial (- n 1)
+    * n factorial (- n 1)
 
 fun'a fact'a n'a:
   if (< n 2):
     1
   else:
-    ,* n factorial (- n 1)
+    * n factorial (- n 1)
 
-fun'a'b map'a f'(a b) xs'[a]:
+fun'a'b map'a f'(a b) xs'<List a>:
   if (> (length xs) 0):
     listAppend
       f xs.[0]
@@ -26,11 +32,11 @@ define:
     fn x: + x x
     []: 1, 2, 3, 4, 5
 
-  dic'{String Int} = {}:
+  dic'<Dict String Int> = {}:
     a = 100
     b = 200
 
-  dic'{String Int} = {}:
+  dic'<Dict String Int> = {}:
     a = 100
     b = 200
 

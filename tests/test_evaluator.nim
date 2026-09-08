@@ -23,15 +23,15 @@ suite "evaluator":
     check value.kind == Number
     check value.number == 2
 
-  test "bindings are syntax data":
+  test "top-level bindings define values in the evaluator environment":
     let value = run(
       """
 a = 41
++ a 1
 """
     )
-    check value.kind == Syntax
-    check value.syntax.kind == Binding
-    check value.syntax.bindingSymbol == "a"
+    check value.kind == Number
+    check value.number == 42
 
   test "define binds symbols in the current environment":
     let value = run(
@@ -378,8 +378,7 @@ eval (parse "+ x 2")
     writeFile(
       dir / "defs.owl",
       """
-define:
-  imported = 40
+imported = 40
 """,
     )
 
@@ -402,8 +401,7 @@ import "defs.owl"
     writeFile(
       dir / "mathish.owl",
       """
-define:
-  imported = 40
+imported = 40
 fun inc n:
   + n 1
 """,
@@ -431,9 +429,8 @@ mathish.inc mathish.imported
     writeFile(
       dir / "mathish.owl",
       """
-define:
-  imported = 40
-  hidden = 99
+imported = 40
+hidden = 99
 fun inc n:
   + n 1
 """,
@@ -462,9 +459,8 @@ inc imported
     writeFile(
       dir / "mathish.owl",
       """
-define:
-  imported = 40
-  hidden = 99
+imported = 40
+hidden = 99
 """,
     )
 

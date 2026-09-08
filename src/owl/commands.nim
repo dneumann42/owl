@@ -472,7 +472,7 @@ stdCommand "call", "command argument...", 1 .. int.high:
 stdCommand "import", "path", 1:
   ## Evaluate another source file in the current scope.
   let node = loadSourceFile(env.eval(arguments[0]).requireText(), arguments[0].pos)
-  result = env.evalBlock(node.statements)
+  result = env.evalTopLevel(node)
 
 stdCommand "use", "module [namespace]", 1 .. 2:
   ## Load a module and bind it under a namespace, or, with a colon body of
@@ -496,7 +496,7 @@ stdCommand "use", "module [namespace]", 1 .. 2:
   else:
     let path = modulePath(arguments[0])
     let moduleEnv = env.child()
-    discard moduleEnv.evalBlock(loadSourceFile(path, arguments[0].pos).statements)
+    discard moduleEnv.evalTopLevel(loadSourceFile(path, arguments[0].pos))
     entries = moduleEnv.bindings
     result = record(entries)
     name = path.moduleName
@@ -519,12 +519,12 @@ stdCommand "eval-source", "source [path]", 1 .. 2:
   ## Parse and evaluate Owl source text in the current scope.
   let path =
     if arguments.len == 2: env.eval(arguments[1]).requireText() else: "<eval>"
-  result = env.eval(parseSource(env.eval(arguments[0]).requireText(), path))
+  result = env.evalTopLevel(parseSource(env.eval(arguments[0]).requireText(), path))
 
 stdCommand "eval-file", "path", 1:
   ## Parse and evaluate a source file in the current scope.
   let path = env.eval(arguments[0]).requireText()
-  result = env.eval(parseSource(readSource(path), path))
+  result = env.evalTopLevel(parseSource(readSource(path), path))
 
 stdCommand "parse", "source", 1:
   ## Parse Owl source text into a syntax value captured in this scope.

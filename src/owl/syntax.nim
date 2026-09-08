@@ -33,9 +33,26 @@ type
     ColonLayout
     ContinuationLayout
 
+  TypeSyntaxNodeKind* = enum
+    Function
+    TypeSpec
+    Symbol
+
+  TypeSyntaxNode* = object
+    case kind*: TypeSyntaxNodeKind
+    of Function:
+      returnType*: ref TypeSyntaxNode
+      parameters*: seq[TypeSyntaxNode]
+    of TypeSpec:
+      genericType*: ref TypeSyntaxNode
+      specifications*: seq[TypeSyntaxNode]
+    of Symbol:
+      symbol*: string
+
   SyntaxNode* = ref object
     pos*: SourcePos
     hangingPipe*: bool
+    typed*: seq[TypeSyntaxNode]
     case kind*: SyntaxKind
     of Script:
       statements*: seq[SyntaxNode]
@@ -60,6 +77,60 @@ const
 
 var sourceRegistry: seq[SourceInfo]
 var sourceRegistryByKey: Table[string, SourceID]
+
+proc `==`*(a, b: TypeSyntaxNode): bool =
+  if a.kind != b.kind:
+    return false
+  case a.kind:
+  of Function:
+    if a.returnType.isNil != b.returnType.isNil:
+      return false
+    if not a.returnType.isNil and a.returnType[] != b.returnType[]:
+      return false
+    if a.parameters.len != b.parameters.len:
+      return false
+    for i in 0 ..< a.parameters.len:
+      if a.parameters[i] != b.parameters[i]:
+        return false
+    result = true
+  of TypeSpec:
+    if a.genericType.isNil != b.genericType.isNil:
+      return false
+    if not a.genericType.isNil and a.genericType[] != b.genericType[]:
+      return false
+    if a.specifications.len != b.specifications.len:
+      return false
+    for i in 0 ..< a.specifications.len:
+      if a.specifications[i] != b.specifications[i]:
+        return false
+    result = true
+  of Symbol:
+    result = a.symbol == b.symbol
+
+proc isType*(s: SyntaxNode, ts: openArray[TypeSyntaxNode]): bool =
+  result = true
+  if s.typed.len == 0:
+    return false
+  if s.typed.len != ts.len:
+    return false
+  for i in 0 ..< s.typed.len:
+    if s.typed[i] != ts[i]:
+      return false
+
+proc isType*(s: SyntaxNode, t: TypeSyntaxNode): bool =
+  result = s.isType([t])
+
+proc symbolTypeNode*(sym: string): TypeSyntaxNode =
+  TypeSyntaxNode(kind: Symbol, symbol: sym)
+
+proc functionTypeNode*(sym: string, returnType: TypeSyntaxNode, parameters: openArray[TypeSyntaxNode] = []): TypeSyntaxNode =
+  result = TypeSyntaxNode(kind: Function)
+  new(result.returnType)
+  result.returnType[] = returnType
+  result.parameters = @parameters
+
+let
+  TNumber* = symbolTypeNode"Number"
 
 proc noSourcePos*(): SourcePos {.raises: [].} =
   SourcePos(source: NoSource, line: 0, column: 0)
@@ -246,6 +317,32 @@ proc quote*(value: string): string {.raises: [].} =
       result.add c
   result.add '"'
 
+proc renderTypeDef(node: TypeSyntaxNode): string {.raises: [].}
+
+proc renderTypeRef(node: ref TypeSyntaxNode): string {.raises: [].} =
+  if not node.isNil:
+    result = node[].renderTypeDef()
+
+proc renderTypeDef(node: TypeSyntaxNode): string {.raises: [].} =
+  case node.kind
+  of Symbol:
+    result = node.symbol
+  of Function:
+    result = "(" & node.returnType.renderTypeRef()
+    for parameter in node.parameters:
+      result.add " " & parameter.renderTypeDef()
+    result.add ')'
+  of TypeSpec:
+    result = "<" & node.genericType.renderTypeRef()
+    for specification in node.specifications:
+      result.add " " & specification.renderTypeDef()
+    result.add '>'
+
+proc renderTypes(node: SyntaxNode): string {.raises: [].} =
+  for annotation in node.typed:
+    result.add '\''
+    result.add annotation.renderTypeDef()
+
 proc render(
   node: SyntaxNode, indent, column: int,
   statement, bindingValue, argumentLine: bool
@@ -269,6 +366,7 @@ proc renderFlat(
     valid = false
   of Symbol:
     result.add node.symbol
+    result.add node.renderTypes()
   of String:
     result.add quote(node.stringValue)
   of Command:
@@ -391,6 +489,7 @@ proc render(
     result.add renderBody(node.statements, indent)
   of Binding:
     result.add node.bindingSymbol
+    result.add node.renderTypes()
     result.add " = "
     result.add node.value.render(indent, column + node.bindingSymbol.len + 3,
       statement = false, bindingValue = true, argumentLine = false)
@@ -408,6 +507,7 @@ proc render(
       result.add node.renderCommand(indent, column)
   of Symbol:
     result.add node.symbol
+    result.add node.renderTypes()
   of String:
     result.add quote(node.stringValue)
 

@@ -19,6 +19,9 @@ type
     RBracket
     LParen
     RParen
+    Apostrophe
+    LAngle
+    RAngle
     Atom
     StringLit
 
@@ -52,10 +55,11 @@ proc isSpace(c: char): bool {.raises: [].} =
   c in {' ', '\t', '\r', '\n'}
 
 proc isAtomStartChar(c: char): bool {.raises: [].} =
-  not isSpace(c) and c notin {'"', '(', ')', '[', ']', ',', ':', '=', '.', ';'}
+  not isSpace(c) and
+    c notin {'"', '\'', '(', ')', '[', ']', ',', ':', '=', '.', ';'}
 
 proc isAtomPartChar(c: char): bool {.raises: [].} =
-  not isSpace(c) and c notin {'"', '(', ')', '[', ']', ',', ':', '.', ';'}
+  not isSpace(c) and c notin {'"', '\'', '(', ')', '[', ']', ',', ':', '.', ';'}
 
 proc isNumberDot(source: string, index: int): bool {.raises: [].} =
   index > 0 and index + 1 < source.len and source[index] == '.' and
@@ -94,6 +98,9 @@ proc tokenize*(
     currentLineIsPipe = false
     currentLineHasHangingPipe = false
     havePreviousContentLine = false
+    lexingType = false
+    typeParenDepth = 0
+    typeAngleDepth = 0
     i = 0
     line = 1
     column = 1
@@ -202,8 +209,13 @@ proc tokenize*(
 
     case c
     of ' ', '\t':
+      if lexingType and typeParenDepth == 0 and typeAngleDepth == 0:
+        lexingType = false
       advance()
     of '\r', '\n':
+      lexingType = false
+      typeParenDepth = 0
+      typeAngleDepth = 0
       result.add(Newline, "", line, column)
       previousLineWasPipe = currentLineIsPipe
       havePreviousContentLine = true
@@ -225,6 +237,34 @@ proc tokenize*(
     of '=':
       result.add(Equal, "=", line, column)
       advance()
+    of '\'':
+      result.add(Apostrophe, "'", line, column)
+      lexingType = true
+      advance()
+    of '<':
+      if lexingType:
+        result.add(LAngle, "<", line, column)
+        inc typeAngleDepth
+        advance()
+      else:
+        let start = i
+        let startColumn = column
+        while i < source.len and (isAtomPartChar(source[i]) or source.isNumberDot(i)):
+          advance()
+        result.add(Atom, source[start ..< i], line, startColumn)
+    of '>':
+      if lexingType and typeAngleDepth > 0:
+        result.add(RAngle, ">", line, column)
+        dec typeAngleDepth
+        if typeAngleDepth == 0 and typeParenDepth == 0:
+          lexingType = false
+        advance()
+      else:
+        let start = i
+        let startColumn = column
+        while i < source.len and (isAtomPartChar(source[i]) or source.isNumberDot(i)):
+          advance()
+        result.add(Atom, source[start ..< i], line, startColumn)
     of '.':
       result.add(Dot, ".", line, column)
       advance()
@@ -235,10 +275,16 @@ proc tokenize*(
       result.add(RBracket, "]", line, column)
       advance()
     of '(':
+      if lexingType:
+        inc typeParenDepth
       parenIndents.add indents.len
       result.add(LParen, "(", line, column)
       advance()
     of ')':
+      if lexingType and typeParenDepth > 0:
+        dec typeParenDepth
+        if typeParenDepth == 0 and typeAngleDepth == 0:
+          lexingType = false
       # A group may be closed on the same line as the last line of its indented
       # body -- `(f\n  a\n  b)`. The dedents for those levels would otherwise
       # not be emitted until the next line, leaving the body unterminated and
@@ -351,7 +397,9 @@ proc tokenize*(
         fail(&"unexpected character {c}", sourceId, line, column)
       let start = i
       let startColumn = column
-      while i < source.len and (isAtomPartChar(source[i]) or source.isNumberDot(i)):
+      while i < source.len and
+          (isAtomPartChar(source[i]) or source.isNumberDot(i)) and
+          not (lexingType and source[i] in {'<', '>'}):
         advance()
       result.add(
         Atom, source[start ..< i], line, startColumn,
@@ -366,6 +414,8 @@ proc tokenize*(
   result.add(Eof, "", line, column)
 
 proc peek(parser: Parser, offset = 0): Token {.raises: [].} =
+  if parser.tokens.len <= parser.pos + offset:
+    return
   parser.tokens[parser.pos + offset]
 
 proc at(parser: Parser, kind: TokenKind): bool {.raises: [].} =
@@ -411,6 +461,8 @@ proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].}
 proc parseArgument(
   parser: var Parser, inSuite: bool
 ): SyntaxNode {.raises: [ParserError].}
+proc parseTypes(parser: var Parser): seq[TypeSyntaxNode] {.raises: [ParserError].}
+proc parseTyped(parser: var Parser, node: var SyntaxNode) {.raises: [ParserError].}
 
 proc parseIndentedBody(
     parser: var Parser
@@ -515,6 +567,7 @@ proc parseSymbolLike(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
   else:
     result = symbol(token.lexeme, parser.pos(token))
   result.hangingPipe = token.hangingPipe
+  parser.parseTyped(result)
 
 proc parsePostfix(
     parser: var Parser, base: SyntaxNode
@@ -623,10 +676,65 @@ proc parseIndentedBindingValue(
   else:
     result = script(values, values[0].pos)
 
+proc typeRef(node: sink TypeSyntaxNode): ref TypeSyntaxNode {.raises: [].} =
+  new(result)
+  result[] = node
+
+proc parseTypeDef(parser: var Parser): TypeSyntaxNode {.raises: [ParserError].} =
+  case parser.peek.kind
+  of LParen:
+    discard parser.take()
+    if parser.at(RParen):
+      parser.fail("function type expects a return type")
+    result = TypeSyntaxNode(kind: Function)
+    result.returnType = typeRef(parser.parseTypeDef())
+    while not parser.at(RParen):
+      if parser.peek.kind in {Newline, Dedent, Eof}:
+        parser.fail("expected ')' after function type")
+      result.parameters.add parser.parseTypeDef()
+    discard parser.take()
+  of LAngle:
+    discard parser.take()
+    if parser.at(RAngle):
+      parser.fail("type specification expects two types")
+    let genericType = typeRef(parser.parseTypeDef())
+    if parser.at(RAngle):
+      parser.fail("type specification expects a parameter type")
+    var specifications: seq[TypeSyntaxNode]
+    while not parser.at(RAngle):
+      if parser.peek.kind in {Newline, Dedent, Eof}:
+        parser.fail("expected '>' after type specification")
+      specifications.add parser.parseTypeDef()
+    discard parser.expect(RAngle, "expected '>' after type specification")
+    result = TypeSyntaxNode(
+      kind: TypeSpec,
+      genericType: genericType,
+      specifications: specifications,
+    )
+  of Atom:
+    let token = parser.take()
+    result = TypeSyntaxNode(kind: Symbol, symbol: token.lexeme)
+  else:
+    parser.fail("expected type after apostrophe")
+
+proc parseTypes(parser: var Parser): seq[TypeSyntaxNode] {.raises: [ParserError].} =
+  while parser.at(Apostrophe):
+    discard parser.take()
+    result.add parser.parseTypeDef()
+
+proc parseTyped(parser: var Parser, node: var SyntaxNode) {.raises: [ParserError].} =
+  node.typed = parser.parseTypes()
+
 proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
-  if not parser.at(Atom) or parser.peek(1).kind != Equal:
+  if not parser.at(Atom):
+    return parser.parseExpression()
+  var probe = parser
+  discard probe.take()
+  discard probe.parseTypes()
+  if not probe.at(Equal):
     return parser.parseExpression()
   let bindingToken = parser.take()
+  let annotations = parser.parseTypes()
   discard parser.take()
   let value =
     if parser.startsSuite:
@@ -634,6 +742,7 @@ proc parseForm(parser: var Parser): SyntaxNode {.raises: [ParserError].} =
     else:
       parser.parseExpression()
   result = binding(bindingToken.lexeme, value, parser.pos(bindingToken))
+  result.typed = annotations
 
 proc parseStatement(parser: var Parser): seq[SyntaxNode] {.raises: [ParserError].} =
   var first = parser.parseForm()

@@ -55,6 +55,67 @@ real = -10.03e+2
     check tree.statements[0].value.callee.symbol == "100"
     check tree.statements[1].value.callee.symbol == "-10.03e+2"
 
+  test "parses type annotations on bindings, callees, and arguments":
+    let tree = parse("""record Vec2't:
+  x't = 10
+  y't = 20
+pos'<Vec2 Int> = Vec2'Int 10 20
+fun factorial'Int n'Int:
+  n
+fun'a'b map'a f'(a b) xs'<List a>:
+  xs
+dic'<Dict String Int> = (dict)
+""")
+
+    let recordCall = tree.statements[0]
+    check recordCall.arguments[0].typed.len == 1
+    check recordCall.arguments[0].typed[0].kind == Symbol
+    check recordCall.arguments[0].typed[0].symbol == "t"
+    check recordCall.body[0].typed[0].symbol == "t"
+
+    let pos = tree.statements[1]
+    check pos.typed[0].kind == TypeSpec
+    check pos.typed[0].genericType.symbol == "Vec2"
+    check pos.typed[0].specifications[0].symbol == "Int"
+    check pos.value.callee.typed[0].symbol == "Int"
+
+    let factorial = tree.statements[2]
+    check factorial.arguments[0].typed[0].symbol == "Int"
+    check factorial.arguments[1].typed[0].symbol == "Int"
+
+    let mapDefinition = tree.statements[3]
+    check mapDefinition.callee.typed.len == 2
+    check mapDefinition.callee.typed[0].symbol == "a"
+    check mapDefinition.callee.typed[1].symbol == "b"
+    check mapDefinition.arguments[0].typed[0].symbol == "a"
+    check mapDefinition.arguments[1].typed[0].kind == Function
+    check mapDefinition.arguments[1].typed[0].returnType.symbol == "a"
+    check mapDefinition.arguments[1].typed[0].parameters[0].symbol == "b"
+    check mapDefinition.arguments[2].typed[0].kind == TypeSpec
+
+    let dictionary = tree.statements[4]
+    check dictionary.typed[0].kind == TypeSpec
+    check dictionary.typed[0].genericType.symbol == "Dict"
+    check dictionary.typed[0].specifications.len == 2
+    check dictionary.typed[0].specifications[0].symbol == "String"
+    check dictionary.typed[0].specifications[1].symbol == "Int"
+
+    let formatted = $tree
+    check $parse(formatted) == formatted
+
+    let selected = parse("use value'Int.field\n").statements[0].arguments[0]
+    check selected.callee.symbol == "field"
+    check selected.arguments[0].typed[0].symbol == "Int"
+    check selected.arguments[1].stringValue == "field"
+
+  test "rejects malformed type annotations":
+    expect ParserError:
+      discard parse("x' = 1\n")
+    expect ParserError:
+      discard parse("x'<List> = 1\n")
+    expect ParserError:
+      discard parse("x'(Int = 1\n")
+
   test "parses explicit blocks":
     let tree = parse("""
 define:

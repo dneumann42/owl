@@ -21,6 +21,7 @@ The [[term-lexer][lexer]] converts source text into tokens. It drops horizontal 
 | =.=                  | starts a selector, except between two digits, where it belongs to a number    |
 | =:=                  | starts a [[term-block][block]]                                                                |
 | ~=~                  | separates a [[term-binding][binding]] name from its value; alone, it names the equality command |
+| ='=                  | attaches a type annotation to the preceding symbol                                           |
 | ="=                  | delimits text                                                                 |
 | =\=                  | escape character inside text; ~\(~ starts an interpolation                      |
 
@@ -28,7 +29,7 @@ The [[term-lexer][lexer]] converts source text into tokens. It drops horizontal 
 | constant        | definition                                                                                   |
 |-----------------+----------------------------------------------------------------------------------------------|
 | =atom=            | =atom_start= followed by any number of =atom_char=                                               |
-| =atom_start=      | any non-whitespace character except =(= =)= =[= =]= ="= =.= =,= =:= ~=~ =;=                                      |
+| =atom_start=      | any non-whitespace character except =(= =)= =[= =]= ="= =.= =,= =:= ~=~ ='= =;=                                  |
 | =atom_char=       | as =atom_start=, except that ~=~ is allowed and =.= is allowed between two digits                  |
 | identifier-like | an atom starting with a letter or underscore, continuing with letters, digits, =_=, =-=, =?=, or =/= |
 | numeric         | an atom starting with a digit, or with =+= or =-= followed by a digit                            |
@@ -72,27 +73,41 @@ continued_command
                 = callee, inline_argument, { inline_argument }, [ ":", block ] .
 
 form            = binding | expr .
-binding         = atom, "=", (expr | suite) .
+binding         = typed_atom, "=", (expr | suite) .
 expr            = string, selectors | command .
 command         = callee, { inline_argument } .
 
-callee          = symbol_like, selectors | group .
+callee          = typed_symbol_like, selectors | group .
 inline_argument = (argument_primary | same_line_layout_argument), selectors .
 argument_primary
-                = symbol_like | string | group .
+                = typed_symbol_like | string | group .
 same_line_layout_argument
                 = operator_symbol, ":", suite .
 argument_item   = (layout_item | argument_primary), selectors .
-layout_item     = (symbol_like | group), layout_tail .
+layout_item     = (typed_symbol_like | group), layout_tail .
 
 group           = "(", form, [ layout_tail ], stmts, ")", selectors .
 selectors       = { ".", (atom | "[", form, "]") } .
+
+typed_atom      = atom, { type_annotation } .
+typed_symbol_like
+                = symbol_like, { type_annotation } .
+type_annotation = "'", type_def .
+type_def        = function_type | type_spec | atom .
+function_type   = "(", type_def, { type_def }, ")" .
+type_spec       = "<", type_def, type_def, { type_def }, ">" .
 
 symbol_like     = atom | "=" | "[", "]" .
 string          = DQUOTE, { string_char | escape | interpolation }, DQUOTE .
 escape          = BS, (DQUOTE | BS | "n" | "r" | "t") .
 interpolation   = BS, "(", form, ")" .
 #+end_src
+
+Each type annotation becomes an entry in the syntax node's nullable =typed=
+sequence. Thus =fun'a'b= has two annotations. Angle brackets apply a generic
+type to one or more type arguments; for example, =dic'<Dict String Int>= has
+one annotation whose generic type is =Dict= and whose arguments are =String=
+and =Int=. A dot after an annotation retains its ordinary selector meaning.
 
 A [[term-binding][binding]] whose value is a =suite= holds a [[term-script][script]]: the statements are evaluated in order, and the value of the last one becomes the binding's value.
 
